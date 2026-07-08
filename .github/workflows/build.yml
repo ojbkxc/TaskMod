@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 (如 1.0.2)'
+        required: true
+        default: '1.0.1'
 
 jobs:
   build:
@@ -41,11 +46,15 @@ jobs:
       - name: Update version
         id: version
         run: |
-          # 从 tag 提取版本号 (v4.0 -> 4.0)
-          VERSION=${GITHUB_REF#refs/tags/v}
+          # 优先使用手动输入的版本号，否则从 tag 提取
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=${GITHUB_REF#refs/tags/v}
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-          # 计算 versionCode (4.0 -> 400, 1.2.3 -> 102003)
+          # 计算 versionCode (1.0.1 -> 1000001)
           IFS='.' read -ra PARTS <<< "$VERSION"
           VERSION_CODE=0
           for i in "${!PARTS[@]}"; do
@@ -94,6 +103,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.version.outputs.version }}
           name: TaskMod ${{ steps.version.outputs.version }}
           body: |
             ## TaskMod ${{ steps.version.outputs.version }}
