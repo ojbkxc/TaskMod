@@ -375,7 +375,7 @@ fn extract_images(text: &str) -> Vec<String> {
         }
     }
 
-    let re_base64 = regex::Regex::new(r"data:image/[a-zA-Z]+;base64,[^\s\"\']+").unwrap();
+    let re_base64 = regex::Regex::new(r#"data:image/[a-zA-Z]+;base64,[^\s"'"]+"#).unwrap();
     for cap in re_base64.find_iter(text) {
         images.push(cap.as_str().to_string());
     }
