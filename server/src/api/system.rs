@@ -249,13 +249,13 @@ pub async fn save_mqtt_config(Json(config): Json<MqttConfig>) -> Json<ApiRespons
 }
 
 pub async fn system_status() -> Json<serde_json::Value> {
-    let uptime = Command::new("uptime")
+    let uptime = Command::new("/system/bin/uptime")
         .output()
         .await
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
         .unwrap_or_else(|_| "N/A".to_string());
 
-    let disk = Command::new("df")
+    let disk = Command::new("/system/bin/df")
         .args(["-h", "/sdcard"])
         .output()
         .await

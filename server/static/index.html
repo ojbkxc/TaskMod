@@ -1064,10 +1064,10 @@
 
         // 邮件配置
         async function loadEmailConfig() {
-            const data = await api('/api/email');
+            const data = await api('/api/email/config');
             if (data.success && data.data) {
                 const d = data.data;
-                document.getElementById('enable-notify').checked = d.enable_notify === 'true' || d.enable_notify === '1';
+                document.getElementById('enable-notify').checked = d.enable_notify === true || d.enable_notify === 'true' || d.enable_notify === '1';
                 if (d.smtp_server) document.getElementById('smtp-server').value = d.smtp_server;
                 if (d.smtp_port) document.getElementById('smtp-port').value = d.smtp_port;
                 if (d.username) document.getElementById('smtp-user').value = d.username;
@@ -1099,7 +1099,7 @@
                 subject: document.getElementById('email-subject').value,
                 body: document.getElementById('email-body').value
             };
-            const data = await api('/api/email/save', { method: 'POST', body: JSON.stringify(req) });
+            const data = await api('/api/email/config', { method: 'PUT', body: JSON.stringify(req) });
             showToast(data.message || (data.success ? '配置已保存' : '保存失败'), data.success ? 'success' : 'error');
         }
 
@@ -1114,7 +1114,7 @@
                 subject: 'TaskMod 测试邮件',
                 body: '这是一封测试邮件，来自 TaskMod 管理面板。'
             };
-            const data = await api('/api/email', { method: 'POST', body: JSON.stringify(req) });
+            const data = await api('/api/send-email', { method: 'POST', body: JSON.stringify(req) });
             showToast(data.message || (data.success ? '测试邮件已发送' : '发送失败'), data.success ? 'success' : 'error');
         }
 
@@ -2669,9 +2669,25 @@
             }
         }
 
+        async function loadMqttConfig() {
+            const data = await api('/api/mqtt/config');
+            if (data.success && data.data) {
+                const c = data.data;
+                document.getElementById('mqtt-enabled').checked = c.enabled;
+                document.getElementById('mqtt-broker').value = c.broker || '';
+                document.getElementById('mqtt-topic').value = c.topic_prefix || '';
+                document.getElementById('mqtt-user').value = c.username || '';
+                document.getElementById('mqtt-pass').value = c.password || '';
+                document.getElementById('mqtt-client-id').value = c.client_id || '';
+                document.getElementById('mqtt-status').textContent = c.enabled ? '已启用' : '已禁用';
+                document.getElementById('mqtt-service-status').textContent = c.enabled ? '运行中' : '未启用';
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             loadAiProviders();
             loadEmailSettings();
+            loadMqttConfig();
             if (currentTab === 'tts') loadTtsEngines();
         });
 
