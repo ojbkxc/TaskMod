@@ -52,11 +52,11 @@ impl MirrorState {
     }
 
     pub fn set_running(&self, running: bool) {
-        self.is_running.store(running, std::sync::Ordering::Relaxed);
+        self.is_running.store(running, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn is_running(&self) -> bool {
-        self.is_running.load(std::sync::Ordering::Relaxed)
+        self.is_running.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 

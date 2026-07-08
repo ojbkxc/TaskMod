@@ -8,7 +8,8 @@ use tokio::process::Command;
 use crate::config::{SCHEDULE_FILE, SCREENSHOTS_DIR, LOG_FILE, SCRIPTS_DIR, WORKFLOWS_DIR, EMAIL_CONF};
 use crate::data::models::{CommandRequest, EmailConfig, ConfigUpdate, Workflow, WorkflowSaveRequest, WorkflowRunRequest, MqttConfig};
 use crate::data::response::ApiResponse;
-use crate::utils;
+use crate::utils::email;
+use crate::utils::mqtt;
 
 pub async fn index() -> Html<&'static str> {
     Html(include_str!("../../static/index.html"))
@@ -363,7 +364,7 @@ fn load_workflow(id: &str) -> Option<Workflow> {
         .and_then(|content| serde_json::from_str(&content).ok())
 }
 
-fn list_workflows() -> Vec<Workflow> {
+pub fn list_workflows() -> Vec<Workflow> {
     let _ = fs::create_dir_all(WORKFLOWS_DIR);
     fs::read_dir(WORKFLOWS_DIR)
         .map(|dir| {
@@ -381,7 +382,7 @@ fn delete_workflow(id: &str) -> Result<(), std::io::Error> {
     fs::remove_file(path)
 }
 
-async fn execute_workflow(workflow: Workflow, context: Option<serde_json::Value>) {
+pub async fn execute_workflow(workflow: Workflow, context: Option<serde_json::Value>) {
     let log = |msg: &str| {
         let now: DateTime<Local> = Local::now();
         let log_msg = format!("[{}] [工作流: {}] {}", now.format("%Y-%m-%d %H:%M:%S"), workflow.name, msg);

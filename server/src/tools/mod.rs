@@ -1,3 +1,4 @@
+use futures::future::BoxFuture;
 use serde_json::{self, json, Value};
 use std::collections::HashMap;
 
@@ -8,7 +9,7 @@ pub trait AiTool: Send + Sync {
     fn name(&self) -> &str;
     fn description(&self) -> &str;
     fn parameters(&self) -> Value;
-    async fn execute(&self, args: &str) -> String;
+    fn execute(&self, args: &str) -> BoxFuture<'_, String>;
 }
 
 pub struct ToolRegistry {

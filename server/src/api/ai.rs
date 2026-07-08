@@ -349,11 +349,55 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
     })
 }
 
-fn load_ai_providers() -> Vec<AiProvider> {
+pub fn load_ai_providers() -> Vec<AiProvider> {
     fs::read_to_string(AI_CONF)
         .ok()
         .and_then(|content| serde_json::from_str(&content).ok())
         .unwrap_or_default()
+}
+
+pub fn get_ai_providers() -> Vec<AiProvider> {
+    load_ai_providers()
+}
+
+pub async fn call_ai(provider: &AiProvider, prompt: &str) -> Result<String, String> {
+    let client = Client::builder().build().map_err(|e| format!("创建客户端失败: {}", e))?;
+    
+    let api_url = format!("{}/v1/chat/completions", provider.base_url);
+    
+    let body = json!({
+        "model": provider.model,
+        "messages": [{
+            "role": "user",
+            "content": prompt
+        }],
+        "stream": false
+    });
+    
+    let response = client.post(&api_url)
+        .header("Authorization", format!("Bearer {}", provider.api_key))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("API请求失败: {}", e))?;
+    
+    if !response.status().is_success() {
+        return Err(format!("API返回错误: {}", response.status()));
+    }
+    
+    let json_response: serde_json::Value = response.json().await.map_err(|e| format!("解析响应失败: {}", e))?;
+    
+    let content = json_response
+        .get("choices")
+        .and_then(|c| c.as_array())
+        .and_then(|a| a.first())
+        .and_then(|c| c.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .ok_or("无法提取响应内容".to_string())?;
+    
+    Ok(content.to_string())
 }
 
 fn save_ai_providers(providers: &[AiProvider]) -> Result<(), std::io::Error> {
@@ -361,7 +405,7 @@ fn save_ai_providers(providers: &[AiProvider]) -> Result<(), std::io::Error> {
     fs::write(AI_CONF, content)
 }
 
-fn get_ai_provider(id: &str) -> Option<AiProvider> {
+pub fn get_ai_provider(id: &str) -> Option<AiProvider> {
     load_ai_providers().into_iter().find(|p| p.id == id)
 }
 

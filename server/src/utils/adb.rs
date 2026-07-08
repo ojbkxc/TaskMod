@@ -35,6 +35,19 @@ pub async fn run_command_raw(cmd: &str) -> Result<std::process::Output, String> 
     command.output().await.map_err(|e| format!("命令执行失败: {}", e))
 }
 
+pub async fn execute_command(cmd_parts: &[String]) -> Result<std::process::Output, String> {
+    if cmd_parts.is_empty() {
+        return Err("命令为空".to_string());
+    }
+
+    let mut command = Command::new(&cmd_parts[0]);
+    for part in cmd_parts.iter().skip(1) {
+        command.arg(part);
+    }
+
+    command.output().await.map_err(|e| format!("命令执行失败: {}", e))
+}
+
 pub async fn get_screen_size() -> String {
     match Command::new("wm").arg("size").output().await {
         Ok(o) => {

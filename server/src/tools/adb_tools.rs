@@ -1,3 +1,4 @@
+use futures::future::BoxFuture;
 use crate::tools::{AiTool, parse_arg, parse_args_str};
 use crate::utils::adb;
 use serde_json::json;
@@ -32,11 +33,14 @@ impl AiTool for AdbTapTool {
             "required": ["x", "y"]
         })
     }
-    async fn execute(&self, args: &str) -> String {
-        match (parse_arg::<i32>(args, "x"), parse_arg::<i32>(args, "y")) {
-            (Ok(x), Ok(y)) => adb::tap(x, y).await,
-            (Err(e), _) | (_, Err(e)) => e,
-        }
+    fn execute(&self, args: &str) -> BoxFuture<'_, String> {
+        let args = args.to_string();
+        Box::pin(async move {
+            match (parse_arg::<i32>(&args, "x"), parse_arg::<i32>(&args, "y")) {
+                (Ok(x), Ok(y)) => adb::tap(x, y).await,
+                (Err(e), _) | (_, Err(e)) => e,
+            }
+        })
     }
 }
 
@@ -55,12 +59,15 @@ impl AiTool for AdbSwipeTool {
             "required": ["x1", "y1", "x2", "y2"]
         })
     }
-    async fn execute(&self, args: &str) -> String {
-        match (parse_arg::<i32>(args, "x1"), parse_arg::<i32>(args, "y1"),
-               parse_arg::<i32>(args, "x2"), parse_arg::<i32>(args, "y2")) {
-            (Ok(x1), Ok(y1), Ok(x2), Ok(y2)) => adb::swipe(x1, y1, x2, y2).await,
-            _ => "参数解析失败".to_string(),
-        }
+    fn execute(&self, args: &str) -> BoxFuture<'_, String> {
+        let args = args.to_string();
+        Box::pin(async move {
+            match (parse_arg::<i32>(&args, "x1"), parse_arg::<i32>(&args, "y1"),
+                   parse_arg::<i32>(&args, "x2"), parse_arg::<i32>(&args, "y2")) {
+                (Ok(x1), Ok(y1), Ok(x2), Ok(y2)) => adb::swipe(x1, y1, x2, y2).await,
+                _ => "参数解析失败".to_string(),
+            }
+        })
     }
 }
 
@@ -76,11 +83,14 @@ impl AiTool for AdbKeyeventTool {
             "required": ["key"]
         })
     }
-    async fn execute(&self, args: &str) -> String {
-        match parse_arg::<String>(args, "key") {
-            Ok(key) => adb::keyevent(&key).await,
-            Err(e) => e,
-        }
+    fn execute(&self, args: &str) -> BoxFuture<'_, String> {
+        let args = args.to_string();
+        Box::pin(async move {
+            match parse_arg::<String>(&args, "key") {
+                Ok(key) => adb::keyevent(&key).await,
+                Err(e) => e,
+            }
+        })
     }
 }
 
@@ -96,11 +106,14 @@ impl AiTool for AdbInputTextTool {
             "required": ["text"]
         })
     }
-    async fn execute(&self, args: &str) -> String {
-        match parse_arg::<String>(args, "text") {
-            Ok(text) => adb::input_text(&text).await,
-            Err(e) => e,
-        }
+    fn execute(&self, args: &str) -> BoxFuture<'_, String> {
+        let args = args.to_string();
+        Box::pin(async move {
+            match parse_arg::<String>(&args, "text") {
+                Ok(text) => adb::input_text(&text).await,
+                Err(e) => e,
+            }
+        })
     }
 }
 
@@ -116,11 +129,14 @@ impl AiTool for AdbScreencapTool {
             "required": ["filename"]
         })
     }
-    async fn execute(&self, args: &str) -> String {
-        match parse_arg::<String>(args, "filename") {
-            Ok(filename) => adb::screencap(&filename).await,
-            Err(e) => e,
-        }
+    fn execute(&self, args: &str) -> BoxFuture<'_, String> {
+        let args = args.to_string();
+        Box::pin(async move {
+            match parse_arg::<String>(&args, "filename") {
+                Ok(filename) => adb::screencap(&filename).await,
+                Err(e) => e,
+            }
+        })
     }
 }
 
@@ -136,11 +152,14 @@ impl AiTool for AdbCommandTool {
             "required": ["command"]
         })
     }
-    async fn execute(&self, args: &str) -> String {
-        match parse_arg::<String>(args, "command") {
-            Ok(command) => adb::run_command(&command).await.unwrap_or_else(|e| e),
-            Err(e) => e,
-        }
+    fn execute(&self, args: &str) -> BoxFuture<'_, String> {
+        let args = args.to_string();
+        Box::pin(async move {
+            match parse_arg::<String>(&args, "command") {
+                Ok(command) => adb::run_command(&command).await.unwrap_or_else(|e| e),
+                Err(e) => e,
+            }
+        })
     }
 }
 
@@ -156,11 +175,14 @@ impl AiTool for AdbStartAppTool {
             "required": ["package_name"]
         })
     }
-    async fn execute(&self, args: &str) -> String {
-        match parse_arg::<String>(args, "package_name") {
-            Ok(name) => adb::start_app(&name).await,
-            Err(e) => e,
-        }
+    fn execute(&self, args: &str) -> BoxFuture<'_, String> {
+        let args = args.to_string();
+        Box::pin(async move {
+            match parse_arg::<String>(&args, "package_name") {
+                Ok(name) => adb::start_app(&name).await,
+                Err(e) => e,
+            }
+        })
     }
 }
 
@@ -176,11 +198,14 @@ impl AiTool for AdbStopAppTool {
             "required": ["package_name"]
         })
     }
-    async fn execute(&self, args: &str) -> String {
-        match parse_arg::<String>(args, "package_name") {
-            Ok(name) => adb::stop_app(&name).await,
-            Err(e) => e,
-        }
+    fn execute(&self, args: &str) -> BoxFuture<'_, String> {
+        let args = args.to_string();
+        Box::pin(async move {
+            match parse_arg::<String>(&args, "package_name") {
+                Ok(name) => adb::stop_app(&name).await,
+                Err(e) => e,
+            }
+        })
     }
 }
 
@@ -193,8 +218,10 @@ impl AiTool for GetWifiInfoTool {
             "properties": {}
         })
     }
-    async fn execute(&self, _args: &str) -> String {
-        adb::get_wifi_info().await
+    fn execute(&self, _args: &str) -> BoxFuture<'_, String> {
+        Box::pin(async move {
+            adb::get_wifi_info().await
+        })
     }
 }
 
@@ -207,8 +234,10 @@ impl AiTool for GetDeviceInfoTool {
             "properties": {}
         })
     }
-    async fn execute(&self, _args: &str) -> String {
-        adb::get_device_info().await
+    fn execute(&self, _args: &str) -> BoxFuture<'_, String> {
+        Box::pin(async move {
+            adb::get_device_info().await
+        })
     }
 }
 
@@ -221,8 +250,10 @@ impl AiTool for GetBatteryInfoTool {
             "properties": {}
         })
     }
-    async fn execute(&self, _args: &str) -> String {
-        adb::get_battery_info().await
+    fn execute(&self, _args: &str) -> BoxFuture<'_, String> {
+        Box::pin(async move {
+            adb::get_battery_info().await
+        })
     }
 }
 
@@ -235,8 +266,10 @@ impl AiTool for GetRunningAppsTool {
             "properties": {}
         })
     }
-    async fn execute(&self, _args: &str) -> String {
-        adb::get_running_apps().await
+    fn execute(&self, _args: &str) -> BoxFuture<'_, String> {
+        Box::pin(async move {
+            adb::get_running_apps().await
+        })
     }
 }
 
@@ -249,8 +282,10 @@ impl AiTool for AdbRebootTool {
             "properties": {}
         })
     }
-    async fn execute(&self, _args: &str) -> String {
-        adb::reboot().await
+    fn execute(&self, _args: &str) -> BoxFuture<'_, String> {
+        Box::pin(async move {
+            adb::reboot().await
+        })
     }
 }
 
@@ -263,8 +298,10 @@ impl AiTool for AdbShutdownTool {
             "properties": {}
         })
     }
-    async fn execute(&self, _args: &str) -> String {
-        adb::shutdown().await
+    fn execute(&self, _args: &str) -> BoxFuture<'_, String> {
+        Box::pin(async move {
+            adb::shutdown().await
+        })
     }
 }
 
@@ -280,11 +317,14 @@ impl AiTool for AdbClearAppDataTool {
             "required": ["package_name"]
         })
     }
-    async fn execute(&self, args: &str) -> String {
-        match parse_arg::<String>(args, "package_name") {
-            Ok(name) => adb::clear_app_data(&name).await,
-            Err(e) => e,
-        }
+    fn execute(&self, args: &str) -> BoxFuture<'_, String> {
+        let args = args.to_string();
+        Box::pin(async move {
+            match parse_arg::<String>(&args, "package_name") {
+                Ok(name) => adb::clear_app_data(&name).await,
+                Err(e) => e,
+            }
+        })
     }
 }
 
@@ -300,11 +340,14 @@ impl AiTool for AdbTtsTool {
             "required": ["text"]
         })
     }
-    async fn execute(&self, args: &str) -> String {
-        match parse_arg::<String>(args, "text") {
-            Ok(text) => adb::tts(&text).await,
-            Err(e) => e,
-        }
+    fn execute(&self, args: &str) -> BoxFuture<'_, String> {
+        let args = args.to_string();
+        Box::pin(async move {
+            match parse_arg::<String>(&args, "text") {
+                Ok(text) => adb::tts(&text).await,
+                Err(e) => e,
+            }
+        })
     }
 }
 

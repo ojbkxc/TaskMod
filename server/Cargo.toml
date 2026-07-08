@@ -9,7 +9,7 @@ description = "TaskMod Web 管理服务"
 openssl-sys = { version = "0.9", features = ["vendored"] }
 
 # --- Web框架 ---
-axum = "0.6.20"
+axum = { version = "0.6.20", features = ["ws"] }
 
 # --- 异步 ---
 tokio = { version = "1.48.0", features = ["full", "process"] }
