@@ -31,6 +31,7 @@ done
 
 mkdir -p "$MARKER_DIR"
 mkdir -p "/sdcard/TaskMod/scripts"
+mkdir -p "/sdcard/TaskMod/workflows"
 if [ ! -f "$SCHEDULE_FILE" ]; then
   cp "$MODDIR/schedule.conf" "$SCHEDULE_FILE" 2>/dev/null
 fi

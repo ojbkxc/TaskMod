@@ -8,12 +8,13 @@ set_perm_recursive $MODPATH 0 0 0755 0755
 # 创建目录
 mkdir -p /sdcard/TaskMod/scripts
 mkdir -p /sdcard/TaskMod/screenshots
+mkdir -p /sdcard/TaskMod/workflows
 
 # 复制配置和脚本
 cp $MODPATH/sdcard/TaskMod/schedule.conf /sdcard/TaskMod/schedule.conf
 cp $MODPATH/sdcard/TaskMod/email.conf /sdcard/TaskMod/email.conf 2>/dev/null
+cp $MODPATH/sdcard/TaskMod/mqtt.conf /sdcard/TaskMod/mqtt.conf 2>/dev/null
 cp $MODPATH/sdcard/TaskMod/scripts/midea.sh /sdcard/TaskMod/scripts/midea.sh
-cp $MODPATH/sdcard/TaskMod/README.txt /sdcard/TaskMod/README.txt
 
 # 复制 Web 服务二进制
 if [ -f "$MODPATH/bin/arm64/taskmod-server" ]; then
@@ -26,7 +27,6 @@ fi
 # 设置权限
 chmod 644 /sdcard/TaskMod/schedule.conf
 chmod 755 /sdcard/TaskMod/scripts/midea.sh
-chmod 644 /sdcard/TaskMod/README.txt
 chmod 755 $MODPATH/bin/taskmod-server 2>/dev/null
 
 ui_print "----------------------------------"

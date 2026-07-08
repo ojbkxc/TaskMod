@@ -84,6 +84,10 @@
             <button onclick="showTab('command')" id="tab-command">命令执行</button>
             <button onclick="showTab('email')" id="tab-email">邮件通知</button>
             <button onclick="showTab('workflow')" id="tab-workflow">工作流</button>
+            <button onclick="showTab('mirror')" id="tab-mirror">投屏控制</button>
+            <button onclick="showTab('tts')" id="tab-tts">语音播报</button>
+            <button onclick="showTab('ai')" id="tab-ai">AI助手</button>
+            <button onclick="showTab('settings')" id="tab-settings">服务设置</button>
         </div>
 
         <!-- 仪表盘 -->
@@ -245,10 +249,35 @@
                         <textarea id="email-body" rows="5" placeholder="脚本 {script} 已于 {time} 执行完成"></textarea>
                         <small style="color: #666;">可用变量: {script} {time} {date} {result}</small>
                     </div>
-                    <div style="display: flex; gap: 10px;">
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                         <button class="btn btn-primary" onclick="saveEmailConfig()">保存配置</button>
                         <button class="btn btn-success" onclick="testEmail()">发送测试邮件</button>
+                        <span id="email-status" style="color: #666; font-size: 12px;">当前邮箱: 未配置</span>
                     </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>发送带附件邮件</h2>
+                <div style="max-width: 600px;">
+                    <div class="form-group">
+                        <label>收件人</label>
+                        <input type="text" id="send-email-to" placeholder="user@qq.com">
+                    </div>
+                    <div class="form-group">
+                        <label>主题</label>
+                        <input type="text" id="send-email-subject" placeholder="邮件主题">
+                    </div>
+                    <div class="form-group">
+                        <label>正文</label>
+                        <textarea id="send-email-body" rows="4" placeholder="邮件内容"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>选择附件（从截图中选择）</label>
+                        <div id="email-attachments-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 10px;"></div>
+                        <button class="btn btn-warning" style="margin-top: 10px;" onclick="loadEmailAttachments()">刷新截图列表</button>
+                    </div>
+                    <button class="btn btn-primary" onclick="sendEmailWithAttachments()">发送邮件</button>
                 </div>
             </div>
         </div>
@@ -285,6 +314,328 @@
                     </div>
                     <div style="flex: 1; position: relative;">
                         <canvas id="workflow-canvas" width="800" height="500" style="border: 1px solid #ddd; border-radius: 8px; background: white;"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 语音播报 (TTS) -->
+        <div id="tts" class="tab-content hidden">
+            <div class="card">
+                <h2>文本转语音 (TTS)</h2>
+                <div style="max-width: 600px;">
+                    <div class="form-group">
+                        <label>选择TTS引擎</label>
+                        <select id="tts-engine" style="width: 100%;">
+                            <option value="">默认引擎</option>
+                        </select>
+                        <button class="btn btn-info" style="margin-top: 10px;" onclick="loadTtsEngines()">刷新引擎列表</button>
+                    </div>
+                    <div class="form-group">
+                        <label>输入文本</label>
+                        <textarea id="tts-text" rows="4" placeholder="请输入要在手机上播放的文本内容..."></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>语速</label>
+                            <input type="range" id="tts-rate" min="0.5" max="2" step="0.1" value="1">
+                            <span id="tts-rate-value">1.0x</span>
+                        </div>
+                        <div class="form-group">
+                            <label>音调</label>
+                            <input type="range" id="tts-pitch" min="0.5" max="2" step="0.1" value="1">
+                            <span id="tts-pitch-value">1.0x</span>
+                        </div>
+                        <div class="form-group">
+                            <label>音量</label>
+                            <input type="range" id="tts-volume" min="0" max="1" step="0.1" value="1">
+                            <span id="tts-volume-value">100%</span>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="speakText()" style="width: 100%; padding: 12px;">播放语音</button>
+                    <div id="tts-status" style="margin-top: 15px; color: #666; font-size: 14px;"></div>
+                </div>
+            </div>
+            <div class="card" style="background: #f8f9fa;">
+                <h2 style="font-size: 14px; color: #666;">TTS使用说明</h2>
+                <div style="font-size: 13px; color: #666;">
+                    <p><strong>功能:</strong> 通过ADB命令在手机上播放语音</p>
+                    <p><strong>支持:</strong> 系统内置TTS引擎，可选择不同语音包</p>
+                    <p><strong>注意:</strong> 需要手机端TTS服务正常运行</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 投屏控制 -->
+        <div id="mirror" class="tab-content hidden">
+            <div class="card">
+                <h2>屏幕投屏</h2>
+                <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+                    <button class="btn btn-success" id="mirror-start-btn" onclick="startMirror()">开始投屏</button>
+                    <button class="btn btn-danger" id="mirror-stop-btn" onclick="stopMirror()" style="display: none;">停止投屏</button>
+                    <button class="btn btn-warning" onclick="checkMirrorStatus()">刷新状态</button>
+                    <button class="btn btn-info" id="record-start-btn" onclick="startRecording()" style="display: none;">开始录制</button>
+                    <button class="btn btn-danger" id="record-stop-btn" onclick="stopRecording()" style="display: none;">停止录制</button>
+                </div>
+                <div style="display: flex; gap: 15px; margin-bottom: 15px; flex-wrap: wrap;">
+                    <div class="form-group" style="width: 200px;">
+                        <label>码率 (kbps)</label>
+                        <input type="number" id="mirror-bitrate" value="2000" min="500" max="10000">
+                    </div>
+                    <div class="form-group" style="width: 150px;">
+                        <label>帧率 (fps)</label>
+                        <input type="number" id="mirror-fps" value="30" min="1" max="60">
+                    </div>
+                </div>
+                <div style="border: 2px solid #ddd; border-radius: 8px; overflow: hidden; background: #000; position: relative;">
+                    <canvas id="mirror-canvas" style="width: 100%; max-width: 100%; height: auto; display: block; background: #000; touch-action: none;"></canvas>
+                    <div id="mirror-status" style="position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7); color: white; padding: 5px 10px; border-radius: 4px; font-size: 12px;">等待连接...</div>
+                </div>
+            </div>
+            <div class="card">
+                <h2>基础控制</h2>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px;">
+                    <button class="btn btn-primary" onclick="sendControl('back')">返回</button>
+                    <button class="btn btn-primary" onclick="sendControl('home')">Home</button>
+                    <button class="btn btn-primary" onclick="sendControl('recents')">多任务</button>
+                    <button class="btn btn-primary" onclick="sendControl('power')">电源</button>
+                    <button class="btn btn-primary" onclick="sendControl('volume_up')">音量+</button>
+                    <button class="btn btn-primary" onclick="sendControl('volume_down')">音量-</button>
+                    <button class="btn btn-primary" onclick="sendControl('rotate')">旋转</button>
+                </div>
+            </div>
+            <div class="card">
+                <h2>快捷操作</h2>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+                    <button class="btn btn-info" onclick="sendControl('open_notification')">展开通知</button>
+                    <button class="btn btn-info" onclick="sendControl('open_settings')">展开设置</button>
+                    <button class="btn btn-info" onclick="sendControl('collapse_panels')">收起面板</button>
+                    <button class="btn btn-info" onclick="getClipboard()">获取剪贴板</button>
+                </div>
+            </div>
+            <div class="card">
+                <h2>文本输入</h2>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="mirror-text" placeholder="输入要发送的文本" style="flex: 1;">
+                    <button class="btn btn-primary" onclick="sendText()">发送</button>
+                </div>
+            </div>
+            <div class="card">
+                <h2>应用启动</h2>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="mirror-app" placeholder="输入包名 (如 com.android.settings)" style="flex: 1;">
+                    <button class="btn btn-primary" onclick="startApp()">启动应用</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI助手 -->
+        <div id="ai" class="tab-content hidden">
+            <div class="card">
+                <h2>AI供应商配置</h2>
+                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                    <button class="btn btn-success" onclick="resetAiProviderForm(); showModal('addAiProviderModal')">添加供应商</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr><th>名称</th><th>API URL</th><th>模型</th><th>状态</th><th>操作</th></tr>
+                    </thead>
+                    <tbody id="ai-providers-list"></tbody>
+                </table>
+            </div>
+            <div class="card">
+                <h2>AI对话</h2>
+                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                    <select id="ai-provider-select" onchange="connectAiChat()" style="flex: 1;">
+                        <option value="">选择AI供应商</option>
+                    </select>
+                    <button class="btn btn-primary" id="ai-connect-btn" onclick="connectAiChat()">连接</button>
+                    <button class="btn btn-danger" id="ai-disconnect-btn" onclick="disconnectAiChat()" style="display: none;">断开</button>
+                </div>
+                <div id="ai-chat-container" style="border: 1px solid #ddd; border-radius: 8px; overflow: hidden;">
+                    <div id="ai-chat-messages" style="height: 400px; overflow-y: auto; padding: 15px; background: #f8f9fa;"></div>
+                    <div style="padding: 10px; background: white; border-top: 1px solid #ddd; display: flex; gap: 10px;">
+                        <input type="text" id="ai-chat-input" placeholder="输入消息..." style="flex: 1;" onkeypress="if(event.key==='Enter')sendAiMessage()">
+                        <button class="btn btn-primary" onclick="sendAiMessage()">发送</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 服务设置 -->
+        <div id="settings" class="tab-content hidden">
+            <div class="card">
+                <h2>MQTT服务</h2>
+                <div style="max-width: 600px;">
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="mqtt-enabled" style="width: auto;">
+                            <span>启用MQTT功能（热加载，不启用则零内存占用）</span>
+                        </label>
+                    </div>
+                    <hr style="margin: 15px 0; border: none; border-top: 1px solid #eee;">
+                    <div class="form-group">
+                        <label>MQTT Broker地址</label>
+                        <input type="text" id="mqtt-broker" placeholder="tcp://localhost:1883">
+                    </div>
+                    <div class="form-group">
+                        <label>Topic前缀</label>
+                        <input type="text" id="mqtt-topic" placeholder="taskmod">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>用户名</label>
+                            <input type="text" id="mqtt-user" placeholder="（可选）">
+                        </div>
+                        <div class="form-group">
+                            <label>密码</label>
+                            <input type="password" id="mqtt-pass" placeholder="（可选）">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>客户端ID</label>
+                        <input type="text" id="mqtt-client-id" placeholder="taskmod-device">
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-primary" onclick="saveMqttConfig()">保存配置并重启服务</button>
+                        <span id="mqtt-status" style="color: #666; font-size: 12px; align-self: center;">当前状态: 未配置</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>邮件通知服务</h2>
+                <div style="max-width: 600px;">
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="email-enabled" style="width: auto;">
+                            <span>启用邮件通知（热加载，脚本执行完成后自动发送通知）</span>
+                        </label>
+                    </div>
+                    <hr style="margin: 15px 0; border: none; border-top: 1px solid #eee;">
+                    <div class="form-group">
+                        <label>SMTP服务器</label>
+                        <input type="text" id="email-smtp-server" placeholder="smtp.qq.com">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>端口</label>
+                            <input type="number" id="email-smtp-port" value="587">
+                        </div>
+                        <div class="form-group">
+                            <label>用户名</label>
+                            <input type="text" id="email-username" placeholder="your@email.com">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>密码/授权码</label>
+                        <input type="password" id="email-password" placeholder="授权码">
+                    </div>
+                    <div class="form-group">
+                        <label>发件人</label>
+                        <input type="email" id="email-from" placeholder="your@email.com">
+                    </div>
+                    <div class="form-group">
+                        <label>收件人 (多个用逗号分隔)</label>
+                        <input type="text" id="email-to" placeholder="user1@qq.com, user2@qq.com">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>超时时间(秒)</label>
+                            <input type="number" id="email-timeout" value="30" min="5">
+                        </div>
+                        <div class="form-group">
+                            <label>最大重试次数</label>
+                            <input type="number" id="email-retries" value="3" min="0">
+                        </div>
+                        <div class="form-group">
+                            <label>重试间隔(秒)</label>
+                            <input type="number" id="email-retry-interval" value="1" min="1">
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-primary" onclick="saveEmailSettings()">保存配置</button>
+                        <button class="btn btn-success" onclick="testEmailFromSettings()">发送测试邮件</button>
+                        <span id="email-settings-status" style="color: #666; font-size: 12px; align-self: center;">当前状态: 未配置</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>服务状态</h2>
+                <div class="status-card">
+                    <div class="status-item">
+                        <div class="label">MQTT状态</div>
+                        <div class="value" id="mqtt-service-status" style="font-size: 16px;">未启用</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="label">邮件通知</div>
+                        <div class="value" id="email-service-status" style="font-size: 16px;">未启用</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="label">TTS服务</div>
+                        <div class="value" id="tts-service-status" style="font-size: 16px;">已启用</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="label">热加载状态</div>
+                        <div class="value" style="font-size: 16px; color: #28a745;">已启用</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="label">Web服务端口</div>
+                        <div class="value">9527</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" style="background: #f8f9fa;">
+                <h2 style="font-size: 14px; color: #666;">MQTT使用说明</h2>
+                <div style="font-size: 13px; color: #666;">
+                    <p><strong>发布设备状态:</strong> <code>{prefix}/status</code> - 设备电量、温度、运行状态等JSON数据（每分钟更新）</p>
+                    <p><strong>接收远程命令:</strong> <code>{prefix}/cmd</code> - 订阅此topic接收ADB命令</p>
+                    <p><strong>命令执行结果:</strong> <code>{prefix}/result</code> - 命令执行后的输出结果</p>
+                    <p><strong>示例:</strong> <code>mosquitto_pub -t "taskmod/cmd" -m "input keyevent 3"</code></p>
+                </div>
+            </div>
+
+            <div class="card" style="background: #f8f9fa;">
+                <h2 style="font-size: 14px; color: #666;">邮件通知说明</h2>
+                <div style="font-size: 13px; color: #666;">
+                    <p><strong>自动通知:</strong> 启用后，脚本执行完成会自动发送邮件通知</p>
+                    <p><strong>重试机制:</strong> 网络错误时会自动重试，最多重试配置的次数</p>
+                    <p><strong>附件支持:</strong> 支持发送带附件的邮件（工作流节点配置）</p>
+                    <p><strong>变量模板:</strong> 邮件主题和内容支持 {script} {time} {date} {result} 变量</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 原始AI助手内容（已移到上面） -->
+        <div id="ai" class="tab-content hidden">
+            <div class="card">
+                <h2>AI供应商配置</h2>
+                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                    <button class="btn btn-success" onclick="resetAiProviderForm(); showModal('addAiProviderModal')">添加供应商</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr><th>名称</th><th>API URL</th><th>模型</th><th>状态</th><th>操作</th></tr>
+                    </thead>
+                    <tbody id="ai-providers-list"></tbody>
+                </table>
+            </div>
+            <div class="card">
+                <h2>AI对话</h2>
+                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                    <select id="ai-provider-select" onchange="connectAiChat()" style="flex: 1;">
+                        <option value="">选择AI供应商</option>
+                    </select>
+                    <button class="btn btn-primary" id="ai-connect-btn" onclick="connectAiChat()">连接</button>
+                    <button class="btn btn-danger" id="ai-disconnect-btn" onclick="disconnectAiChat()" style="display: none;">断开</button>
+                </div>
+                <div id="ai-chat-container" style="border: 1px solid #ddd; border-radius: 8px; overflow: hidden;">
+                    <div id="ai-chat-messages" style="height: 400px; overflow-y: auto; padding: 15px; background: #f8f9fa;"></div>
+                    <div style="padding: 10px; background: white; border-top: 1px solid #ddd; display: flex; gap: 10px;">
+                        <input type="text" id="ai-chat-input" placeholder="输入消息..." style="flex: 1;" onkeypress="if(event.key==='Enter')sendAiMessage()">
+                        <button class="btn btn-primary" onclick="sendAiMessage()">发送</button>
                     </div>
                 </div>
             </div>
@@ -353,6 +704,37 @@
         </div>
     </div>
 
+    <!-- AI供应商配置弹窗 -->
+    <div id="addAiProviderModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="ai-provider-modal-title">添加AI供应商</h3>
+                <button class="modal-close" onclick="hideModal('addAiProviderModal')">&times;</button>
+            </div>
+            <input type="hidden" id="ai-provider-id">
+            <div class="form-group">
+                <label>供应商名称</label>
+                <input type="text" id="ai-provider-name" placeholder="例如: OpenAI">
+            </div>
+            <div class="form-group">
+                <label>API基础URL</label>
+                <input type="text" id="ai-provider-url" placeholder="例如: https://api.openai.com">
+            </div>
+            <div class="form-group">
+                <label>API密钥</label>
+                <input type="text" id="ai-provider-key" placeholder="sk-xxx...">
+            </div>
+            <div class="form-group">
+                <label>模型名称</label>
+                <input type="text" id="ai-provider-model" placeholder="例如: gpt-4o">
+            </div>
+            <div class="form-group">
+                <label><input type="checkbox" id="ai-provider-enabled"> 启用</label>
+            </div>
+            <button class="btn btn-primary" onclick="saveAiProvider()">保存</button>
+        </div>
+    </div>
+
     <!-- 图片预览 -->
     <div id="imagePreview" class="preview-modal" onclick="this.classList.remove('show')">
         <img id="preview-img" src="">
@@ -388,6 +770,7 @@
                 case 'config': loadConfig(); break;
                 case 'email': loadEmailConfig(); break;
                 case 'workflow': loadWorkflows(); break;
+                case 'ai': loadAiProviders(); break;
             }
         }
 
@@ -423,11 +806,15 @@
             const data = await api('/api/status');
             if (data.success) {
                 const d = data.data;
+                const bat = d.battery || {};
                 document.getElementById('status-card').innerHTML = `
                     <div class="status-item"><div class="label">运行时间</div><div class="value" style="font-size:16px">${d.uptime || 'N/A'}</div></div>
                     <div class="status-item"><div class="label">任务数量</div><div class="value">${d.tasks_count}</div></div>
                     <div class="status-item"><div class="label">截图数量</div><div class="value">${d.screenshots_count}</div></div>
                     <div class="status-item"><div class="label">磁盘信息</div><div class="value" style="font-size:12px">${d.disk || 'N/A'}</div></div>
+                    <div class="status-item"><div class="label">电量</div><div class="value">${bat.capacity || 'N/A'}%</div></div>
+                    <div class="status-item"><div class="label">电池温度</div><div class="value">${bat.temperature || 'N/A'}°C</div></div>
+                    <div class="status-item"><div class="label">充电状态</div><div class="value">${bat.status || 'N/A'}</div></div>
                 `;
             }
         }
@@ -656,6 +1043,15 @@
                 if (d.to) document.getElementById('email-to').value = d.to;
                 if (d.subject) document.getElementById('email-subject').value = d.subject;
                 if (d.body) document.getElementById('email-body').value = d.body;
+                
+                const statusEl = document.getElementById('email-status');
+                if (d.from || d.to) {
+                    statusEl.textContent = `当前配置: 发件人 ${d.from || '未设置'} → 收件人 ${d.to || '未设置'}`;
+                    statusEl.style.color = '#28a745';
+                } else {
+                    statusEl.textContent = '当前邮箱: 未配置';
+                    statusEl.style.color = '#666';
+                }
             }
         }
 
@@ -1017,6 +1413,1133 @@
 
         // 初始化
         refreshStatus();
+
+        // ========== 投屏功能 (低延迟 WebCodecs 方案) ==========
+        let mirrorWs = null;
+        let audioWs = null;
+        let mirrorCanvas = null;
+        let mirrorCtx = null;
+        let videoDecoder = null;
+        let videoWidth = 1080;
+        let videoHeight = 1920;
+        let spsData = null;
+        let ppsData = null;
+        let frameCount = 0;
+        let lastFrameTime = 0;
+        let useWebCodecs = typeof VideoDecoder !== 'undefined';
+        let mediaSource = null;
+        let sourceBuffer = null;
+        let videoElement = null;
+        let audioContext = null;
+        let audioDestination = null;
+        let audioBufferSize = 4096;
+        let audioSampleRate = 48000;
+        let mediaRecorder = null;
+        let recordedChunks = [];
+
+        async function startMirror() {
+            const bitrate = parseInt(document.getElementById('mirror-bitrate').value) * 1000;
+            const fps = parseInt(document.getElementById('mirror-fps').value);
+
+            const data = await api('/api/mirror/start', {
+                method: 'POST',
+                body: JSON.stringify({ bit_rate: bitrate, fps: fps })
+            });
+
+            if (data.success) {
+                showToast(data.message, 'success');
+                document.getElementById('mirror-start-btn').style.display = 'none';
+                document.getElementById('mirror-stop-btn').style.display = 'inline-block';
+                document.getElementById('record-start-btn').style.display = 'inline-block';
+                document.getElementById('mirror-status').textContent = '连接中...';
+                connectMirrorWs();
+            } else {
+                showToast(data.message || '启动失败', 'error');
+            }
+        }
+
+        async function stopMirror() {
+            stopRecording();
+            const data = await api('/api/mirror/stop', { method: 'POST' });
+            if (data.success) {
+                showToast(data.message, 'success');
+                disconnectMirrorWs();
+                document.getElementById('mirror-start-btn').style.display = 'inline-block';
+                document.getElementById('mirror-stop-btn').style.display = 'none';
+                document.getElementById('record-start-btn').style.display = 'none';
+                document.getElementById('record-stop-btn').style.display = 'none';
+                document.getElementById('mirror-status').textContent = '等待连接...';
+            } else {
+                showToast(data.message || '停止失败', 'error');
+            }
+        }
+
+        async function checkMirrorStatus() {
+            const data = await api('/api/mirror/status');
+            if (data.success && data.data) {
+                document.getElementById('mirror-start-btn').style.display = 'none';
+                document.getElementById('mirror-stop-btn').style.display = 'inline-block';
+                document.getElementById('record-start-btn').style.display = 'inline-block';
+                document.getElementById('mirror-status').textContent = '运行中';
+                if (!mirrorWs) {
+                    connectMirrorWs();
+                }
+            } else {
+                document.getElementById('mirror-start-btn').style.display = 'inline-block';
+                document.getElementById('mirror-stop-btn').style.display = 'none';
+                document.getElementById('record-start-btn').style.display = 'none';
+                document.getElementById('record-stop-btn').style.display = 'none';
+                document.getElementById('mirror-status').textContent = '等待连接...';
+            }
+        }
+
+        function startRecording() {
+            const canvas = document.getElementById('mirror-canvas');
+            if (!canvas) {
+                showToast('请先启动投屏', 'error');
+                return;
+            }
+
+            const videoStream = canvas.captureStream(30);
+            
+            if (audioDestination) {
+                audioDestination.stream.getTracks().forEach(track => {
+                    videoStream.addTrack(track);
+                });
+            }
+
+            const options = { mimeType: 'video/webm;codecs=vp9' };
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                options.mimeType = 'video/webm;codecs=vp8';
+            }
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                options.mimeType = 'video/webm';
+            }
+
+            mediaRecorder = new MediaRecorder(videoStream, options);
+            recordedChunks = [];
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    recordedChunks.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = () => {
+                const blob = new Blob(recordedChunks, { type: options.mimeType });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `taskmod-recording-${Date.now()}.webm`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showToast('录制完成，已下载', 'success');
+            };
+
+            mediaRecorder.start();
+            document.getElementById('record-start-btn').style.display = 'none';
+            document.getElementById('record-stop-btn').style.display = 'inline-block';
+            document.getElementById('mirror-status').textContent = '录制中...';
+            showToast('开始录制', 'success');
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+            }
+            document.getElementById('record-start-btn').style.display = 'inline-block';
+            document.getElementById('record-stop-btn').style.display = 'none';
+            document.getElementById('mirror-status').textContent = '运行中';
+        }
+
+        function connectMirrorWs() {
+            if (mirrorWs) return;
+
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/mirror`;
+            
+            mirrorWs = new WebSocket(wsUrl);
+            mirrorWs.binaryType = 'arraybuffer';
+
+            mirrorWs.onopen = () => {
+                document.getElementById('mirror-status').textContent = '连接成功，等待视频...';
+            };
+
+            mirrorWs.onmessage = (event) => {
+                if (event.data instanceof ArrayBuffer) {
+                    processNaluMessage(new Uint8Array(event.data));
+                }
+            };
+
+            mirrorWs.onerror = () => {
+                document.getElementById('mirror-status').textContent = '连接错误';
+            };
+
+            mirrorWs.onclose = () => {
+                mirrorWs = null;
+                document.getElementById('mirror-status').textContent = '连接已断开';
+                cleanupDecoder();
+            };
+
+            connectAudioWs();
+        }
+
+        function connectAudioWs() {
+            if (audioWs) return;
+
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/audio`;
+            
+            audioWs = new WebSocket(wsUrl);
+            audioWs.binaryType = 'arraybuffer';
+
+            audioWs.onopen = () => {
+                initAudioContext();
+            };
+
+            audioWs.onmessage = (event) => {
+                if (event.data instanceof ArrayBuffer) {
+                    playAudioData(new Uint8Array(event.data));
+                }
+            };
+
+            audioWs.onerror = () => {
+                console.warn('音频连接错误');
+            };
+
+            audioWs.onclose = () => {
+                audioWs = null;
+                cleanupAudio();
+            };
+        }
+
+        function initAudioContext() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (!audioDestination) {
+                audioDestination = audioContext.createMediaStreamDestination();
+                audioDestination.connect(audioContext.destination);
+            }
+        }
+
+        function playAudioData(data) {
+            if (!audioContext || !audioDestination) return;
+
+            const floatData = new Float32Array(data.length / 2);
+            for (let i = 0; i < floatData.length; i++) {
+                const sample = (data[i * 2] | (data[i * 2 + 1] << 8));
+                floatData[i] = sample / 32768.0;
+            }
+
+            const buffer = audioContext.createBuffer(1, floatData.length, audioSampleRate);
+            buffer.getChannelData(0).set(floatData);
+
+            const source = audioContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioDestination);
+            source.start();
+        }
+
+        function cleanupAudio() {
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+        }
+
+        function disconnectMirrorWs() {
+            if (mirrorWs) {
+                mirrorWs.close();
+                mirrorWs = null;
+            }
+            if (audioWs) {
+                audioWs.close();
+                audioWs = null;
+            }
+            cleanupDecoder();
+            cleanupAudio();
+        }
+
+        function cleanupDecoder() {
+            if (videoDecoder) {
+                videoDecoder.close();
+                videoDecoder = null;
+            }
+            if (mediaSource) {
+                if (sourceBuffer) {
+                    sourceBuffer.abort();
+                    sourceBuffer = null;
+                }
+                mediaSource.endOfStream();
+                mediaSource = null;
+            }
+            if (videoElement) {
+                videoElement.pause();
+                videoElement = null;
+            }
+            spsData = null;
+            ppsData = null;
+            frameCount = 0;
+        }
+
+        function processNaluMessage(data) {
+            if (data.length < 7) return;
+
+            const tag = String.fromCharCode(data[0], data[1], data[2]);
+            const length = (data[3] << 24) | (data[4] << 16) | (data[5] << 8) | data[6];
+            const naluData = data.slice(7, 7 + length);
+
+            switch (tag) {
+                case 'rst':
+                    spsData = null;
+                    ppsData = null;
+                    cleanupDecoder();
+                    break;
+                case 'sps':
+                    spsData = naluData;
+                    checkAndInitDecoder();
+                    break;
+                case 'pps':
+                    ppsData = naluData;
+                    checkAndInitDecoder();
+                    break;
+                case 'key':
+                case 'frm':
+                    decodeFrame(naluData, tag === 'key');
+                    break;
+            }
+        }
+
+        function checkAndInitDecoder() {
+            if (spsData && ppsData) {
+                if (useWebCodecs && !videoDecoder) {
+                    initWebCodecsDecoder();
+                } else if (!useWebCodecs && !mediaSource) {
+                    initMediaSourceDecoder();
+                }
+            }
+        }
+
+        function initWebCodecsDecoder() {
+            mirrorCanvas = document.getElementById('mirror-canvas');
+            mirrorCtx = mirrorCanvas.getContext('2d');
+
+            const decoderConfig = {
+                codec: 'avc1.42E01E',
+                codedWidth: videoWidth,
+                codedHeight: videoHeight,
+                description: createAvccBox(spsData, ppsData)
+            };
+
+            videoDecoder = new VideoDecoder({
+                output: (frame) => {
+                    renderFrame(frame);
+                    frame.close();
+                },
+                error: (e) => {
+                    console.error('WebCodecs error:', e);
+                    useWebCodecs = false;
+                    cleanupDecoder();
+                    initMediaSourceDecoder();
+                }
+            });
+
+            videoDecoder.configure(decoderConfig);
+            document.getElementById('mirror-status').textContent = '视频流传输中 (WebCodecs)';
+        }
+
+        function initMediaSourceDecoder() {
+            mirrorCanvas = document.getElementById('mirror-canvas');
+            mirrorCtx = mirrorCanvas.getContext('2d');
+
+            videoElement = document.createElement('video');
+            videoElement.playsInline = true;
+            videoElement.muted = true;
+
+            mediaSource = new MediaSource();
+            videoElement.src = URL.createObjectURL(mediaSource);
+
+            mediaSource.addEventListener('sourceopen', () => {
+                sourceBuffer = mediaSource.addSourceBuffer('video/mp4; codecs="avc1.42E01E"');
+                sourceBuffer.mode = 'sequence';
+
+                const initSegment = createFmp4InitSegment(spsData, ppsData);
+                if (sourceBuffer && mediaSource.readyState === 'open') {
+                    sourceBuffer.appendBuffer(initSegment);
+                }
+
+                videoElement.addEventListener('loadedmetadata', () => {
+                    videoWidth = videoElement.videoWidth;
+                    videoHeight = videoElement.videoHeight;
+                    mirrorCanvas.width = videoWidth;
+                    mirrorCanvas.height = videoHeight;
+                    videoElement.play();
+                    drawVideoLoop();
+                });
+            });
+
+            videoElement.addEventListener('error', (e) => {
+                console.error('Video error:', e);
+            });
+
+            document.getElementById('mirror-status').textContent = '视频流传输中 (兼容模式)';
+        }
+
+        function createAvccBox(sps, pps) {
+            const length = 8 + sps.length + 3 + pps.length;
+            const box = new Uint8Array(length);
+            
+            box.set([(length >> 24) & 0xff, (length >> 16) & 0xff, (length >> 8) & 0xff, length & 0xff], 0);
+            box.set([0x61, 0x76, 0x63, 0x43], 4);
+            box[8] = 1;
+            box[9] = sps[1];
+            box[10] = sps[2];
+            box[11] = 0xFF;
+            box[12] = 0xE1;
+            box[13] = (sps.length >> 8) & 0xff;
+            box[14] = sps.length & 0xff;
+            box.set(sps, 15);
+            
+            const ppsOffset = 15 + sps.length;
+            box[ppsOffset] = 1;
+            box[ppsOffset + 1] = (pps.length >> 8) & 0xff;
+            box[ppsOffset + 2] = pps.length & 0xff;
+            box.set(pps, ppsOffset + 3);
+            
+            return box;
+        }
+
+        function decodeFrame(naluData, isKeyframe) {
+            if (useWebCodecs) {
+                if (!videoDecoder || videoDecoder.state !== 'configured') return;
+
+                const frameData = new Uint8Array(naluData.length + 4);
+                frameData[0] = (naluData.length >> 24) & 0xff;
+                frameData[1] = (naluData.length >> 16) & 0xff;
+                frameData[2] = (naluData.length >> 8) & 0xff;
+                frameData[3] = naluData.length & 0xff;
+                frameData.set(naluData, 4);
+
+                try {
+                    videoDecoder.decode({
+                        data: frameData,
+                        type: isKeyframe ? 'key' : 'delta',
+                        timestamp: performance.now()
+                    });
+                } catch (e) {
+                    console.error('WebCodecs decode error:', e);
+                }
+            } else {
+                if (!sourceBuffer || mediaSource.readyState !== 'open') return;
+
+                const fragment = createFmp4Fragment(naluData, isKeyframe);
+                try {
+                    if (sourceBuffer.buffered.length > 0) {
+                        const end = sourceBuffer.buffered.end(0);
+                        if (performance.now() - end < 2000) {
+                            return;
+                        }
+                    }
+                    sourceBuffer.appendBuffer(fragment);
+                } catch (e) {
+                    console.error('MSE append error:', e);
+                }
+            }
+        }
+
+        function createFmp4InitSegment(sps, pps) {
+            const avcc = createAvccBox(sps, pps);
+            
+            const ftyp = new Uint8Array([
+                0,0,0,20, 0x66,0x74,0x79,0x70,
+                0x69,0x73,0x6f,0x6d, 0x69,0x73,0x6f,0x32,
+                0x61,0x76,0x63,0x31
+            ]);
+
+            const mvhd = new Uint8Array([
+                0,0,0,108, 0x6d,0x76,0x68,0x64,
+                0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,1,
+                0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0,
+                0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0,
+                0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0,
+                0,0,0,1, 0,0,0,0, 0,0,0,0, 0,0,0,0,
+                0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0,
+                0,0,0,0, 0,0,0,0
+            ]);
+
+            const avc1Len = 56 + avcc.length;
+            const avc1 = new Uint8Array(avc1Len);
+            avc1.set([(avc1Len >> 24) & 0xff, (avc1Len >> 16) & 0xff, (avc1Len >> 8) & 0xff, avc1Len & 0xff], 0);
+            avc1.set([0x61,0x76,0x63,0x31], 4);
+            avc1.set([0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,1, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0], 8);
+            avc1.set(avcc, 56);
+
+            const stsdLen = 16 + avc1Len;
+            const stsd = new Uint8Array(stsdLen);
+            stsd.set([(stsdLen >> 24) & 0xff, (stsdLen >> 16) & 0xff, (stsdLen >> 8) & 0xff, stsdLen & 0xff], 0);
+            stsd.set([0x73,0x74,0x73,0x64], 4);
+            stsd.set([0,0,0,0, 0,0,0,1], 8);
+            stsd.set(avc1, 16);
+
+            const stts = new Uint8Array([0,0,0,24, 0x73,0x74,0x74,0x73, 0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,0]);
+            const stsc = new Uint8Array([0,0,0,28, 0x73,0x74,0x73,0x63, 0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,1, 0,0,0,1]);
+            const stsz = new Uint8Array([0,0,0,16, 0x73,0x74,0x73,0x7a, 0,0,0,0, 0,0,0,0]);
+            const stco = new Uint8Array([0,0,0,16, 0x73,0x74,0x63,0x6f, 0,0,0,0, 0,0,0,0]);
+
+            const stblLen = 16 + stsdLen + 24 + 28 + 16 + 16;
+            const stbl = new Uint8Array(stblLen);
+            stbl.set([(stblLen >> 24) & 0xff, (stblLen >> 16) & 0xff, (stblLen >> 8) & 0xff, stblLen & 0xff], 0);
+            stbl.set([0x73,0x74,0x62,0x6c], 4);
+            let offset = 8;
+            stbl.set(stsd, offset); offset += stsdLen;
+            stbl.set(stts, offset); offset += 24;
+            stbl.set(stsc, offset); offset += 28;
+            stbl.set(stsz, offset); offset += 16;
+            stbl.set(stco, offset);
+
+            const dref = new Uint8Array([0,0,0,20, 0x64,0x72,0x65,0x66, 0,0,0,0, 0,0,0,1, 0,0,0,0]);
+            const dinf = new Uint8Array([0,0,0,32, 0x64,0x69,0x6e,0x66, 0,0,0,8, 0x64,0x72,0x65,0x66]);
+            dinf.set(dref, 12);
+
+            const vmhd = new Uint8Array([0,0,0,20, 0x76,0x6d,0x68,0x64, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0]);
+
+            const minfLen = 16 + 20 + 32 + stblLen;
+            const minf = new Uint8Array(minfLen);
+            minf.set([(minfLen >> 24) & 0xff, (minfLen >> 16) & 0xff, (minfLen >> 8) & 0xff, minfLen & 0xff], 0);
+            minf.set([0x6d,0x69,0x6e,0x66], 4);
+            offset = 8;
+            minf.set(vmhd, offset); offset += 20;
+            minf.set(dinf, offset); offset += 32;
+            minf.set(stbl, offset);
+
+            const mdhd = new Uint8Array([0,0,0,32, 0x6d,0x64,0x68,0x64, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0]);
+            const hdlr = new Uint8Array([0,0,0,33, 0x68,0x64,0x6c,0x72, 0,0,0,0, 0,0,0,0, 0x76,0x69,0x64,0x65, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0]);
+
+            const mdiaLen = 16 + 32 + 33 + minfLen;
+            const mdia = new Uint8Array(mdiaLen);
+            mdia.set([(mdiaLen >> 24) & 0xff, (mdiaLen >> 16) & 0xff, (mdiaLen >> 8) & 0xff, mdiaLen & 0xff], 0);
+            mdia.set([0x6d,0x64,0x69,0x61], 4);
+            offset = 8;
+            mdia.set(mdhd, offset); offset += 32;
+            mdia.set(hdlr, offset); offset += 33;
+            mdia.set(minf, offset);
+
+            const tkhd = new Uint8Array([0,0,0,92, 0x74,0x6b,0x68,0x64, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0]);
+
+            const trakLen = 16 + 92 + mdiaLen;
+            const trak = new Uint8Array(trakLen);
+            trak.set([(trakLen >> 24) & 0xff, (trakLen >> 16) & 0xff, (trakLen >> 8) & 0xff, trakLen & 0xff], 0);
+            trak.set([0x74,0x72,0x61,0x6b], 4);
+            offset = 8;
+            trak.set(tkhd, offset); offset += 92;
+            trak.set(mdia, offset);
+
+            const moovLen = 16 + 108 + trakLen;
+            const moov = new Uint8Array(moovLen);
+            moov.set([(moovLen >> 24) & 0xff, (moovLen >> 16) & 0xff, (moovLen >> 8) & 0xff, moovLen & 0xff], 0);
+            moov.set([0x6d,0x6f,0x6f,0x76], 4);
+            offset = 8;
+            moov.set(mvhd, offset); offset += 108;
+            moov.set(trak, offset);
+
+            const result = new Uint8Array(20 + moovLen);
+            result.set(ftyp, 0);
+            result.set(moov, 20);
+
+            return result;
+        }
+
+        function createFmp4Fragment(nalu, isKeyframe) {
+            const naluSize = nalu.length;
+            
+            const mfhd = new Uint8Array([0,0,0,16, 0x6d,0x66,0x68,0x64, 0,0,0,0, 0,0,0,0]);
+            
+            const tfhdFlags = isKeyframe ? 0x00000010 : 0;
+            const tfhd = new Uint8Array([0,0,0,24, 0x74,0x66,0x68,0x64, 0,0,0,0, 0,0,0,1, (tfhdFlags >> 24) & 0xff, (tfhdFlags >> 16) & 0xff, (tfhdFlags >> 8) & 0xff, tfhdFlags & 0xff, 0,0,0,0]);
+            
+            const tfdt = new Uint8Array([0,0,0,20, 0x74,0x66,0x64,0x74, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0]);
+            
+            const trunLen = 16 + 16;
+            const trun = new Uint8Array(trunLen);
+            trun.set([(trunLen >> 24) & 0xff, (trunLen >> 16) & 0xff, (trunLen >> 8) & 0xff, trunLen & 0xff], 0);
+            trun.set([0x74,0x72,0x75,0x6e], 4);
+            trun.set([0,0,0x00,0x15, 0,0,0,1], 8);
+            trun.set([(naluSize >> 24) & 0xff, (naluSize >> 16) & 0xff, (naluSize >> 8) & 0xff, naluSize & 0xff], 16);
+            trun.set([0,0,0,0], 20);
+
+            const trafLen = 16 + 16 + 24 + 20 + trunLen;
+            const traf = new Uint8Array(trafLen);
+            traf.set([(trafLen >> 24) & 0xff, (trafLen >> 16) & 0xff, (trafLen >> 8) & 0xff, trafLen & 0xff], 0);
+            traf.set([0x74,0x72,0x61,0x66], 4);
+            let offset = 8;
+            traf.set(mfhd, offset); offset += 16;
+            traf.set(tfhd, offset); offset += 24;
+            traf.set(tfdt, offset); offset += 20;
+            traf.set(trun, offset);
+
+            const moofLen = 16 + trafLen;
+            const moof = new Uint8Array(moofLen);
+            moof.set([(moofLen >> 24) & 0xff, (moofLen >> 16) & 0xff, (moofLen >> 8) & 0xff, moofLen & 0xff], 0);
+            moof.set([0x6d,0x6f,0x6f,0x66], 4);
+            moof.set(traf, 8);
+
+            const mdatLen = 8 + naluSize;
+            const mdat = new Uint8Array(mdatLen);
+            mdat.set([(mdatLen >> 24) & 0xff, (mdatLen >> 16) & 0xff, (mdatLen >> 8) & 0xff, mdatLen & 0xff], 0);
+            mdat.set([0x6d,0x64,0x61,0x74], 4);
+            mdat.set(nalu, 8);
+
+            const result = new Uint8Array(moofLen + mdatLen);
+            result.set(moof, 0);
+            result.set(mdat, moofLen);
+
+            return result;
+        }
+
+        function drawVideoLoop() {
+            if (!videoElement || !mirrorCtx) return;
+            mirrorCtx.drawImage(videoElement, 0, 0);
+            requestAnimationFrame(drawVideoLoop);
+        }
+
+        function renderFrame(frame) {
+            if (!mirrorCtx || !mirrorCanvas) return;
+
+            const canvasWidth = mirrorCanvas.width;
+            const canvasHeight = mirrorCanvas.height;
+
+            if (canvasWidth !== frame.displayWidth || canvasHeight !== frame.displayHeight) {
+                mirrorCanvas.width = frame.displayWidth;
+                mirrorCanvas.height = frame.displayHeight;
+                videoWidth = frame.displayWidth;
+                videoHeight = frame.displayHeight;
+            }
+
+            mirrorCtx.drawImage(frame, 0, 0);
+
+            frameCount++;
+            const now = performance.now();
+            if (now - lastFrameTime >= 1000) {
+                document.getElementById('mirror-status').textContent = `传输中 | ${frameCount}fps`;
+                frameCount = 0;
+                lastFrameTime = now;
+            }
+        }
+
+        async function sendControl(action) {
+            const data = await api('/api/mirror/control', {
+                method: 'POST',
+                body: JSON.stringify({ action })
+            });
+            if (!data.success) {
+                showToast(data.message || '发送失败', 'error');
+            }
+        }
+
+        async function sendText() {
+            const text = document.getElementById('mirror-text').value.trim();
+            if (!text) {
+                showToast('请输入文本', 'error');
+                return;
+            }
+            const data = await api('/api/mirror/control', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'text', text })
+            });
+            if (data.success) {
+                document.getElementById('mirror-text').value = '';
+                showToast('文本已发送', 'success');
+            } else {
+                showToast(data.message || '发送失败', 'error');
+            }
+        }
+
+        async function sendSwipe(dx, dy) {
+            const data = await api('/api/mirror/control', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'swipe', dx, dy })
+            });
+            if (!data.success) {
+                showToast(data.message || '滑动失败', 'error');
+            }
+        }
+
+        async function startApp() {
+            const pkg = document.getElementById('mirror-app').value.trim();
+            if (!pkg) {
+                showToast('请输入包名', 'error');
+                return;
+            }
+            const data = await api('/api/mirror/control', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'start_app', text: pkg })
+            });
+            if (data.success) {
+                showToast('应用已启动', 'success');
+            } else {
+                showToast(data.message || '启动失败', 'error');
+            }
+        }
+
+        async function getClipboard() {
+            const data = await api('/api/mirror/control', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'get_clipboard' })
+            });
+            if (data.success) {
+                showToast('剪贴板内容: ' + data.data, 'success');
+            } else {
+                showToast(data.message || '获取失败', 'error');
+            }
+        }
+
+        document.getElementById('mirror-canvas').addEventListener('click', async (e) => {
+            if (!mirrorWs) return;
+            
+            const rect = mirrorCanvas.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * videoWidth;
+            const y = ((e.clientY - rect.top) / rect.height) * videoHeight;
+            
+            await api('/api/mirror/control', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'touch', x, y })
+            });
+        });
+
+        document.getElementById('mirror-canvas').addEventListener('touchstart', async (e) => {
+            e.preventDefault();
+            if (!mirrorWs) return;
+            
+            const touch = e.touches[0];
+            const rect = mirrorCanvas.getBoundingClientRect();
+            const x = ((touch.clientX - rect.left) / rect.width) * videoWidth;
+            const y = ((touch.clientY - rect.top) / rect.height) * videoHeight;
+            
+            await api('/api/mirror/control', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'touch_down', x, y })
+            });
+        });
+
+        document.getElementById('mirror-canvas').addEventListener('touchmove', async (e) => {
+            e.preventDefault();
+            if (!mirrorWs) return;
+            
+            const touch = e.touches[0];
+            const rect = mirrorCanvas.getBoundingClientRect();
+            const x = ((touch.clientX - rect.left) / rect.width) * videoWidth;
+            const y = ((touch.clientY - rect.top) / rect.height) * videoHeight;
+            
+            await api('/api/mirror/control', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'touch_move', x, y })
+            });
+        });
+
+        document.getElementById('mirror-canvas').addEventListener('touchend', async () => {
+            if (!mirrorWs) return;
+            
+            await api('/api/mirror/control', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'touch_up' })
+            });
+        });
+
+        // === AI相关函数 ===
+        let aiChatWs = null;
+
+        async function loadAiProviders() {
+            const data = await api('/api/ai/providers');
+            if (data.success) {
+                const list = document.getElementById('ai-providers-list');
+                const select = document.getElementById('ai-provider-select');
+                list.innerHTML = '';
+                select.innerHTML = '<option value="">选择AI供应商</option>';
+                for (const p of data.data) {
+                    list.innerHTML += `
+                        <tr>
+                            <td>${p.name}</td>
+                            <td>${p.base_url}</td>
+                            <td>${p.model}</td>
+                            <td>${p.enabled ? '<span style="color:green">启用</span>' : '<span style="color:red">禁用</span>'}</td>
+                            <td>
+                                <button class="btn btn-primary" onclick="editAiProvider('${p.id}')">编辑</button>
+                                <button class="btn btn-danger" onclick="deleteAiProvider('${p.id}')">删除</button>
+                            </td>
+                        </tr>
+                    `;
+                    select.innerHTML += `<option value="${p.id}">${p.name} (${p.model})</option>`;
+                }
+            }
+        }
+
+        function resetAiProviderForm() {
+            document.getElementById('ai-provider-id').value = '';
+            document.getElementById('ai-provider-name').value = '';
+            document.getElementById('ai-provider-url').value = '';
+            document.getElementById('ai-provider-key').value = '';
+            document.getElementById('ai-provider-model').value = '';
+            document.getElementById('ai-provider-enabled').checked = true;
+            document.getElementById('ai-provider-modal-title').textContent = '添加AI供应商';
+        }
+
+        async function saveAiProvider() {
+            const id = document.getElementById('ai-provider-id').value;
+            const data = {
+                name: document.getElementById('ai-provider-name').value,
+                base_url: document.getElementById('ai-provider-url').value,
+                api_key: document.getElementById('ai-provider-key').value,
+                model: document.getElementById('ai-provider-model').value,
+                enabled: document.getElementById('ai-provider-enabled').checked
+            };
+            let res;
+            if (id) {
+                res = await api(`/api/ai/providers/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+            } else {
+                res = await api('/api/ai/providers', { method: 'POST', body: JSON.stringify(data) });
+            }
+            showToast(res.message || (res.success ? '保存成功' : '保存失败'), res.success ? 'success' : 'error');
+            if (res.success) {
+                hideModal('addAiProviderModal');
+                loadAiProviders();
+            }
+        }
+
+        async function editAiProvider(id) {
+            const data = await api(`/api/ai/providers/${id}`);
+            if (data.success && data.data) {
+                const p = data.data;
+                document.getElementById('ai-provider-id').value = p.id;
+                document.getElementById('ai-provider-name').value = p.name;
+                document.getElementById('ai-provider-url').value = p.base_url;
+                document.getElementById('ai-provider-key').value = p.api_key;
+                document.getElementById('ai-provider-model').value = p.model;
+                document.getElementById('ai-provider-enabled').checked = p.enabled;
+                document.getElementById('ai-provider-modal-title').textContent = '编辑AI供应商';
+                showModal('addAiProviderModal');
+            }
+        }
+
+        async function deleteAiProvider(id) {
+            if (!confirm('确定删除此供应商？')) return;
+            const res = await api(`/api/ai/providers/${id}`, { method: 'DELETE' });
+            showToast(res.message || (res.success ? '已删除' : '删除失败'), res.success ? 'success' : 'error');
+            if (res.success) loadAiProviders();
+        }
+
+        function connectAiChat() {
+            const providerId = document.getElementById('ai-provider-select').value;
+            if (!providerId) return;
+            
+            if (aiChatWs) {
+                aiChatWs.close();
+            }
+            
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            aiChatWs = new WebSocket(`${protocol}//${window.location.host}/ws/ai-chat`);
+            
+            aiChatWs.onopen = () => {
+                document.getElementById('ai-connect-btn').style.display = 'none';
+                document.getElementById('ai-disconnect-btn').style.display = 'inline-block';
+                document.getElementById('ai-chat-input').disabled = false;
+                addAiMessage('system', '已连接到AI助手，可以开始对话');
+            };
+            
+            aiChatWs.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    switch (data.type) {
+                        case 'message':
+                            addAiMessage('ai', data.content);
+                            break;
+                        case 'image':
+                            addAiImage(data.url);
+                            break;
+                        case 'tool_result':
+                            addAiMessage('system', '工具执行结果: ' + JSON.stringify(data.results, null, 2));
+                            break;
+                        case 'error':
+                            addAiMessage('system', '错误: ' + data.message);
+                            break;
+                    }
+                } catch (e) {
+                    addAiMessage('system', '收到消息: ' + event.data);
+                }
+            };
+            
+            aiChatWs.onclose = () => {
+                aiChatWs = null;
+                document.getElementById('ai-connect-btn').style.display = 'inline-block';
+                document.getElementById('ai-disconnect-btn').style.display = 'none';
+                document.getElementById('ai-chat-input').disabled = true;
+                addAiMessage('system', '连接已断开');
+            };
+            
+            aiChatWs.onerror = () => {
+                addAiMessage('system', '连接出错');
+            };
+        }
+
+        function disconnectAiChat() {
+            if (aiChatWs) {
+                aiChatWs.close();
+            }
+        }
+
+        function sendAiMessage() {
+            const input = document.getElementById('ai-chat-input');
+            const message = input.value.trim();
+            if (!message || !aiChatWs) return;
+            
+            addAiMessage('user', message);
+            input.value = '';
+            
+            const providerId = document.getElementById('ai-provider-select').value;
+            aiChatWs.send(JSON.stringify({ provider_id: providerId, message }));
+        }
+
+        function addAiMessage(type, content) {
+            const container = document.getElementById('ai-chat-messages');
+            const div = document.createElement('div');
+            div.style.marginBottom = '10px';
+            div.style.padding = '8px';
+            div.style.borderRadius = '8px';
+            
+            if (type === 'user') {
+                div.style.background = '#667eea';
+                div.style.color = 'white';
+                div.style.textAlign = 'right';
+            } else if (type === 'ai') {
+                div.style.background = '#e9ecef';
+                div.style.color = '#333';
+            } else {
+                div.style.background = '#f8d7da';
+                div.style.color = '#721c24';
+                div.style.fontSize = '12px';
+            }
+            
+            div.textContent = content;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function addAiImage(url) {
+            const container = document.getElementById('ai-chat-messages');
+            const div = document.createElement('div');
+            div.style.marginBottom = '10px';
+            div.style.padding = '8px';
+            div.style.borderRadius = '8px';
+            div.style.background = '#e9ecef';
+            div.style.maxWidth = '400px';
+            
+            const img = document.createElement('img');
+            img.src = url;
+            img.style.maxWidth = '100%';
+            img.style.borderRadius = '4px';
+            img.style.display = 'block';
+            img.style.height = 'auto';
+            img.onerror = () => {
+                img.style.display = 'none';
+                div.textContent = '图片加载失败: ' + url.substring(0, 50) + '...';
+            };
+            
+            div.appendChild(img);
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        async function loadEmailSettings() {
+            const data = await api('/api/email/config');
+            if (data.success && data.data) {
+                const config = data.data;
+                document.getElementById('email-enabled').checked = config.enable_notify;
+                document.getElementById('email-smtp-server').value = config.smtp_server;
+                document.getElementById('email-smtp-port').value = config.smtp_port;
+                document.getElementById('email-username').value = config.username;
+                document.getElementById('email-password').value = config.password;
+                document.getElementById('email-from').value = config.from;
+                document.getElementById('email-to').value = config.to;
+                document.getElementById('email-timeout').value = config.timeout_secs || 30;
+                document.getElementById('email-retries').value = config.max_retries || 3;
+                document.getElementById('email-retry-interval').value = config.retry_interval || 1;
+                
+                document.getElementById('email-settings-status').textContent = 
+                    config.enable_notify ? '已启用' : '已禁用';
+                document.getElementById('email-service-status').textContent = 
+                    config.enable_notify ? '已启用' : '未启用';
+            }
+        }
+
+        async function saveEmailSettings() {
+            const config = {
+                enable_notify: document.getElementById('email-enabled').checked ? 'true' : 'false',
+                smtp_server: document.getElementById('email-smtp-server').value,
+                smtp_port: parseInt(document.getElementById('email-smtp-port').value),
+                username: document.getElementById('email-username').value,
+                password: document.getElementById('email-password').value,
+                from: document.getElementById('email-from').value,
+                to: document.getElementById('email-to').value,
+                subject: 'TaskMod 邮件通知',
+                body: '测试邮件',
+            };
+            
+            const data = await api('/api/email/config', {
+                method: 'PUT',
+                body: JSON.stringify(config)
+            });
+            
+            showToast(data.message || (data.success ? '保存成功' : '保存失败'), data.success ? 'success' : 'error');
+            if (data.success) {
+                document.getElementById('email-settings-status').textContent = 
+                    config.enable_notify === 'true' ? '已启用' : '已禁用';
+                document.getElementById('email-service-status').textContent = 
+                    config.enable_notify === 'true' ? '已启用' : '未启用';
+            }
+        }
+
+        async function testEmailFromSettings() {
+            const config = {
+                smtp_server: document.getElementById('email-smtp-server').value,
+                smtp_port: parseInt(document.getElementById('email-smtp-port').value),
+                username: document.getElementById('email-username').value,
+                password: document.getElementById('email-password').value,
+                from: document.getElementById('email-from').value,
+                to: document.getElementById('email-to').value,
+                subject: 'TaskMod 测试邮件',
+                body: '这是一封来自 TaskMod 的测试邮件，配置成功！',
+            };
+            
+            const data = await api('/api/send-email', {
+                method: 'POST',
+                body: JSON.stringify(config)
+            });
+            
+            showToast(data.message || (data.success ? '发送成功' : '发送失败'), data.success ? 'success' : 'error');
+        }
+
+        async function saveMqttConfig() {
+            const config = {
+                enabled: document.getElementById('mqtt-enabled').checked,
+                broker: document.getElementById('mqtt-broker').value,
+                topic_prefix: document.getElementById('mqtt-topic').value,
+                username: document.getElementById('mqtt-user').value,
+                password: document.getElementById('mqtt-pass').value,
+                client_id: document.getElementById('mqtt-client-id').value,
+            };
+            
+            const data = await api('/api/mqtt/config', {
+                method: 'PUT',
+                body: JSON.stringify(config)
+            });
+            
+            showToast(data.message || (data.success ? '保存成功' : '保存失败'), data.success ? 'success' : 'error');
+            if (data.success) {
+                document.getElementById('mqtt-status').textContent = 
+                    config.enabled ? '已启用' : '已禁用';
+                document.getElementById('mqtt-service-status').textContent = 
+                    config.enabled ? '运行中' : '未启用';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadAiProviders();
+            loadEmailSettings();
+            if (currentTab === 'tts') loadTtsEngines();
+        });
+
+        // TTS 功能
+        async function loadTtsEngines() {
+            const data = await api('/api/tts/engines');
+            const select = document.getElementById('tts-engine');
+            if (data.success && data.data) {
+                select.innerHTML = '<option value="">默认引擎</option>' + 
+                    data.data.map(e => `<option value="${e.id}">${e.name}</option>`).join('');
+            }
+        }
+
+        async function speakText() {
+            const text = document.getElementById('tts-text').value.trim();
+            if (!text) {
+                showToast('请输入文本内容', 'error');
+                return;
+            }
+
+            const engine = document.getElementById('tts-engine').value;
+            const status = document.getElementById('tts-status');
+            
+            status.textContent = '正在发送语音命令...';
+            
+            const data = await api('/api/tts/speak', {
+                method: 'POST',
+                body: JSON.stringify({ text, engine: engine || null })
+            });
+            
+            if (data.success) {
+                showToast('语音播放命令已发送', 'success');
+                status.textContent = '语音播放成功';
+            } else {
+                showToast(data.message || '语音播放失败', 'error');
+                status.textContent = '语音播放失败: ' + (data.message || '未知错误');
+            }
+        }
+
+        // 邮件附件功能
+        async function loadEmailAttachments() {
+            const data = await api('/api/screenshots');
+            const list = document.getElementById('email-attachments-list');
+            if (data.success && data.data) {
+                list.innerHTML = data.data.map(s => `
+                    <div style="border: 2px solid #ddd; border-radius: 8px; padding: 8px; cursor: pointer; text-align: center;"
+                         onclick="toggleAttachment(this, '${s}')">
+                        <img src="/screenshots/${s}" style="width: 100%; height: 80px; object-fit: cover; border-radius: 4px;">
+                        <div style="font-size: 11px; margin-top: 5px; color: #666;">${s}</div>
+                    </div>
+                `).join('');
+            } else {
+                list.innerHTML = '<div style="color: #666;">暂无截图</div>';
+            }
+        }
+
+        function toggleAttachment(el, filename) {
+            if (el.style.borderColor === 'rgb(102, 126, 234)') {
+                el.style.borderColor = '#ddd';
+                el.dataset.selected = 'false';
+            } else {
+                el.style.borderColor = '#667eea';
+                el.dataset.selected = 'true';
+            }
+        }
+
+        async function sendEmailWithAttachments() {
+            const to = document.getElementById('send-email-to').value.trim();
+            const subject = document.getElementById('send-email-subject').value.trim();
+            const body = document.getElementById('send-email-body').value.trim();
+            
+            if (!to || !subject) {
+                showToast('请填写收件人和主题', 'error');
+                return;
+            }
+
+            const selected = document.querySelectorAll('#email-attachments-list > div[data-selected="true"]');
+            const attachments = Array.from(selected).map(el => el.textContent.trim());
+
+            const config = {
+                to,
+                subject,
+                body: body || '邮件内容',
+                attachments
+            };
+
+            const data = await api('/api/send-email', {
+                method: 'POST',
+                body: JSON.stringify(config)
+            });
+
+            showToast(data.message || (data.success ? '发送成功' : '发送失败'), data.success ? 'success' : 'error');
+        }
     </script>
 </body>
 </html>
