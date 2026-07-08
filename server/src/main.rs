@@ -437,6 +437,7 @@ async fn trigger_script(Json(req): Json<TriggerRequest>) -> Json<ApiResponse<Str
     }
 
     // 异步执行脚本并发送邮件通知
+    let script_name_clone = script_name.clone();
     tokio::spawn(async move {
         match Command::new("sh").arg(&script_path).output() {
             Ok(output) => {
@@ -462,12 +463,12 @@ async fn trigger_script(Json(req): Json<TriggerRequest>) -> Json<ApiResponse<Str
                         to: email_conf.get("to").unwrap_or(&String::new()).clone(),
                         subject: email_conf.get("subject")
                             .unwrap_or(&"TaskMod 通知".to_string())
-                            .replace("{script}", &script_name)
+                            .replace("{script}", &script_name_clone)
                             .replace("{time}", &now.format("%H:%M:%S").to_string())
                             .replace("{date}", &now.format("%Y-%m-%d").to_string()),
                         body: email_conf.get("body")
                             .unwrap_or(&"脚本已执行完成".to_string())
-                            .replace("{script}", &script_name)
+                            .replace("{script}", &script_name_clone)
                             .replace("{time}", &now.format("%H:%M:%S").to_string())
                             .replace("{date}", &now.format("%Y-%m-%d").to_string())
                             .replace("{result}", &result.to_string()),
@@ -514,7 +515,7 @@ async fn get_config() -> Json<ApiResponse<String>> {
 // 更新配置
 async fn update_config(Json(req): Json<ConfigUpdate>) -> Json<ApiResponse<String>> {
     match fs::write(SCHEDULE_FILE, &req.content) {
-        Ok(_) => Json(ApiResponse::ok_msg("ok", "配置已保存，30秒内自动生效")),
+        Ok(_) => Json(ApiResponse::ok_msg("ok".to_string(), "配置已保存，30秒内自动生效")),
         Err(e) => Json(ApiResponse::err(&format!("更新失败: {}", e))),
     }
 }
@@ -622,7 +623,7 @@ async fn get_email_config() -> Json<serde_json::Value> {
 // 保存邮件配置
 async fn save_email_config(Json(config): Json<EmailConfig>) -> Json<ApiResponse<String>> {
     match save_email_conf(&config) {
-        Ok(_) => Json(ApiResponse::ok_msg("ok", "邮件配置已保存")),
+        Ok(_) => Json(ApiResponse::ok_msg("ok".to_string(), "邮件配置已保存")),
         Err(e) => Json(ApiResponse::err(&format!("保存失败: {}", e))),
     }
 }
@@ -644,7 +645,7 @@ async fn exec_command(Json(req): Json<CommandRequest>) -> Json<ApiResponse<Strin
             } else {
                 stdout.to_string()
             };
-            Json(ApiResponse::ok_msg(&result, "命令执行完成"))
+            Json(ApiResponse::ok_msg(result, "命令执行完成"))
         }
         Err(e) => Json(ApiResponse::err(&format!("执行失败: {}", e))),
     }
@@ -665,7 +666,7 @@ async fn get_workflow(AxumPath(id): AxumPath<String>) -> Json<ApiResponse<Workfl
 
 async fn save_workflow_api(Json(req): Json<WorkflowSaveRequest>) -> Json<ApiResponse<String>> {
     match save_workflow(&req.workflow) {
-        Ok(_) => Json(ApiResponse::ok_msg(&req.workflow.id, "工作流已保存")),
+        Ok(_) => Json(ApiResponse::ok_msg(req.workflow.id.clone(), "工作流已保存")),
         Err(e) => Json(ApiResponse::err(&format!("保存失败: {}", e))),
     }
 }
