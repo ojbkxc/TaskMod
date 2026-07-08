@@ -1,6 +1,7 @@
-use axum::{Json, WebSocketUpgrade};
+use axum::{Json, extract::ws::WebSocketUpgrade, response::IntoResponse};
 use serde::Deserialize;
-use std::sync::{Arc, AtomicBool, Mutex, Ordering};
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::process::Command;
 use tokio::sync::broadcast;
 use tokio::time::Duration;
@@ -62,7 +63,7 @@ pub async fn start_mirror(
             .status()
             .await;
 
-        original_brightness
+        output
     } else {
         None
     };

@@ -1,4 +1,5 @@
-use std::sync::{Arc, AtomicBool, RwLock};
+use std::sync::{Arc, RwLock};
+use std::sync::atomic::AtomicBool;
 use tokio::sync::broadcast;
 
 pub struct MirrorState {

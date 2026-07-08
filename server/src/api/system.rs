@@ -8,8 +8,7 @@ use tokio::process::Command;
 use crate::config::{SCHEDULE_FILE, SCREENSHOTS_DIR, LOG_FILE, SCRIPTS_DIR, WORKFLOWS_DIR, EMAIL_CONF};
 use crate::data::models::{CommandRequest, EmailConfig, ConfigUpdate, Workflow, WorkflowSaveRequest, WorkflowRunRequest, MqttConfig};
 use crate::data::response::ApiResponse;
-use crate::utils::email;
-use crate::utils::mqtt;
+use crate::utils;
 
 pub async fn index() -> Html<&'static str> {
     Html(include_str!("../../static/index.html"))
@@ -722,4 +721,3 @@ fn evaluate_condition(expr: &str) -> bool {
 }
 
 use axum::{extract::Path as AxumPath, response::IntoResponse};
-use crate::data::models::ConfigUpdate;
