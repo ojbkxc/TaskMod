@@ -17,8 +17,8 @@ pub struct ServiceInfo {
 }
 
 type ServiceId = String;
-type LoadFn = Box<dyn Fn() -> Result<(), String> + Send + Sync + 'static>;
-type UnloadFn = Box<dyn Fn() -> Result<(), String> + Send + Sync + 'static>;
+type LoadFn = Arc<Box<dyn Fn() -> Result<(), String> + Send + Sync + 'static>>;
+type UnloadFn = Arc<Box<dyn Fn() -> Result<(), String> + Send + Sync + 'static>>;
 
 struct ServiceDefinition {
     load_fn: LoadFn,
@@ -37,9 +37,9 @@ lazy_static::lazy_static! {
     }));
 }
 
-pub fn register_service(id: &str, load_fn: LoadFn, unload_fn: UnloadFn) {
+pub fn register_service(id: &str, load_fn: Box<dyn Fn() -> Result<(), String> + Send + Sync + 'static>, unload_fn: Box<dyn Fn() -> Result<(), String> + Send + Sync + 'static>) {
     let mut inner = SERVICE_MANAGER.lock().unwrap();
-    inner.services.insert(id.to_string(), ServiceDefinition { load_fn, unload_fn });
+    inner.services.insert(id.to_string(), ServiceDefinition { load_fn: Arc::new(load_fn), unload_fn: Arc::new(unload_fn) });
     inner.service_info.insert(id.to_string(), ServiceInfo {
         status: ServiceStatus::Unloaded,
         ref_count: 0,
@@ -53,25 +53,31 @@ pub fn get_service_status(id: &str) -> Option<ServiceStatus> {
 }
 
 pub fn load_service(id: &str) -> Result<(), String> {
-    let mut inner = SERVICE_MANAGER.lock().unwrap();
-    
-    let service = match inner.services.get(id) {
-        Some(s) => s,
-        None => return Err(format!("服务不存在: {}", id)),
-    };
-    
-    let info = inner.service_info.get_mut(id).unwrap();
-    
-    if info.status == ServiceStatus::Loaded {
-        info.ref_count += 1;
-        info.last_used = std::time::Instant::now();
-        return Ok(());
+    let load_fn;
+    {
+        let inner = &mut *SERVICE_MANAGER.lock().unwrap();
+        let info = match inner.service_info.get_mut(id) {
+            Some(info) => info,
+            None => return Err(format!("服务不存在: {}", id)),
+        };
+
+        if info.status == ServiceStatus::Loaded {
+            info.ref_count += 1;
+            info.last_used = std::time::Instant::now();
+            return Ok(());
+        }
+
+        let service = match inner.services.get(id) {
+            Some(s) => s,
+            None => return Err(format!("服务不存在: {}", id)),
+        };
+
+        info.status = ServiceStatus::Loading;
+        load_fn = service.load_fn.clone();
     }
-    
-    info.status = ServiceStatus::Loading;
-    drop(inner);
-    
-    match (service.load_fn)() {
+
+    // Lock is released, now call the load function
+    match load_fn() {
         Ok(_) => {
             let mut inner = SERVICE_MANAGER.lock().unwrap();
             if let Some(info) = inner.service_info.get_mut(id) {
@@ -92,45 +98,49 @@ pub fn load_service(id: &str) -> Result<(), String> {
 }
 
 pub fn unload_service(id: &str) -> Result<(), String> {
-    let mut inner = SERVICE_MANAGER.lock().unwrap();
-    
-    let service = match inner.services.get(id) {
-        Some(s) => s,
-        None => return Err(format!("服务不存在: {}", id)),
-    };
-    
-    let info = inner.service_info.get_mut(id).unwrap();
-    
-    if info.ref_count > 0 {
-        info.ref_count -= 1;
-        info.last_used = std::time::Instant::now();
-        
-        if info.ref_count == 0 {
-            info.status = ServiceStatus::Unloading;
-            drop(inner);
-            
-            match (service.unload_fn)() {
-                Ok(_) => {
-                    let mut inner = SERVICE_MANAGER.lock().unwrap();
-                    if let Some(info) = inner.service_info.get_mut(id) {
-                        info.status = ServiceStatus::Unloaded;
-                    }
-                    Ok(())
-                }
-                Err(e) => {
-                    let mut inner = SERVICE_MANAGER.lock().unwrap();
-                    if let Some(info) = inner.service_info.get_mut(id) {
-                        info.status = ServiceStatus::Loaded;
-                        info.ref_count = 0;
-                    }
-                    Err(e)
-                }
+    let unload_fn;
+    {
+        let inner = &mut *SERVICE_MANAGER.lock().unwrap();
+
+        let service = match inner.services.get(id) {
+            Some(s) => s,
+            None => return Err(format!("服务不存在: {}", id)),
+        };
+
+        let info = inner.service_info.get_mut(id).unwrap();
+
+        if info.ref_count > 0 {
+            info.ref_count -= 1;
+            info.last_used = std::time::Instant::now();
+
+            if info.ref_count == 0 {
+                info.status = ServiceStatus::Unloading;
+                unload_fn = service.unload_fn.clone();
+            } else {
+                return Ok(());
             }
         } else {
+            return Ok(());
+        }
+    }
+
+    // Lock is released, now call the unload function
+    match unload_fn() {
+        Ok(_) => {
+            let mut inner = SERVICE_MANAGER.lock().unwrap();
+            if let Some(info) = inner.service_info.get_mut(id) {
+                info.status = ServiceStatus::Unloaded;
+            }
             Ok(())
         }
-    } else {
-        Ok(())
+        Err(e) => {
+            let mut inner = SERVICE_MANAGER.lock().unwrap();
+            if let Some(info) = inner.service_info.get_mut(id) {
+                info.status = ServiceStatus::Loaded;
+                info.ref_count = 0;
+            }
+            Err(e)
+        }
     }
 }
 
@@ -142,38 +152,4 @@ where
     let result = f();
     unload_service(id)?;
     Ok(result)
-}
-
-pub async fn use_service_async<F, T>(id: &str, f: F) -> Result<T, String>
-where
-    F: FnOnce() -> T + Send,
-{
-    load_service(id)?;
-    let result = f();
-    unload_service(id)?;
-    Ok(result)
-}
-
-pub fn get_all_service_info() -> Vec<(ServiceId, ServiceInfo)> {
-    let inner = SERVICE_MANAGER.lock().unwrap();
-    inner.service_info.iter()
-        .map(|(id, info)| (id.clone(), info.clone()))
-        .collect()
-}
-
-pub fn set_service_loaded(id: &str) {
-    let mut inner = SERVICE_MANAGER.lock().unwrap();
-    if let Some(info) = inner.service_info.get_mut(id) {
-        info.status = ServiceStatus::Loaded;
-        info.last_used = std::time::Instant::now();
-    }
-}
-
-pub fn set_service_unloaded(id: &str) {
-    let mut inner = SERVICE_MANAGER.lock().unwrap();
-    if let Some(info) = inner.service_info.get_mut(id) {
-        info.status = ServiceStatus::Unloaded;
-        info.ref_count = 0;
-        info.last_used = std::time::Instant::now();
-    }
 }
