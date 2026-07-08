@@ -5,6 +5,9 @@ edition = "2024"
 description = "TaskMod Web 管理服务"
 
 [dependencies]
+# --- 强制编译OpenSSL源码，解决交叉编译问题 ---
+openssl-sys = { version = "0.9", features = ["vendored"] }
+
 # --- Web框架 ---
 axum = "0.6.20"
 
