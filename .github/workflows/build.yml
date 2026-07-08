@@ -38,6 +38,31 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      - name: Update version
+        id: version
+        run: |
+          # 从 tag 提取版本号 (v4.0 -> 4.0)
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          # 计算 versionCode (4.0 -> 400, 1.2.3 -> 102003)
+          IFS='.' read -ra PARTS <<< "$VERSION"
+          VERSION_CODE=0
+          for i in "${!PARTS[@]}"; do
+            MULT=$((10 ** (6 - i * 3)))
+            VERSION_CODE=$((VERSION_CODE + PARTS[i] * MULT))
+          done
+          echo "versionCode=$VERSION_CODE" >> $GITHUB_OUTPUT
+
+          # 更新 module.prop
+          sed -i "s/^version=.*/version=$VERSION/" module.prop
+          sed -i "s/^versionCode=.*/versionCode=$VERSION_CODE/" module.prop
+
+          # 更新 Cargo.toml
+          sed -i "0,/^version = \".*\"/s/^version = \".*\"/version = \"$VERSION\"/" server/Cargo.toml
+
+          echo "Updated version to $VERSION (code: $VERSION_CODE)"
+
       - name: Build
         working-directory: server
         run: cargo ndk -t arm64-v8a build --release
@@ -45,9 +70,7 @@ jobs:
       - name: Package
         id: package
         run: |
-          # 获取版本号
-          VERSION=${GITHUB_REF#refs/tags/}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          VERSION=${{ steps.version.outputs.version }}
 
           # 将编译产物复制到模块目录
           mkdir -p bin/arm64
@@ -65,15 +88,15 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TaskMod-${{ steps.package.outputs.version }}
-          path: TaskMod-${{ steps.package.outputs.version }}.zip
+          name: TaskMod-${{ steps.version.outputs.version }}
+          path: TaskMod-${{ steps.version.outputs.version }}.zip
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          name: TaskMod ${{ steps.package.outputs.version }}
+          name: TaskMod ${{ steps.version.outputs.version }}
           body: |
-            ## TaskMod ${{ steps.package.outputs.version }}
+            ## TaskMod ${{ steps.version.outputs.version }}
 
             ### 功能
             - 定时任务调度
@@ -82,12 +105,9 @@ jobs:
             - 邮件通知
 
             ### 安装
-            1. 下载 `TaskMod-${{ steps.package.outputs.version }}.zip`
+            1. 下载 `TaskMod-${{ steps.version.outputs.version }}.zip`
             2. 通过 Magisk 刷入
             3. 浏览器访问 `http://设备IP:8080`
-
-            ### 文件
-            - `taskmod-server` - ARM64 Linux 二进制
-          files: TaskMod-${{ steps.package.outputs.version }}.zip
+          files: TaskMod-${{ steps.version.outputs.version }}.zip
           draft: false
           prerelease: false
