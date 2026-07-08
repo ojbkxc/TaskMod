@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use tokio::process::Command;
 
 #[derive(Debug, Clone, PartialEq)]

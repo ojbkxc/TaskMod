@@ -1,4 +1,4 @@
-use axum::{routing::{delete, get, post, put}, Router};
+use axum::{routing::{delete, get, post}, Router};
 use std::net::SocketAddr;
 use tower_http::cors::CorsLayer;
 

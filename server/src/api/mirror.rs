@@ -1,14 +1,14 @@
 use axum::{Json, extract::ws::WebSocketUpgrade, response::IntoResponse};
 use serde::Deserialize;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::sync::broadcast;
 use tokio::time::Duration;
 
-use crate::config::SCREENSHOTS_DIR;
 use crate::data::response::ApiResponse;
-use crate::state::{MirrorState, SharedMirrorState};
+use crate::state::SharedMirrorState;
 
 #[derive(Debug, Deserialize)]
 pub struct MirrorStartRequest {

@@ -1,6 +1,5 @@
 use axum::{extract::Path as AxumPath, Json};
 use std::fs;
-use std::path::Path;
 
 use crate::config::SCRIPTS_DIR;
 use crate::data::models::ConfigUpdate;

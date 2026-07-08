@@ -1,5 +1,5 @@
 use futures::future::BoxFuture;
-use crate::tools::{AiTool, parse_arg, parse_args_str};
+use crate::tools::{AiTool, parse_arg};
 use crate::utils::adb;
 use serde_json::json;
 

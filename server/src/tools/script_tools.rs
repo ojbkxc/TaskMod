@@ -4,7 +4,6 @@ use crate::config::LOG_FILE;
 use crate::tools::{AiTool, parse_arg};
 use serde_json::json;
 use std::fs;
-use std::path::Path;
 use tokio::process::Command;
 
 pub struct ListScriptsTool;

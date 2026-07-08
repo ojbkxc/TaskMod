@@ -5,7 +5,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
 
-use crate::config::{AI_CONF, SCRIPTS_DIR, LOG_FILE};
+use crate::config::{AI_CONF, SCRIPTS_DIR};
 use crate::data::models::{AiProvider, AiProviderRequest, AiChatRequest};
 use crate::data::response::ApiResponse;
 use crate::tools::{adb_tools, script_tools, ToolRegistry};
@@ -246,8 +246,8 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                                                                                         existing_func["name"] = serde_json::Value::String(tc_name.to_string());
                                                                                     }
                                                                                     if let Some(tc_args) = tc_func.get("arguments").and_then(|v| v.as_str()) {
-                                                                                        let existing_args = existing_func.get_mut("arguments").and_then(|v| v.as_str_mut()).unwrap_or(&mut String::new());
-                                                                                        existing_args.push_str(tc_args);
+                                                                                        let existing_args = existing_func.get("arguments").and_then(|v| v.as_str()).unwrap_or("");
+                                                                                        existing_func["arguments"] = serde_json::Value::String(format!("{}{}", existing_args, tc_args));
                                                                                     }
                                                                                 }
                                                                             }

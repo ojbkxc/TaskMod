@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fs;
 use tokio::process::Command;
 
-use crate::config::{SCHEDULE_FILE, SCREENSHOTS_DIR, LOG_FILE, SCRIPTS_DIR, WORKFLOWS_DIR, EMAIL_CONF};
+use crate::config::{SCHEDULE_FILE, SCREENSHOTS_DIR, LOG_FILE, SCRIPTS_DIR, WORKFLOWS_DIR};
 use crate::data::models::{CommandRequest, EmailConfig, ConfigUpdate, Workflow, WorkflowSaveRequest, WorkflowRunRequest, MqttConfig};
 use crate::data::response::ApiResponse;
 use crate::utils::adb;
