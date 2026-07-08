@@ -134,7 +134,7 @@ pub async fn update_config(Json(req): Json<ConfigUpdate>) -> Json<ApiResponse<St
 }
 
 pub async fn send_email(Json(config): Json<EmailConfig>) -> Json<ApiResponse<String>> {
-    let email_config = utils::email::EmailConfig {
+    let email_config = email::EmailConfig {
         enable_notify: true,
         smtp_server: config.smtp_server.clone(),
         smtp_port: config.smtp_port,
@@ -149,14 +149,14 @@ pub async fn send_email(Json(config): Json<EmailConfig>) -> Json<ApiResponse<Str
         retry_interval: config.retry_interval,
     };
     
-    match utils::email::send_email(&email_config, None, None, None).await {
+    match email::send_email(&email_config, None, None, None).await {
         Ok(_) => Json(ApiResponse::ok("邮件发送成功".to_string())),
         Err(e) => Json(ApiResponse::err(&e.to_string())),
     }
 }
 
 pub async fn get_email_config() -> Json<serde_json::Value> {
-    let config = utils::email::get_email_config();
+    let config = email::get_email_config();
     Json(json!({
         "success": true,
         "data": {
@@ -176,7 +176,7 @@ pub async fn get_email_config() -> Json<serde_json::Value> {
 }
 
 pub async fn save_email_config(Json(config): Json<EmailConfig>) -> Json<ApiResponse<String>> {
-    let email_config = utils::email::EmailConfig {
+    let email_config = email::EmailConfig {
         enable_notify: config.enable_notify == "true" || config.enable_notify == "1",
         smtp_server: config.smtp_server,
         smtp_port: config.smtp_port,
@@ -191,7 +191,7 @@ pub async fn save_email_config(Json(config): Json<EmailConfig>) -> Json<ApiRespo
         retry_interval: config.retry_interval,
     };
     
-    match utils::email::save_email_conf(&email_config) {
+    match email::save_email_conf(&email_config) {
         Ok(_) => Json(ApiResponse::ok_msg("ok".to_string(), "邮件配置已保存")),
         Err(e) => Json(ApiResponse::err(&format!("保存失败: {}", e))),
     }
@@ -482,7 +482,7 @@ pub async fn execute_workflow(workflow: Workflow, context: Option<serde_json::Va
                 tokio::time::sleep(tokio::time::Duration::from_secs(seconds)).await;
             }
             "email" => {
-                let email_conf = utils::email::get_email_config();
+                let email_conf = email::get_email_config();
                 let mut to = node.config.get("to").and_then(|v| v.as_str()).unwrap_or(&email_conf.to).to_string();
                 let mut subject = node.config.get("subject").and_then(|v| v.as_str()).unwrap_or("工作流通知").to_string();
                 let mut body = node.config.get("body").and_then(|v| v.as_str()).unwrap_or("工作流节点执行完成").to_string();
@@ -494,7 +494,7 @@ pub async fn execute_workflow(workflow: Workflow, context: Option<serde_json::Va
                     body = body.replace(&placeholder, &value.to_string());
                 }
                 
-                let config = utils::email::EmailConfig {
+                let config = email::EmailConfig {
                     enable_notify: true,
                     smtp_server: email_conf.smtp_server,
                     smtp_port: email_conf.smtp_port,
@@ -509,11 +509,11 @@ pub async fn execute_workflow(workflow: Workflow, context: Option<serde_json::Va
                     retry_interval: email_conf.retry_interval,
                 };
                 
-                let _ = utils::email::send_email(&config, None, None, None).await;
+                let _ = email::send_email(&config, None, None, None).await;
                 log("邮件已发送");
             }
             "email_attachment" => {
-                let email_conf = utils::email::get_email_config();
+                let email_conf = email::get_email_config();
                 let mut to = node.config.get("to").and_then(|v| v.as_str()).unwrap_or(&email_conf.to).to_string();
                 let mut subject = node.config.get("subject").and_then(|v| v.as_str()).unwrap_or("工作流通知").to_string();
                 let mut body = node.config.get("body").and_then(|v| v.as_str()).unwrap_or("工作流节点执行完成").to_string();
@@ -542,7 +542,7 @@ pub async fn execute_workflow(workflow: Workflow, context: Option<serde_json::Va
                     }
                 }
                 
-                let config = utils::email::EmailConfig {
+                let config = email::EmailConfig {
                     enable_notify: true,
                     smtp_server: email_conf.smtp_server,
                     smtp_port: email_conf.smtp_port,
@@ -557,7 +557,7 @@ pub async fn execute_workflow(workflow: Workflow, context: Option<serde_json::Va
                     retry_interval: email_conf.retry_interval,
                 };
                 
-                let _ = utils::email::send_email(&config, None, None, Some(attachments)).await;
+                let _ = email::send_email(&config, None, None, Some(attachments)).await;
                 log(&format!("邮件已发送，附件数: {}", attachments.len()));
             }
             "tts" => {

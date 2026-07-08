@@ -33,6 +33,7 @@ lettre = { version = "0.11", default-features = false, features = ["builder", "s
 
 # --- WebSocket ---
 tokio-tungstenite = "0.21"
+futures = "0.3"
 futures-util = "0.3"
 bytes = "1"
 
