@@ -20,12 +20,97 @@ fn ensure_dirs() {
     let _ = std::fs::create_dir_all(WORKFLOWS_DIR);
 }
 
+fn handle_event(event: utils::event_monitor::SystemEvent) {
+    use utils::event_monitor::SystemEvent;
+    
+    let workflows = api::system::list_workflows();
+    
+    let context = match &event {
+        SystemEvent::WifiConnected { ssid, signal_level } => {
+            serde_json::json!({
+                "wifi_ssid": ssid,
+                "wifi_signal": signal_level,
+                "event_type": "wifi_connected"
+            })
+        }
+        SystemEvent::WifiDisconnected => {
+            serde_json::json!({
+                "wifi_ssid": "",
+                "event_type": "wifi_disconnected"
+            })
+        }
+        SystemEvent::BatteryLow { capacity } => {
+            serde_json::json!({
+                "battery_capacity": capacity,
+                "event_type": "battery_low"
+            })
+        }
+        SystemEvent::BatteryCharging { capacity } => {
+            serde_json::json!({
+                "battery_capacity": capacity,
+                "event_type": "battery_charging"
+            })
+        }
+        SystemEvent::BatteryFull => {
+            serde_json::json!({
+                "battery_capacity": 100,
+                "event_type": "battery_full"
+            })
+        }
+        SystemEvent::ScreenOn => {
+            serde_json::json!({
+                "screen_on": true,
+                "event_type": "screen_on"
+            })
+        }
+        SystemEvent::ScreenOff => {
+            serde_json::json!({
+                "screen_on": false,
+                "event_type": "screen_off"
+            })
+        }
+    };
+
+    for workflow in workflows {
+        if !workflow.enabled {
+            continue;
+        }
+
+        let trigger_matches = match (&workflow.trigger_type, &event) {
+            ("wifi_connected", SystemEvent::WifiConnected { ssid, .. }) => {
+                workflow.trigger_config.wifi_ssid.is_empty() || workflow.trigger_config.wifi_ssid == *ssid
+            }
+            ("wifi_disconnected", SystemEvent::WifiDisconnected) => true,
+            ("battery_low", SystemEvent::BatteryLow { capacity }) => {
+                *capacity <= workflow.trigger_config.battery_threshold
+            }
+            ("battery_charging", SystemEvent::BatteryCharging { .. }) => true,
+            ("battery_full", SystemEvent::BatteryFull) => true,
+            ("screen_on", SystemEvent::ScreenOn) => true,
+            ("screen_off", SystemEvent::ScreenOff) => true,
+            _ => false,
+        };
+
+        if trigger_matches {
+            println!("[事件触发] 工作流: {} 被事件: {:?} 触发", workflow.name, event);
+            let wf = workflow.clone();
+            let ctx = context.clone();
+            tokio::spawn(async move {
+                api::system::execute_workflow(wf, Some(ctx)).await;
+            });
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     ensure_dirs();
 
     let mirror_state = MirrorState::new_shared();
+
+    utils::event_monitor::register_event_handler(handle_event);
+    utils::event_monitor::start_monitor(10000);
 
     tokio::spawn(async {
         utils::mqtt::start_mqtt().await;

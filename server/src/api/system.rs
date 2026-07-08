@@ -344,7 +344,7 @@ pub async fn run_workflow(Json(req): Json<WorkflowRunRequest>) -> Json<ApiRespon
 
     let wf = workflow.clone();
     tokio::spawn(async move {
-        execute_workflow(wf).await;
+        execute_workflow(wf, None).await;
     });
 
     Json(ApiResponse::ok(format!("工作流 {} 已开始执行", workflow.name)))
@@ -382,7 +382,7 @@ fn delete_workflow(id: &str) -> Result<(), std::io::Error> {
     fs::remove_file(path)
 }
 
-async fn execute_workflow(workflow: Workflow) {
+async fn execute_workflow(workflow: Workflow, context: Option<serde_json::Value>) {
     let log = |msg: &str| {
         let now: DateTime<Local> = Local::now();
         let log_msg = format!("[{}] [工作流: {}] {}", now.format("%Y-%m-%d %H:%M:%S"), workflow.name, msg);
@@ -415,9 +415,12 @@ async fn execute_workflow(workflow: Workflow) {
 
     let mut queue = vec![start.id.clone()];
     let mut visited = std::collections::HashSet::new();
+    let mut context_vars = context.unwrap_or(serde_json::json!({})).as_object().unwrap_or(&serde_json::Map::new()).clone();
+
+    let mut skip_nodes = std::collections::HashSet::new();
 
     while let Some(node_id) = queue.pop() {
-        if visited.contains(&node_id) {
+        if visited.contains(&node_id) || skip_nodes.contains(&node_id) {
             continue;
         }
         visited.insert(node_id.clone());
@@ -449,9 +452,16 @@ async fn execute_workflow(workflow: Workflow) {
                 }
             }
             "command" => {
-                let cmd = node.config.get("command")
+                let mut cmd = node.config.get("command")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                    .unwrap_or("")
+                    .to_string();
+                
+                for (key, value) in &context_vars {
+                    let placeholder = format!("{{{}}}", key);
+                    cmd = cmd.replace(&placeholder, &value.to_string());
+                }
+                
                 if !cmd.is_empty() {
                     match Command::new("sh").arg("-c").arg(cmd).output().await {
                         Ok(output) => {
@@ -473,9 +483,16 @@ async fn execute_workflow(workflow: Workflow) {
             }
             "email" => {
                 let email_conf = utils::email::get_email_config();
-                let to = node.config.get("to").and_then(|v| v.as_str()).unwrap_or(&email_conf.to).to_string();
-                let subject = node.config.get("subject").and_then(|v| v.as_str()).unwrap_or("工作流通知").to_string();
-                let body = node.config.get("body").and_then(|v| v.as_str()).unwrap_or("工作流节点执行完成").to_string();
+                let mut to = node.config.get("to").and_then(|v| v.as_str()).unwrap_or(&email_conf.to).to_string();
+                let mut subject = node.config.get("subject").and_then(|v| v.as_str()).unwrap_or("工作流通知").to_string();
+                let mut body = node.config.get("body").and_then(|v| v.as_str()).unwrap_or("工作流节点执行完成").to_string();
+                
+                for (key, value) in &context_vars {
+                    let placeholder = format!("{{{}}}", key);
+                    to = to.replace(&placeholder, &value.to_string());
+                    subject = subject.replace(&placeholder, &value.to_string());
+                    body = body.replace(&placeholder, &value.to_string());
+                }
                 
                 let config = utils::email::EmailConfig {
                     enable_notify: true,
@@ -497,9 +514,16 @@ async fn execute_workflow(workflow: Workflow) {
             }
             "email_attachment" => {
                 let email_conf = utils::email::get_email_config();
-                let to = node.config.get("to").and_then(|v| v.as_str()).unwrap_or(&email_conf.to).to_string();
-                let subject = node.config.get("subject").and_then(|v| v.as_str()).unwrap_or("工作流通知").to_string();
-                let body = node.config.get("body").and_then(|v| v.as_str()).unwrap_or("工作流节点执行完成").to_string();
+                let mut to = node.config.get("to").and_then(|v| v.as_str()).unwrap_or(&email_conf.to).to_string();
+                let mut subject = node.config.get("subject").and_then(|v| v.as_str()).unwrap_or("工作流通知").to_string();
+                let mut body = node.config.get("body").and_then(|v| v.as_str()).unwrap_or("工作流节点执行完成").to_string();
+                
+                for (key, value) in &context_vars {
+                    let placeholder = format!("{{{}}}", key);
+                    to = to.replace(&placeholder, &value.to_string());
+                    subject = subject.replace(&placeholder, &value.to_string());
+                    body = body.replace(&placeholder, &value.to_string());
+                }
                 
                 let mut attachments = Vec::new();
                 if let Some(attachments_json) = node.config.get("attachments") {
@@ -537,11 +561,100 @@ async fn execute_workflow(workflow: Workflow) {
                 log(&format!("邮件已发送，附件数: {}", attachments.len()));
             }
             "tts" => {
-                let text = node.config.get("text").and_then(|v| v.as_str()).unwrap_or("");
+                let mut text = node.config.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                
+                for (key, value) in &context_vars {
+                    let placeholder = format!("{{{}}}", key);
+                    text = text.replace(&placeholder, &value.to_string());
+                }
+                
                 if !text.is_empty() {
                     let engine = node.config.get("engine").and_then(|v| v.as_str()).map(|s| s.to_string());
-                    let _ = utils::adb::tts_speak(text, engine).await;
+                    let _ = utils::adb::tts_speak(&text, engine).await;
                     log(&format!("TTS语音播放: {}", text));
+                }
+            }
+            "ai_generate" => {
+                let provider_id = node.config.get("provider_id").and_then(|v| v.as_str()).unwrap_or("default");
+                let mut prompt = node.config.get("prompt").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                
+                for (key, value) in &context_vars {
+                    let placeholder = format!("{{{}}}", key);
+                    prompt = prompt.replace(&placeholder, &value.to_string());
+                }
+                
+                if prompt.is_empty() {
+                    log("AI生成失败: 提示词为空");
+                    continue;
+                }
+                
+                let providers = crate::api::ai::get_ai_providers();
+                let provider = match providers.iter().find(|p| p.id == provider_id && p.enabled) {
+                    Some(p) => p,
+                    None => {
+                        log("AI生成失败: 未找到启用的AI提供商");
+                        continue;
+                    }
+                };
+                
+                match crate::api::ai::call_ai(provider, &prompt).await {
+                    Ok(response) => {
+                        log(&format!("AI生成成功"));
+                        let output_var = node.config.get("output_var").and_then(|v| v.as_str()).unwrap_or("ai_result");
+                        context_vars.insert(output_var.to_string(), serde_json::Value::String(response));
+                    }
+                    Err(e) => {
+                        log(&format!("AI生成失败: {}", e));
+                    }
+                }
+            }
+            "condition" => {
+                let expression = node.config.get("expression").and_then(|v| v.as_str()).unwrap_or("");
+                let true_next = node.config.get("true_next").and_then(|v| v.as_str()).unwrap_or("");
+                let false_next = node.config.get("false_next").and_then(|v| v.as_str()).unwrap_or("");
+                
+                let mut expr = expression.to_string();
+                for (key, value) in &context_vars {
+                    let placeholder = format!("{{{}}}", key);
+                    expr = expr.replace(&placeholder, &value.to_string());
+                }
+                
+                let result = evaluate_condition(&expr);
+                
+                if let Some(next_ids) = adj.get(&node_id) {
+                    for next_id in next_ids {
+                        let target_node = workflow.nodes.iter().find(|n| n.id == *next_id);
+                        if let Some(target) = target_node {
+                            let should_execute = if result && !true_next.is_empty() {
+                                target.label == true_next || target.id == true_next
+                            } else if !result && !false_next.is_empty() {
+                                target.label == false_next || target.id == false_next
+                            } else {
+                                result
+                            };
+                            
+                            if !should_execute {
+                                skip_nodes.insert(next_id.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            "mqtt_publish" => {
+                let topic = node.config.get("topic").and_then(|v| v.as_str()).unwrap_or("");
+                let mut payload = node.config.get("payload").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                
+                for (key, value) in &context_vars {
+                    let placeholder = format!("{{{}}}", key);
+                    payload = payload.replace(&placeholder, &value.to_string());
+                }
+                
+                if !topic.is_empty() {
+                    if let Err(e) = utils::mqtt::publish(topic, payload).await {
+                        log(&format!("MQTT发布失败: {}", e));
+                    } else {
+                        log(&format!("MQTT发布成功: {}", topic));
+                    }
                 }
             }
             "end" => {
@@ -555,9 +668,56 @@ async fn execute_workflow(workflow: Workflow) {
 
         if let Some(next_ids) = adj.get(&node_id) {
             for next_id in next_ids {
-                queue.push(next_id.clone());
+                if !skip_nodes.contains(next_id) {
+                    queue.push(next_id.clone());
+                }
             }
         }
+    }
+}
+
+fn evaluate_condition(expr: &str) -> bool {
+    let parts: Vec<&str> = expr.split_whitespace().collect();
+    if parts.len() < 3 {
+        return false;
+    }
+    
+    let left = parts[0];
+    let op = parts[1];
+    let right = parts[2];
+    
+    let left_val = if let Ok(n) = left.parse::<i32>() {
+        n
+    } else if let Ok(n) = left.parse::<f64>() {
+        n as i32
+    } else if left == "true" {
+        return op == "==" && right == "true" || op == "!=" && right != "true";
+    } else if left == "false" {
+        return op == "==" && right == "false" || op == "!=" && right != "false";
+    } else {
+        return left == right;
+    };
+    
+    let right_val = if let Ok(n) = right.parse::<i32>() {
+        n
+    } else if let Ok(n) = right.parse::<f64>() {
+        n as i32
+    } else if right == "true" {
+        1
+    } else if right == "false" {
+        0
+    } else {
+        return left == right;
+    };
+    
+    match op {
+        "==" => left_val == right_val,
+        "!=" => left_val != right_val,
+        ">" => left_val > right_val,
+        "<" => left_val < right_val,
+        ">=" => left_val >= right_val,
+        "<=" => left_val <= right_val,
+        _ => false,
     }
 }
 

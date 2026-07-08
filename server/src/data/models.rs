@@ -101,6 +101,16 @@ pub struct WorkflowEdge {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WorkflowTriggerConfig {
+    #[serde(default)]
+    pub wifi_ssid: String,
+    #[serde(default)]
+    pub battery_threshold: i32,
+    #[serde(default)]
+    pub screen_state: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Workflow {
     pub id: String,
     pub name: String,
@@ -109,6 +119,10 @@ pub struct Workflow {
     pub edges: Vec<WorkflowEdge>,
     #[serde(default)]
     pub enabled: bool,
+    #[serde(default)]
+    pub trigger_type: String,
+    #[serde(default)]
+    pub trigger_config: WorkflowTriggerConfig,
 }
 
 #[derive(Debug, Deserialize)]

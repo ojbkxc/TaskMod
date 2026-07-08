@@ -300,6 +300,22 @@
                     <button class="btn btn-primary" onclick="saveWorkflow()" style="margin-left: 10px;">保存</button>
                     <button class="btn btn-success" onclick="runCurrentWorkflow()" style="margin-left: 10px;">运行</button>
                 </div>
+                <div style="margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+                    <h4 style="margin: 0 0 10px 0; font-size: 14px;">触发器配置</h4>
+                    <select id="wf-trigger-type" style="width: 180px; margin-right: 10px;">
+                        <option value="">手动触发</option>
+                        <option value="wifi_connected">WiFi连接</option>
+                        <option value="wifi_disconnected">WiFi断开</option>
+                        <option value="battery_low">低电量</option>
+                        <option value="battery_charging">充电中</option>
+                        <option value="battery_full">电池充满</option>
+                        <option value="screen_on">屏幕点亮</option>
+                        <option value="screen_off">屏幕熄灭</option>
+                    </select>
+                    <input type="text" id="wf-trigger-ssid" placeholder="WiFi SSID (仅WiFi触发时)" style="width: 200px; margin-right: 10px; display: none;" id="trigger-ssid-input">
+                    <input type="number" id="wf-trigger-battery" placeholder="电量阈值 (仅低电量触发时)" style="width: 100px; display: none;" id="trigger-battery-input">
+                    <label><input type="checkbox" id="wf-enabled" style="margin-left: 10px;"> 启用工作流</label>
+                </div>
                 <div style="display: flex; gap: 10px;">
                     <div style="width: 200px; background: #f8f9fa; padding: 10px; border-radius: 8px;">
                         <h3 style="font-size: 14px; margin-bottom: 10px;">节点类型</h3>
@@ -309,6 +325,11 @@
                             <div class="palette-item" draggable="true" data-type="command" ondragstart="onDragStart(event, 'command')">执行命令</div>
                             <div class="palette-item" draggable="true" data-type="delay" ondragstart="onDragStart(event, 'delay')">延时等待</div>
                             <div class="palette-item" draggable="true" data-type="email" ondragstart="onDragStart(event, 'email')">发送邮件</div>
+                            <div class="palette-item" draggable="true" data-type="email_attachment" ondragstart="onDragStart(event, 'email_attachment')">带附件邮件</div>
+                            <div class="palette-item" draggable="true" data-type="tts" ondragstart="onDragStart(event, 'tts')">语音播报</div>
+                            <div class="palette-item" draggable="true" data-type="ai_generate" ondragstart="onDragStart(event, 'ai_generate')">AI生成文本</div>
+                            <div class="palette-item" draggable="true" data-type="condition" ondragstart="onDragStart(event, 'condition')">条件判断</div>
+                            <div class="palette-item" draggable="true" data-type="mqtt_publish" ondragstart="onDragStart(event, 'mqtt_publish')">MQTT发布</div>
                             <div class="palette-item" draggable="true" data-type="end" ondragstart="onDragStart(event, 'end')">结束</div>
                         </div>
                     </div>
@@ -1112,6 +1133,17 @@
         let nodeIdCounter = 0;
 
         // 加载工作流列表
+        const triggerLabels = {
+            '': '手动',
+            'wifi_connected': 'WiFi连接',
+            'wifi_disconnected': 'WiFi断开',
+            'battery_low': '低电量',
+            'battery_charging': '充电中',
+            'battery_full': '电池充满',
+            'screen_on': '屏幕点亮',
+            'screen_off': '屏幕熄灭'
+        };
+
         async function loadWorkflows() {
             const data = await api('/api/workflows');
             const list = document.getElementById('workflow-list');
@@ -1120,6 +1152,8 @@
                     <div class="wf-item">
                         <span class="name">${wf.name}</span>
                         <span class="desc">${wf.description || ''}</span>
+                        <span style="font-size: 12px; padding: 2px 6px; border-radius: 4px; background: ${wf.enabled ? '#d4edda' : '#f8d7da'}; color: ${wf.enabled ? '#155724' : '#721c24'};">${wf.enabled ? '已启用' : '已禁用'}</span>
+                        <span style="font-size: 12px; padding: 2px 6px; border-radius: 4px; background: #e2e3e5; color: #383d41;">${triggerLabels[wf.trigger_type] || '手动'}</span>
                         <button class="btn btn-primary" onclick="editWorkflow('${wf.id}')">编辑</button>
                         <button class="btn btn-success" onclick="runWorkflow('${wf.id}')">运行</button>
                         <button class="btn btn-danger" onclick="deleteWorkflow('${wf.id}')">删除</button>
@@ -1133,15 +1167,20 @@
         // 新建工作流
         function createNewWorkflow() {
             const id = 'wf_' + Date.now();
-            currentWorkflow = { id, name: '新工作流', description: '', nodes: [], edges: [], enabled: true };
+            currentWorkflow = { id, name: '新工作流', description: '', nodes: [], edges: [], enabled: true, trigger_type: '', trigger_config: { wifi_ssid: '', battery_threshold: 20 } };
             wfNodes = [];
             wfEdges = [];
             nodeIdCounter = 0;
             document.getElementById('wf-name').value = currentWorkflow.name;
             document.getElementById('wf-desc').value = '';
+            document.getElementById('wf-trigger-type').value = '';
+            document.getElementById('wf-enabled').checked = true;
+            document.getElementById('wf-trigger-ssid').value = '';
+            document.getElementById('wf-trigger-battery').value = '20';
+            document.getElementById('wf-trigger-ssid').style.display = 'none';
+            document.getElementById('wf-trigger-battery').style.display = 'none';
             document.getElementById('workflow-editor-card').style.display = 'block';
             document.getElementById('workflow-name').textContent = currentWorkflow.name;
-            // 添加默认开始和结束节点
             addNode('start', 100, 250, '开始');
             addNode('end', 700, 250, '结束');
             drawCanvas();
@@ -1157,6 +1196,16 @@
                 nodeIdCounter = wfNodes.length;
                 document.getElementById('wf-name').value = currentWorkflow.name;
                 document.getElementById('wf-desc').value = currentWorkflow.description;
+                document.getElementById('wf-trigger-type').value = currentWorkflow.trigger_type || '';
+                document.getElementById('wf-enabled').checked = currentWorkflow.enabled || false;
+                document.getElementById('wf-trigger-ssid').value = currentWorkflow.trigger_config?.wifi_ssid || '';
+                document.getElementById('wf-trigger-battery').value = currentWorkflow.trigger_config?.battery_threshold || '20';
+                
+                const ssidInput = document.getElementById('wf-trigger-ssid');
+                const batteryInput = document.getElementById('wf-trigger-battery');
+                ssidInput.style.display = (currentWorkflow.trigger_type === 'wifi_connected') ? 'inline-block' : 'none';
+                batteryInput.style.display = (currentWorkflow.trigger_type === 'battery_low') ? 'inline-block' : 'none';
+                
                 document.getElementById('workflow-editor-card').style.display = 'block';
                 document.getElementById('workflow-name').textContent = currentWorkflow.name;
                 drawCanvas();
@@ -1170,12 +1219,25 @@
             currentWorkflow.description = document.getElementById('wf-desc').value;
             currentWorkflow.nodes = wfNodes;
             currentWorkflow.edges = wfEdges;
+            currentWorkflow.trigger_type = document.getElementById('wf-trigger-type').value;
+            currentWorkflow.enabled = document.getElementById('wf-enabled').checked;
+            currentWorkflow.trigger_config = {
+                wifi_ssid: document.getElementById('wf-trigger-ssid').value,
+                battery_threshold: parseInt(document.getElementById('wf-trigger-battery').value || '20')
+            };
             const data = await api('/api/workflows', {
                 method: 'POST',
                 body: JSON.stringify({ workflow: currentWorkflow })
             });
             showToast(data.message || (data.success ? '保存成功' : '保存失败'), data.success ? 'success' : 'error');
         }
+
+        document.getElementById('wf-trigger-type').addEventListener('change', function() {
+            const ssidInput = document.getElementById('wf-trigger-ssid');
+            const batteryInput = document.getElementById('wf-trigger-battery');
+            ssidInput.style.display = this.value === 'wifi_connected' ? 'inline-block' : 'none';
+            batteryInput.style.display = this.value === 'battery_low' ? 'inline-block' : 'none';
+        });
 
         // 删除工作流
         async function deleteWorkflow(id) {
@@ -1380,6 +1442,28 @@
                     html += `<div class="form-group"><label>主题</label><input type="text" id="nc-subject" value="${node.config.subject || ''}"></div>`;
                     html += `<div class="form-group"><label>内容</label><textarea id="nc-body" rows="3">${node.config.body || ''}</textarea></div>`;
                     break;
+                case 'email_attachment':
+                    html += `<div class="form-group"><label>收件人</label><input type="text" id="nc-to" value="${node.config.to || ''}"></div>`;
+                    html += `<div class="form-group"><label>主题</label><input type="text" id="nc-subject" value="${node.config.subject || ''}"></div>`;
+                    html += `<div class="form-group"><label>内容</label><textarea id="nc-body" rows="3">${node.config.body || ''}</textarea></div>`;
+                    html += `<div class="form-group"><label>附件路径</label><input type="text" id="nc-attachments" value="${node.config.attachments || ''}" placeholder="多个用逗号分隔"></div>`;
+                    break;
+                case 'tts':
+                    html += `<div class="form-group"><label>播放文本</label><textarea id="nc-text" rows="3">${node.config.text || ''}</textarea></div>`;
+                    html += `<div class="form-group"><label>TTS引擎 (留空使用默认)</label><input type="text" id="nc-engine" value="${node.config.engine || ''}"></div>`;
+                    break;
+                case 'ai_generate':
+                    html += `<div class="form-group"><label>AI提供商ID</label><input type="text" id="nc-provider_id" value="${node.config.provider_id || 'default'}" placeholder="default"></div>`;
+                    html += `<div class="form-group"><label>提示词</label><textarea id="nc-prompt" rows="4">${node.config.prompt || ''}</textarea></div>`;
+                    html += `<div class="form-group"><label>输出变量名</label><input type="text" id="nc-output_var" value="${node.config.output_var || 'ai_result'}" placeholder="ai_result"></div>`;
+                    break;
+                case 'condition':
+                    html += `<div class="form-group"><label>条件表达式</label><input type="text" id="nc-expression" value="${node.config.expression || ''}" placeholder="例如: wifi_ssid == MyHomeWiFi"></div>`;
+                    break;
+                case 'mqtt_publish':
+                    html += `<div class="form-group"><label>MQTT主题</label><input type="text" id="nc-topic" value="${node.config.topic || ''}" placeholder="例如: home/livingroom/light"></div>`;
+                    html += `<div class="form-group"><label>消息内容</label><input type="text" id="nc-payload" value="${node.config.payload || ''}" placeholder="例如: ON"></div>`;
+                    break;
             }
             form.innerHTML = html;
             selectedNode = node.id;
@@ -1404,6 +1488,28 @@
                     node.config.to = document.getElementById('nc-to')?.value || '';
                     node.config.subject = document.getElementById('nc-subject')?.value || '';
                     node.config.body = document.getElementById('nc-body')?.value || '';
+                    break;
+                case 'email_attachment':
+                    node.config.to = document.getElementById('nc-to')?.value || '';
+                    node.config.subject = document.getElementById('nc-subject')?.value || '';
+                    node.config.body = document.getElementById('nc-body')?.value || '';
+                    node.config.attachments = document.getElementById('nc-attachments')?.value || '';
+                    break;
+                case 'tts':
+                    node.config.text = document.getElementById('nc-text')?.value || '';
+                    node.config.engine = document.getElementById('nc-engine')?.value || '';
+                    break;
+                case 'ai_generate':
+                    node.config.provider_id = document.getElementById('nc-provider_id')?.value || 'default';
+                    node.config.prompt = document.getElementById('nc-prompt')?.value || '';
+                    node.config.output_var = document.getElementById('nc-output_var')?.value || 'ai_result';
+                    break;
+                case 'condition':
+                    node.config.expression = document.getElementById('nc-expression')?.value || '';
+                    break;
+                case 'mqtt_publish':
+                    node.config.topic = document.getElementById('nc-topic')?.value || '';
+                    node.config.payload = document.getElementById('nc-payload')?.value || '';
                     break;
             }
             hideModal('nodeConfigModal');

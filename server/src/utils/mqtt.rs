@@ -227,6 +227,16 @@ pub fn get_mqtt_config() -> Option<MqttConfig> {
     parse_mqtt_conf()
 }
 
+pub async fn publish(topic: &str, payload: String) -> Result<(), String> {
+    let client = match MQTT_CLIENT.lock().unwrap().as_ref() {
+        Some(c) => c.clone(),
+        None => return Err("MQTT客户端未连接".to_string()),
+    };
+    
+    let _ = client.publish(topic, QoS::AtLeastOnce, false, payload).await;
+    Ok(())
+}
+
 pub fn save_mqtt_config(config: &MqttConfig) -> Result<(), std::io::Error> {
     let content = format!(
         "# TaskMod MQTT配置\n# enabled=true 启用MQTT功能\n# 不配置或enabled=false则不加载MQTT，零内存占用\n\nenabled={}\nbroker={}\ntopic_prefix={}\nusername={}\npassword={}\nclient_id={}",
