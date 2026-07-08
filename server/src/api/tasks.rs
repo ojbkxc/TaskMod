@@ -46,21 +46,40 @@ pub async fn add_task(Json(req): Json<AddTaskRequest>) -> Json<ApiResponse<Strin
 
     match fs::write(SCHEDULE_FILE, &content) {
         Ok(_) => Json(ApiResponse::ok_msg("ok".to_string(), "任务已添加，30秒内自动生效")),
-        Err(e) => Json(ApiResponse::err(&format!("添加失败: {}", e))),
+        Err(e) => {
+            // Try creating directory and retry
+            if let Some(parent) = Path::new(SCHEDULE_FILE).parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            match fs::write(SCHEDULE_FILE, &content) {
+                Ok(_) => Json(ApiResponse::ok_msg("ok".to_string(), "任务已添加，30秒内自动生效")),
+                Err(e) => Json(ApiResponse::err(&format!("添加失败: {}", e))),
+            }
+        }
     }
 }
 
 pub async fn delete_task(AxumPath(id): AxumPath<usize>) -> Json<ApiResponse<String>> {
     let content = fs::read_to_string(SCHEDULE_FILE).unwrap_or_default();
-    let mut lines: Vec<&str> = content.lines().collect();
-    
-    if id > lines.len() {
+    let lines: Vec<&str> = content.lines().collect();
+
+    // Build index mapping: filtered_index -> raw_line_index
+    let mut filtered_indices: Vec<usize> = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        if !line.trim().is_empty() && !line.starts_with('#') {
+            filtered_indices.push(i);
+        }
+    }
+
+    if id == 0 || id > filtered_indices.len() {
         return Json(ApiResponse::err("任务不存在"));
     }
-    
-    lines.remove(id - 1);
-    
-    match fs::write(SCHEDULE_FILE, lines.join("\n")) {
+
+    let raw_index = filtered_indices[id - 1];
+    let mut new_lines: Vec<&str> = lines.to_vec();
+    new_lines.remove(raw_index);
+
+    match fs::write(SCHEDULE_FILE, new_lines.join("\n")) {
         Ok(_) => Json(ApiResponse::ok_msg("ok".to_string(), "任务已删除")),
         Err(e) => Json(ApiResponse::err(&format!("删除失败: {}", e))),
     }
@@ -76,7 +95,7 @@ pub async fn trigger_script(Json(req): Json<TriggerRequest>) -> Json<ApiResponse
 
     let script_name_clone = script_name.clone();
     tokio::spawn(async move {
-        match Command::new("sh").arg(&script_path).output().await {
+        match Command::new("/system/bin/sh").arg(&script_path).output().await {
             Ok(output) => {
                 let result = String::from_utf8_lossy(&output.stdout);
                 let now: DateTime<Local> = Local::now();

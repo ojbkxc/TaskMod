@@ -115,6 +115,9 @@ pub fn save_email_conf(config: &EmailConfig) -> Result<(), std::io::Error> {
         config.max_retries,
         config.retry_interval
     );
+    if let Some(parent) = std::path::Path::new(EMAIL_CONF).parent() {
+        let _ = fs::create_dir_all(parent);
+    }
     fs::write(EMAIL_CONF, content)
 }
 

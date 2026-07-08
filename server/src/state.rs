@@ -7,6 +7,7 @@ pub struct MirrorState {
     pub audio_tx: Arc<RwLock<Option<broadcast::Sender<Vec<u8>>>>>,
     pub is_running: Arc<AtomicBool>,
     pub original_brightness: Arc<RwLock<Option<String>>>,
+    pub last_touch: Arc<RwLock<Option<(i32, i32)>>>,
 }
 
 impl MirrorState {
@@ -16,6 +17,7 @@ impl MirrorState {
             audio_tx: Arc::new(RwLock::new(None)),
             is_running: Arc::new(AtomicBool::new(false)),
             original_brightness: Arc::new(RwLock::new(None)),
+            last_touch: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -57,6 +59,14 @@ impl MirrorState {
 
     pub fn is_running(&self) -> bool {
         self.is_running.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn set_last_touch(&self, pos: Option<(i32, i32)>) {
+        *self.last_touch.write().unwrap() = pos;
+    }
+
+    pub fn get_last_touch(&self) -> Option<(i32, i32)> {
+        *self.last_touch.read().unwrap()
     }
 }
 

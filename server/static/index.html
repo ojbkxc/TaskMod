@@ -947,6 +947,7 @@
                         <span style="flex:1">${name}</span>
                         <button class="btn btn-primary" onclick="editScript('${name}')">编辑</button>
                         <button class="btn btn-success" onclick="triggerScript('${name}')">执行</button>
+                        <button class="btn btn-danger" onclick="deleteScript('${name}')">删除</button>
                     </div>
                 `).join('');
             } else {
@@ -970,6 +971,16 @@
                 body: JSON.stringify({ content: document.getElementById('script-content').value })
             });
             showToast(data.message || (data.success ? '保存成功' : '保存失败'), data.success ? 'success' : 'error');
+        }
+
+        async function deleteScript(name) {
+            if (!confirm(`确定删除脚本 ${name}？`)) return;
+            const data = await api(`/api/scripts/${name}`, { method: 'DELETE' });
+            showToast(data.message || (data.success ? '已删除' : '删除失败'), data.success ? 'success' : 'error');
+            if (data.success) {
+                loadScripts();
+                document.getElementById('script-editor-card').style.display = 'none';
+            }
         }
 
         async function createScript() {
@@ -2164,9 +2175,14 @@
         }
 
         async function sendSwipe(dx, dy) {
+            // Calculate swipe from center of screen
+            const cx = Math.round(videoWidth / 2);
+            const cy = Math.round(videoHeight / 2);
+            const x2 = Math.round(cx + dx);
+            const y2 = Math.round(cy + dy);
             const data = await api('/api/mirror/control', {
                 method: 'POST',
-                body: JSON.stringify({ action: 'swipe', dx, dy })
+                body: JSON.stringify({ action: 'swipe', x: cx, y: cy, x2, y2, duration: 300 })
             });
             if (!data.success) {
                 showToast(data.message || '滑动失败', 'error');
@@ -2204,14 +2220,66 @@
 
         document.getElementById('mirror-canvas').addEventListener('click', async (e) => {
             if (!mirrorWs) return;
-            
+
             const rect = mirrorCanvas.getBoundingClientRect();
             const x = ((e.clientX - rect.left) / rect.width) * videoWidth;
             const y = ((e.clientY - rect.top) / rect.height) * videoHeight;
-            
+
             await api('/api/mirror/control', {
                 method: 'POST',
                 body: JSON.stringify({ action: 'touch', x, y })
+            });
+        });
+
+        // Mouse drag support
+        let mouseDown = false;
+        let mouseDownTime = 0;
+
+        document.getElementById('mirror-canvas').addEventListener('mousedown', async (e) => {
+            if (!mirrorWs || e.button !== 0) return;
+            mouseDown = true;
+            mouseDownTime = Date.now();
+
+            const rect = mirrorCanvas.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * videoWidth;
+            const y = ((e.clientY - rect.top) / rect.height) * videoHeight;
+
+            await api('/api/mirror/control', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'touch_down', x, y })
+            });
+        });
+
+        document.getElementById('mirror-canvas').addEventListener('mousemove', async (e) => {
+            if (!mirrorWs || !mouseDown) return;
+
+            const rect = mirrorCanvas.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * videoWidth;
+            const y = ((e.clientY - rect.top) / rect.height) * videoHeight;
+
+            await api('/api/mirror/control', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'touch_move', x, y })
+            });
+        });
+
+        document.getElementById('mirror-canvas').addEventListener('mouseup', async () => {
+            if (!mirrorWs || !mouseDown) return;
+            mouseDown = false;
+
+            await api('/api/mirror/control', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'touch_up' })
+            });
+        });
+
+        document.getElementById('mirror-canvas').addEventListener('mouseleave', async () => {
+            if (!mirrorWs || !mouseDown) return;
+            mouseDown = false;
+
+            await api('/api/mirror/control', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'touch_up' })
             });
         });
 
@@ -2253,6 +2321,22 @@
                 body: JSON.stringify({ action: 'touch_up' })
             });
         });
+
+        // Mouse wheel scroll support
+        document.getElementById('mirror-canvas').addEventListener('wheel', async (e) => {
+            e.preventDefault();
+            if (!mirrorWs) return;
+
+            const rect = mirrorCanvas.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * videoWidth;
+            const y = ((e.clientY - rect.top) / rect.height) * videoHeight;
+            const dy = e.deltaY > 0 ? -300 : 300; // scroll down or up
+
+            await api('/api/mirror/control', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'scroll', x, y, dy })
+            });
+        }, { passive: false });
 
         // === AI相关函数 ===
         let aiChatWs = null;
@@ -2358,6 +2442,12 @@
                 try {
                     const data = JSON.parse(event.data);
                     switch (data.type) {
+                        case 'stream':
+                            appendStreamMessage(data.content);
+                            break;
+                        case 'stream_end':
+                            finalizeStreamMessage();
+                            break;
                         case 'message':
                             addAiMessage('ai', data.content);
                             break;
@@ -2407,13 +2497,42 @@
             aiChatWs.send(JSON.stringify({ provider_id: providerId, message }));
         }
 
+        let currentStreamDiv = null;
+
+        function appendStreamMessage(content) {
+            const container = document.getElementById('ai-chat-messages');
+            if (!currentStreamDiv) {
+                currentStreamDiv = document.createElement('div');
+                currentStreamDiv.style.marginBottom = '10px';
+                currentStreamDiv.style.padding = '8px';
+                currentStreamDiv.style.borderRadius = '8px';
+                currentStreamDiv.style.background = '#e9ecef';
+                currentStreamDiv.style.color = '#333';
+                currentStreamDiv.style.whiteSpace = 'pre-wrap';
+                currentStreamDiv.style.wordBreak = 'break-word';
+                currentStreamDiv.dataset.fullContent = '';
+                container.appendChild(currentStreamDiv);
+            }
+            currentStreamDiv.dataset.fullContent += content;
+            currentStreamDiv.textContent = currentStreamDiv.dataset.fullContent;
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function finalizeStreamMessage() {
+            currentStreamDiv = null;
+        }
+
         function addAiMessage(type, content) {
+            // Reset stream div when a non-stream message arrives
+            if (type !== 'stream') {
+                finalizeStreamMessage();
+            }
             const container = document.getElementById('ai-chat-messages');
             const div = document.createElement('div');
             div.style.marginBottom = '10px';
             div.style.padding = '8px';
             div.style.borderRadius = '8px';
-            
+
             if (type === 'user') {
                 div.style.background = '#667eea';
                 div.style.color = 'white';
@@ -2562,7 +2681,7 @@
             const select = document.getElementById('tts-engine');
             if (data.success && data.data) {
                 select.innerHTML = '<option value="">默认引擎</option>' + 
-                    data.data.map(e => `<option value="${e.id}">${e.name}</option>`).join('');
+                    data.data.map(e => `<option value="${e.package_name}">${e.label}</option>`).join('');
             }
         }
 

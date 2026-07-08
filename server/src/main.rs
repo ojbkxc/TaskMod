@@ -135,7 +135,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/screenshots/take", post(api::system::take_screenshot))
         .route("/api/screenshots/:filename", get(api::system::get_screenshot).delete(api::system::delete_screenshot))
         .route("/api/scripts", get(api::scripts::list_scripts))
-        .route("/api/scripts/:name", get(api::scripts::get_script).put(api::scripts::save_script))
+        .route("/api/scripts/:name", get(api::scripts::get_script).put(api::scripts::save_script).delete(api::scripts::delete_script))
         .route("/api/trigger", post(api::tasks::trigger_script))
         .route("/api/command", post(api::system::exec_command))
         .route("/api/config", get(api::system::get_config).put(api::system::update_config))

@@ -247,5 +247,8 @@ pub fn save_mqtt_config(config: &MqttConfig) -> Result<(), std::io::Error> {
         config.password,
         config.client_id
     );
+    if let Some(parent) = std::path::Path::new(MQTT_CONF).parent() {
+        let _ = fs::create_dir_all(parent);
+    }
     fs::write(MQTT_CONF, content)
 }

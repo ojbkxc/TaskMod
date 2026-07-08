@@ -107,7 +107,7 @@ pub async fn exec_command(Json(req): Json<CommandRequest>) -> Json<ApiResponse<S
         return Json(ApiResponse::err("命令不能为空"));
     }
 
-    match Command::new("sh").arg("-c").arg(cmd).output().await {
+    match Command::new("/system/bin/sh").arg("-c").arg(cmd).output().await {
         Ok(output) => {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);

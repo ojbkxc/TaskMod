@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
+use std::process::Stdio;
 use tokio::sync::broadcast;
 use tokio::time::Duration;
 
@@ -30,6 +31,7 @@ pub struct ControlRequest {
     text: Option<String>,
     dx: Option<f32>,
     dy: Option<f32>,
+    duration: Option<u64>,
 }
 
 pub async fn start_mirror(
@@ -37,7 +39,7 @@ pub async fn start_mirror(
     Json(req): Json<MirrorStartRequest>,
 ) -> Json<ApiResponse<String>> {
     let bit_rate = req.bit_rate.unwrap_or(2000000);
-    let fps = req.fps.unwrap_or(30);
+    let _fps = req.fps.unwrap_or(30);
     let keep_screen = req.keep_screen.unwrap_or(true);
 
     let original_brightness = if keep_screen {
@@ -83,9 +85,8 @@ pub async fn start_mirror(
             cmd.arg("--output-format=h264")
                 .arg("--bit-rate")
                 .arg(bit_rate.to_string())
-                .arg("--fps")
-                .arg(fps.to_string())
-                .arg("-");
+                .arg("-")
+                .stdout(Stdio::piped());
 
             let mut process = match cmd.spawn() {
                 Ok(p) => p,
@@ -95,7 +96,14 @@ pub async fn start_mirror(
                 }
             };
 
-            let stdout = process.stdout.take().unwrap();
+            let stdout = match process.stdout.take() {
+                Some(s) => s,
+                None => {
+                    let _ = process.kill().await;
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+            };
             let mut reader = tokio::io::BufReader::new(stdout);
             let mut residual = Vec::new();
 
@@ -175,7 +183,8 @@ pub async fn start_mirror(
                 .arg("-b")
                 .arg("16")
                 .arg("-c")
-                .arg("1");
+                .arg("1")
+                .stdout(Stdio::piped());
 
             let mut process = match cmd.spawn() {
                 Ok(p) => p,
@@ -185,7 +194,14 @@ pub async fn start_mirror(
                 }
             };
 
-            let stdout = process.stdout.take().unwrap();
+            let stdout = match process.stdout.take() {
+                Some(s) => s,
+                None => {
+                    let _ = process.kill().await;
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+            };
             let mut reader = tokio::io::BufReader::new(stdout);
             let mut buf = [0u8; 4096];
             let mut header_buf = Vec::new();
@@ -252,33 +268,61 @@ pub async fn stop_mirror(State(state): State<SharedMirrorState>) -> Json<ApiResp
 }
 
 pub async fn send_control(
-    State(_state): State<SharedMirrorState>,
+    State(state): State<SharedMirrorState>,
     Json(req): Json<ControlRequest>,
 ) -> Json<ApiResponse<String>> {
     let result = match req.action.as_str() {
-        "touch" | "touch_down" => {
+        "touch" => {
             let x = req.x.unwrap_or(0.0) as i32;
             let y = req.y.unwrap_or(0.0) as i32;
-            Command::new("input")
-                .arg("tap")
-                .arg(x.to_string())
-                .arg(y.to_string())
-                .status()
-                .await
-        }
-        "touch_move" => {
-            let x = req.x.unwrap_or(0.0) as i32;
-            let y = req.y.unwrap_or(0.0) as i32;
+            // Use swipe to same point for more reliable tap
             Command::new("input")
                 .arg("swipe")
                 .arg(x.to_string())
                 .arg(y.to_string())
                 .arg(x.to_string())
                 .arg(y.to_string())
+                .arg("1")
                 .status()
                 .await
         }
-        "touch_up" => Ok(std::process::ExitStatus::default()),
+        "touch_down" => {
+            let x = req.x.unwrap_or(0.0) as i32;
+            let y = req.y.unwrap_or(0.0) as i32;
+            state.set_last_touch(Some((x, y)));
+            // Start a long swipe at the touch point to simulate hold
+            Command::new("input")
+                .arg("swipe")
+                .arg(x.to_string())
+                .arg(y.to_string())
+                .arg(x.to_string())
+                .arg(y.to_string())
+                .arg("100000")
+                .status()
+                .await
+        }
+        "touch_move" => {
+            let x = req.x.unwrap_or(0.0) as i32;
+            let y = req.y.unwrap_or(0.0) as i32;
+            if let Some((prev_x, prev_y)) = state.get_last_touch() {
+                // Swipe from previous position to current
+                let _ = Command::new("input")
+                    .arg("swipe")
+                    .arg(prev_x.to_string())
+                    .arg(prev_y.to_string())
+                    .arg(x.to_string())
+                    .arg(y.to_string())
+                    .arg("50")
+                    .status()
+                    .await;
+            }
+            state.set_last_touch(Some((x, y)));
+            return Json(ApiResponse::ok("移动完成".to_string()));
+        }
+        "touch_up" => {
+            state.set_last_touch(None);
+            return Json(ApiResponse::ok("抬起完成".to_string()));
+        }
         "back" => Command::new("input").arg("keyevent").arg("4").status().await,
         "home" => Command::new("input").arg("keyevent").arg("3").status().await,
         "recents" => Command::new("input").arg("keyevent").arg("187").status().await,
@@ -294,31 +338,34 @@ pub async fn send_control(
             let y1 = req.y.unwrap_or(0.0) as i32;
             let x2 = req.x2.unwrap_or(0.0) as i32;
             let y2 = req.y2.unwrap_or(0.0) as i32;
+            let duration = req.duration.unwrap_or(300);
             Command::new("input")
                 .arg("swipe")
                 .arg(x1.to_string())
                 .arg(y1.to_string())
                 .arg(x2.to_string())
                 .arg(y2.to_string())
+                .arg(duration.to_string())
                 .status()
                 .await
         }
         "scroll" => {
             let x = req.x.unwrap_or(0.0) as i32;
             let y = req.y.unwrap_or(0.0) as i32;
-            let dx = req.dx.unwrap_or(0.0) as i32;
             let dy = req.dy.unwrap_or(0.0) as i32;
+            // scroll is not a valid input command, use swipe instead
             Command::new("input")
-                .arg("scroll")
+                .arg("swipe")
                 .arg(x.to_string())
                 .arg(y.to_string())
-                .arg(dx.to_string())
-                .arg(dy.to_string())
+                .arg(x.to_string())
+                .arg((y + dy).to_string())
+                .arg("300")
                 .status()
                 .await
         }
         "keyevent" => {
-            let keycode = req.keycode.unwrap_or(0) as i32;
+            let keycode = req.keycode.or(req.key_code).unwrap_or(0) as i32;
             Command::new("input")
                 .arg("keyevent")
                 .arg(keycode.to_string())
@@ -351,8 +398,8 @@ pub async fn send_control(
                 Err(e) => return Json(ApiResponse::err(&format!("获取失败: {}", e))),
             }
         }
-        "screen_on" => Command::new("input").arg("keyevent").arg("26").status().await,
-        "screen_off" => Command::new("input").arg("keyevent").arg("26").status().await,
+        "screen_on" => Command::new("input").arg("keyevent").arg("224").status().await,
+        "screen_off" => Command::new("input").arg("keyevent").arg("223").status().await,
         "start_app" => {
             let pkg = req.text.unwrap_or_default();
             Command::new("monkey")

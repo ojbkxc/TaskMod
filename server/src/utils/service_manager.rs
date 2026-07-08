@@ -107,7 +107,10 @@ pub fn unload_service(id: &str) -> Result<(), String> {
             None => return Err(format!("服务不存在: {}", id)),
         };
 
-        let info = inner.service_info.get_mut(id).unwrap();
+        let info = match inner.service_info.get_mut(id) {
+            Some(info) => info,
+            None => return Err(format!("服务信息不存在: {}", id)),
+        };
 
         if info.ref_count > 0 {
             info.ref_count -= 1;

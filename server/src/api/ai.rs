@@ -206,6 +206,7 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                         let mut stream = response.bytes_stream();
                         let mut full_response = String::new();
                         let mut has_tool_call = false;
+                        let mut streaming_msg_sent = false;
 
                         let mut tool_call_fragments: HashMap<usize, serde_json::Value> = HashMap::new();
                         let mut incomplete_line = String::new();
@@ -233,7 +234,18 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                                                 if let Some(choices) = json_data.get("choices") {
                                                     if let Some(first) = choices.as_array().and_then(|a| a.first()) {
                                                         if let Some(delta) = first.get("delta") {
-                                                            full_response.push_str(delta.get("content").and_then(|c| c.as_str()).unwrap_or(""));
+                                                            let content = delta.get("content").and_then(|c| c.as_str()).unwrap_or("");
+                                                            if !content.is_empty() {
+                                                                full_response.push_str(content);
+                                                                // Send streaming chunk to client
+                                                                let _ = write.send(axum::extract::ws::Message::Text(
+                                                                    serde_json::to_string(&json!({
+                                                                        "type": "stream",
+                                                                        "content": content
+                                                                    })).unwrap_or_default()
+                                                                )).await;
+                                                                streaming_msg_sent = true;
+                                                            }
                                                             if let Some(tc) = delta.get("tool_calls") {
                                                                 if let Some(tc_array) = tc.as_array() {
                                                                     for tc_item in tc_array {
@@ -275,12 +287,15 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                         tool_calls.sort_by_key(|tc| tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0));
 
                         if !full_response.is_empty() {
-                            let _ = write.send(axum::extract::ws::Message::Text(
-                                serde_json::to_string(&json!({
-                                    "type": "message",
-                                    "content": full_response
-                                })).unwrap_or_default()
-                            )).await;
+                            // Send final message only if we didn't stream
+                            if !streaming_msg_sent {
+                                let _ = write.send(axum::extract::ws::Message::Text(
+                                    serde_json::to_string(&json!({
+                                        "type": "message",
+                                        "content": full_response
+                                    })).unwrap_or_default()
+                                )).await;
+                            }
 
                             let images: Vec<String> = extract_images(&full_response);
                             for img_url in images {
@@ -291,6 +306,15 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                                     })).unwrap_or_default()
                                 )).await;
                             }
+                        }
+
+                        // Signal stream end if we streamed
+                        if streaming_msg_sent {
+                            let _ = write.send(axum::extract::ws::Message::Text(
+                                serde_json::to_string(&json!({
+                                    "type": "stream_end"
+                                })).unwrap_or_default()
+                            )).await;
                         }
 
                         if has_tool_call {
@@ -402,6 +426,9 @@ pub async fn call_ai(provider: &AiProvider, prompt: &str) -> Result<String, Stri
 
 fn save_ai_providers(providers: &[AiProvider]) -> Result<(), std::io::Error> {
     let content = serde_json::to_string_pretty(providers).unwrap_or_default();
+    if let Some(parent) = std::path::Path::new(AI_CONF).parent() {
+        let _ = fs::create_dir_all(parent);
+    }
     fs::write(AI_CONF, content)
 }
 
