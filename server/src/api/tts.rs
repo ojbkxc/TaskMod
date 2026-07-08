@@ -1,6 +1,6 @@
 use axum::{Json};
 use serde::Deserialize;
-use std::process::Command;
+use tokio::process::Command;
 
 use crate::data::response::ApiResponse;
 use crate::utils::adb;
@@ -64,16 +64,17 @@ pub async fn speak(Json(req): Json<TtsRequest>) -> Json<ApiResponse<String>> {
     
     let escaped_text = text.replace("'", "\\'").replace("\"", "\\\"");
     
-    let mut cmd_parts = vec!["shell", "am", "broadcast", "-a", "com.android.tts.speak"];
+    let mut cmd_parts: Vec<String> = vec!["shell", "am", "broadcast", "-a", "com.android.tts.speak"]
+        .into_iter().map(String::from).collect();
     
     if let Some(ref engine) = req.engine {
-        cmd_parts.extend(vec!["--es", "engine", engine]);
+        cmd_parts.extend(vec!["--es", "engine", engine.as_str()].into_iter().map(String::from));
     }
     
-    cmd_parts.extend(vec!["--es", "text", &escaped_text]);
+    cmd_parts.extend(vec!["--es", "text", &escaped_text].into_iter().map(String::from));
     
     if let Some(ref lang) = req.language {
-        cmd_parts.extend(vec!["--es", "language", lang]);
+        cmd_parts.extend(vec!["--es", "language", lang.as_str()].into_iter().map(String::from));
     }
     
     let output = match adb::execute_command(&cmd_parts).await {

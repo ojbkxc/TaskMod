@@ -170,7 +170,7 @@ pub async fn start_mqtt() {
             match event {
                 Event::Incoming(packet) => {
                     if let rumqttc::Packet::Publish(publish) = packet {
-                        let topic = publish.topic_name.as_str();
+                        let topic = publish.topic.as_str();
                         let payload = String::from_utf8_lossy(&publish.payload);
 
                         if topic == cmd_topic {

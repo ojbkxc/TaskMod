@@ -128,7 +128,7 @@ async fn send_email_inner(
     body: &str,
     attachments: Option<&Vec<(String, Vec<u8>)>>,
 ) -> Result<String, EmailError> {
-    let from: Mailbox = config.from.parse().map_err(|e| {
+    let from: Mailbox = config.from.parse::<Mailbox>().map_err(|e| {
         log("Email", &format!("发件人地址无效: {}", e));
         EmailError::FormatError(e.to_string())
     })?;
@@ -152,7 +152,7 @@ async fn send_email_inner(
     let email = match attachments {
         Some(attachments) if !attachments.is_empty() => {
             log("Email", &format!("创建带附件的邮件，共 {} 个附件", attachments.len()));
-            let mut multipart = MultiPart::mixed().singlepart(SinglePart::plain(body));
+            let mut multipart = MultiPart::mixed().singlepart(SinglePart::plain(body.to_string()));
             
             for (filename, content) in attachments {
                 log("Email", &format!("添加附件: {} ({} bytes)", filename, content.len()));
@@ -253,7 +253,7 @@ where
     }
     
     log("Email", &format!("所有 {} 次尝试都失败", max_retries + 1));
-    last_error.ok_or_else(|| EmailError::Other("邮件发送失败".to_string()))
+    Err(last_error.unwrap_or_else(|| EmailError::Other("邮件发送失败".to_string())))
 }
 
 pub async fn send_email(

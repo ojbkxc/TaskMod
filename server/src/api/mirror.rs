@@ -1,5 +1,5 @@
 use axum::{Json, extract::ws::WebSocketUpgrade, response::IntoResponse};
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};

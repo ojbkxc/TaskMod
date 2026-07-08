@@ -5,7 +5,7 @@ use std::path::Path;
 use tokio::process::Command;
 
 use crate::config::{SCHEDULE_FILE, SCRIPTS_DIR, EMAIL_CONF};
-use crate::data::models::{AddTaskRequest, EmailConfig, Task, TriggerRequest};
+use crate::data::models::{AddTaskRequest, Task, TriggerRequest};
 use crate::data::response::ApiResponse;
 use crate::utils::email;
 
@@ -87,8 +87,8 @@ pub async fn trigger_script(Json(req): Json<TriggerRequest>) -> Json<ApiResponse
                     .unwrap_or(false);
                 
                 if enable_notify {
-                    let config = EmailConfig {
-                        enable_notify: "true".to_string(),
+                    let config = email::EmailConfig {
+                        enable_notify: true,
                         smtp_server: email_conf.get("smtp_server").unwrap_or(&String::new()).clone(),
                         smtp_port: email_conf.get("smtp_port")
                             .and_then(|s| s.parse().ok())
@@ -108,8 +108,11 @@ pub async fn trigger_script(Json(req): Json<TriggerRequest>) -> Json<ApiResponse
                             .replace("{time}", &now.format("%H:%M:%S").to_string())
                             .replace("{date}", &now.format("%Y-%m-%d").to_string())
                             .replace("{result}", &result.to_string()),
+                        timeout_secs: email_conf.get("timeout_secs").and_then(|s| s.parse().ok()).unwrap_or(30),
+                        max_retries: email_conf.get("max_retries").and_then(|s| s.parse().ok()).unwrap_or(3),
+                        retry_interval: email_conf.get("retry_interval").and_then(|s| s.parse().ok()).unwrap_or(1),
                     };
-                    let _ = email::send_email(&config).await;
+                    let _ = email::send_email(&config, None, None, None).await;
                 }
             }
             Err(e) => {
