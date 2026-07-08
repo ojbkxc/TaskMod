@@ -214,8 +214,8 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                             match chunk {
                                 Ok(bytes) => {
                                     let text = String::from_utf8_lossy(&bytes);
-                                    let mut combined = incomplete_line + &text;
-                                    incomplete_line.clear();
+                                    let mut combined = std::mem::take(&mut incomplete_line);
+                                    combined.push_str(&text);
 
                                     let lines: Vec<&str> = combined.split('\n').collect();
                                     for i in 0..lines.len() {

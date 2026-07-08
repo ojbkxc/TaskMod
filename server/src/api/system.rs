@@ -228,7 +228,15 @@ pub async fn get_mqtt_config() -> Json<serde_json::Value> {
 }
 
 pub async fn save_mqtt_config(Json(config): Json<MqttConfig>) -> Json<ApiResponse<String>> {
-    match mqtt::save_mqtt_config(&config) {
+    let mqtt_config = mqtt::MqttConfig {
+        enabled: config.enabled,
+        broker: config.broker,
+        topic_prefix: config.topic_prefix,
+        username: config.username,
+        password: config.password,
+        client_id: config.client_id,
+    };
+    match mqtt::save_mqtt_config(&mqtt_config) {
         Ok(_) => {
             mqtt::stop_mqtt();
             tokio::spawn(async {
@@ -558,8 +566,9 @@ pub async fn execute_workflow(workflow: Workflow, context: Option<serde_json::Va
                     retry_interval: email_conf.retry_interval,
                 };
                 
+                let attachment_count = attachments.len();
                 let _ = email::send_email(&config, None, None, Some(attachments)).await;
-                log(&format!("邮件已发送，附件数: {}", attachments.len()));
+                log(&format!("邮件已发送，附件数: {}", attachment_count));
             }
             "tts" => {
                 let mut text = node.config.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
