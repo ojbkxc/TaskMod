@@ -1,4 +1,4 @@
-use axum::{Json, extract::ws::WebSocketUpgrade, response::IntoResponse};
+use axum::{Json, extract::State, extract::ws::WebSocketUpgrade, response::IntoResponse};
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use std::sync::Arc;
@@ -33,8 +33,8 @@ pub struct ControlRequest {
 }
 
 pub async fn start_mirror(
+    State(state): State<SharedMirrorState>,
     Json(req): Json<MirrorStartRequest>,
-    state: SharedMirrorState,
 ) -> Json<ApiResponse<String>> {
     let bit_rate = req.bit_rate.unwrap_or(2000000);
     let fps = req.fps.unwrap_or(30);
@@ -228,7 +228,7 @@ pub async fn start_mirror(
     Json(ApiResponse::ok_msg("投屏已启动".to_string(), "WebSocket地址: ws://localhost:9527/ws/mirror"))
 }
 
-pub async fn stop_mirror(state: SharedMirrorState) -> Json<ApiResponse<String>> {
+pub async fn stop_mirror(State(state): State<SharedMirrorState>) -> Json<ApiResponse<String>> {
     if !state.is_running() {
         return Json(ApiResponse::err("投屏未运行"));
     }
@@ -252,8 +252,8 @@ pub async fn stop_mirror(state: SharedMirrorState) -> Json<ApiResponse<String>> 
 }
 
 pub async fn send_control(
+    State(_state): State<SharedMirrorState>,
     Json(req): Json<ControlRequest>,
-    _state: SharedMirrorState,
 ) -> Json<ApiResponse<String>> {
     let result = match req.action.as_str() {
         "touch" | "touch_down" => {
@@ -375,8 +375,8 @@ pub async fn send_control(
 }
 
 pub async fn mirror_ws(
+    State(state): State<SharedMirrorState>,
     ws: WebSocketUpgrade,
-    state: SharedMirrorState,
 ) -> impl IntoResponse {
     ws.on_upgrade(move |socket| async move {
         let (mut write, _) = socket.split();
@@ -392,8 +392,8 @@ pub async fn mirror_ws(
 }
 
 pub async fn audio_ws(
+    State(state): State<SharedMirrorState>,
     ws: WebSocketUpgrade,
-    state: SharedMirrorState,
 ) -> impl IntoResponse {
     ws.on_upgrade(move |socket| async move {
         let (mut write, _) = socket.split();
@@ -408,7 +408,7 @@ pub async fn audio_ws(
     })
 }
 
-pub async fn mirror_status(state: SharedMirrorState) -> Json<ApiResponse<bool>> {
+pub async fn mirror_status(State(state): State<SharedMirrorState>) -> Json<ApiResponse<bool>> {
     Json(ApiResponse::ok(state.is_running()))
 }
 

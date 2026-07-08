@@ -116,6 +116,15 @@ async fn main() -> anyhow::Result<()> {
         utils::mqtt::start_mqtt().await;
     });
 
+    let mirror_routes = Router::new()
+        .route("/api/mirror/start", post(api::mirror::start_mirror))
+        .route("/api/mirror/stop", post(api::mirror::stop_mirror))
+        .route("/api/mirror/control", post(api::mirror::send_control))
+        .route("/api/mirror/status", get(api::mirror::mirror_status))
+        .route("/ws/mirror", get(api::mirror::mirror_ws))
+        .route("/ws/audio", get(api::mirror::audio_ws))
+        .with_state(mirror_state);
+
     let app = Router::new()
         .route("/", get(api::system::index))
         .route("/api/tasks", get(api::tasks::list_tasks).post(api::tasks::add_task))
@@ -141,13 +150,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/tts/speak", post(api::tts::speak))
         .route("/api/ai/providers", get(api::ai::list_ai_providers).post(api::ai::add_ai_provider))
         .route("/api/ai/providers/:id", get(api::ai::get_ai_provider_api).put(api::ai::update_ai_provider).delete(api::ai::delete_ai_provider))
-        .route("/api/mirror/start", post(api::mirror::start_mirror).with_state(mirror_state.clone()))
-        .route("/api/mirror/stop", post(api::mirror::stop_mirror).with_state(mirror_state.clone()))
-        .route("/api/mirror/control", post(api::mirror::send_control).with_state(mirror_state.clone()))
-        .route("/api/mirror/status", get(api::mirror::mirror_status).with_state(mirror_state.clone()))
-        .route("/ws/mirror", get(api::mirror::mirror_ws).with_state(mirror_state.clone()))
         .route("/ws/ai-chat", get(api::ai::ai_chat_ws))
-        .route("/ws/audio", get(api::mirror::audio_ws).with_state(mirror_state))
+        .merge(mirror_routes)
         .layer(CorsLayer::permissive());
 
     let addr = SocketAddr::from(([0, 0, 0, 0], WEB_PORT));
