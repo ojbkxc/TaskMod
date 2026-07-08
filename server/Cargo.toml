@@ -27,8 +27,8 @@ tracing-subscriber = "0.3"
 # --- 邮件 (tokio1异步，无TLS避免C依赖) ---
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "hostname", "tokio1"] }
 
-# --- WebSocket (服务端使用，禁用默认特性避免native-tls依赖) ---
-tokio-tungstenite = { version = "0.21", default-features = false, features = ["tokio-runtime", "tungstenite"] }
+# --- WebSocket ---
+tokio-tungstenite = "0.21"
 futures-util = "0.3"
 bytes = "1"
 
