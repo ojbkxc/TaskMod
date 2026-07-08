@@ -1,0 +1,6 @@
+id=TaskMod
+name=脚本调度大师
+version=4.0
+versionCode=4
+author=You
+description=定时任务调度 + Web管理面板 + 邮件通知，支持浏览器远程管理

@@ -1,0 +1,16 @@
+# Rust build
+server/target/
+server/.cargo/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log

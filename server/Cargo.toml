@@ -1,0 +1,35 @@
+[package]
+name = "taskmod-server"
+version = "0.1.0"
+edition = "2024"
+description = "TaskMod Web 管理服务"
+
+[dependencies]
+# --- Web框架 ---
+axum = "0.6.20"
+
+# --- 异步 ---
+tokio = { version = "1.48.0", features = ["full"] }
+
+# --- 序列化 ---
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+
+# --- Web中间件 ---
+tower-http = { version = "0.4", features = ["cors"] }
+
+# --- 工具库 ---
+chrono = { version = "0.4.42", features = ["serde"] }
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# --- 邮件 (tokio1异步，无TLS避免C依赖) ---
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "hostname", "tokio1"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

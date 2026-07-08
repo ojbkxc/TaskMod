@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TaskMod 管理面板</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; color: #333; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; }
+        .header h1 { font-size: 24px; margin-bottom: 5px; }
+        .header p { opacity: 0.9; font-size: 14px; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .nav { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+        .nav button { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; transition: all 0.3s; background: white; color: #333; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .nav button:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
+        .nav button.active { background: #667eea; color: white; }
+        .card { background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .card h2 { font-size: 18px; margin-bottom: 15px; color: #667eea; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; font-weight: 600; }
+        tr:hover { background: #f8f9fa; }
+        .btn { padding: 6px 12px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; transition: all 0.2s; }
+        .btn-primary { background: #667eea; color: white; }
+        .btn-danger { background: #ff4757; color: white; }
+        .btn-success { background: #2ed573; color: white; }
+        .btn-warning { background: #ffa502; color: white; }
+        .btn:hover { opacity: 0.9; transform: translateY(-1px); }
+        input, textarea, select { padding: 10px; border: 1px solid #ddd; border-radius: 8px; width: 100%; font-size: 14px; transition: border-color 0.3s; }
+        input:focus, textarea:focus, select:focus { outline: none; border-color: #667eea; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 500; }
+        .form-row { display: flex; gap: 10px; }
+        .form-row > * { flex: 1; }
+        .status-card { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+        .status-item { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); padding: 15px; border-radius: 10px; }
+        .status-item .label { font-size: 12px; color: #666; }
+        .status-item .value { font-size: 24px; font-weight: bold; color: #333; }
+        .log-viewer { background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 8px; font-family: "Cascadia Code", "Fira Code", monospace; font-size: 13px; max-height: 500px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+        .screenshot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; }
+        .screenshot-item { border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .screenshot-item img { width: 100%; height: 150px; object-fit: cover; cursor: pointer; }
+        .screenshot-item .info { padding: 10px; background: white; }
+        .screenshot-item .name { font-size: 12px; color: #666; }
+        .screenshot-item .actions { margin-top: 8px; display: flex; gap: 5px; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
+        .modal.show { display: flex; }
+        .modal-content { background: white; border-radius: 12px; padding: 20px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .modal-header h3 { font-size: 18px; }
+        .modal-close { background: none; border: none; font-size: 24px; cursor: pointer; color: #666; }
+        .toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; color: white; z-index: 2000; animation: slideIn 0.3s ease; }
+        .toast.success { background: #2ed573; }
+        .toast.error { background: #ff4757; }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .hidden { display: none; }
+        .email-form { max-width: 500px; }
+        .preview-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 1001; display: none; justify-content: center; align-items: center; }
+        .preview-modal.show { display: flex; }
+        .preview-modal img { max-width: 90%; max-height: 90%; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>TaskMod 管理面板</h1>
+        <p>Android 定时任务管理系统</p>
+    </div>
+
+    <div class="container">
+        <div class="nav">
+            <button onclick="showTab('dashboard')" class="active" id="tab-dashboard">仪表盘</button>
+            <button onclick="showTab('tasks')" id="tab-tasks">任务管理</button>
+            <button onclick="showTab('logs')" id="tab-logs">日志查看</button>
+            <button onclick="showTab('screenshots')" id="tab-screenshots">截图管理</button>
+            <button onclick="showTab('scripts')" id="tab-scripts">脚本管理</button>
+            <button onclick="showTab('config')" id="tab-config">配置编辑</button>
+            <button onclick="showTab('email')" id="tab-email">邮件通知</button>
+        </div>
+
+        <!-- 仪表盘 -->
+        <div id="dashboard" class="tab-content">
+            <div class="card">
+                <h2>系统状态</h2>
+                <div class="status-card" id="status-card"></div>
+            </div>
+            <div class="card">
+                <h2>快捷操作</h2>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-primary" onclick="takeScreenshot()">拍摄截图</button>
+                    <button class="btn btn-success" onclick="showTab('tasks'); showModal('addTaskModal')">添加任务</button>
+                    <button class="btn btn-warning" onclick="refreshStatus()">刷新状态</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 任务管理 -->
+        <div id="tasks" class="tab-content hidden">
+            <div class="card">
+                <h2>定时任务列表</h2>
+                <button class="btn btn-primary" onclick="showModal('addTaskModal')" style="margin-bottom: 15px;">+ 添加任务</button>
+                <table>
+                    <thead>
+                        <tr><th>ID</th><th>时间</th><th>星期</th><th>脚本</th><th>类型</th><th>操作</th></tr>
+                    </thead>
+                    <tbody id="tasks-table"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 日志查看 -->
+        <div id="logs" class="tab-content hidden">
+            <div class="card">
+                <h2>执行日志</h2>
+                <div style="margin-bottom: 15px; display: flex; gap: 10px;">
+                    <button class="btn btn-primary" onclick="loadLogs()">刷新日志</button>
+                    <button class="btn btn-danger" onclick="clearLogs()">清空日志</button>
+                </div>
+                <div class="log-viewer" id="log-viewer">加载中...</div>
+            </div>
+        </div>
+
+        <!-- 截图管理 -->
+        <div id="screenshots" class="tab-content hidden">
+            <div class="card">
+                <h2>截图管理</h2>
+                <button class="btn btn-primary" onclick="takeScreenshot()" style="margin-bottom: 15px;">拍摄新截图</button>
+                <div class="screenshot-grid" id="screenshot-grid"></div>
+            </div>
+        </div>
+
+        <!-- 脚本管理 -->
+        <div id="scripts" class="tab-content hidden">
+            <div class="card">
+                <h2>脚本列表</h2>
+                <div id="scripts-list"></div>
+            </div>
+            <div class="card" id="script-editor-card" style="display: none;">
+                <h2>编辑脚本: <span id="script-name"></span></h2>
+                <textarea id="script-content" rows="15" style="font-family: monospace;"></textarea>
+                <div style="margin-top: 10px; display: flex; gap: 10px;">
+                    <button class="btn btn-primary" onclick="saveScript()">保存</button>
+                    <button class="btn btn-success" onclick="triggerCurrentScript()">立即执行</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 配置编辑 -->
+        <div id="config" class="tab-content hidden">
+            <div class="card">
+                <h2>schedule.conf 配置</h2>
+                <textarea id="config-content" rows="15" style="font-family: monospace;"></textarea>
+                <div style="margin-top: 10px;">
+                    <button class="btn btn-primary" onclick="saveConfig()">保存配置</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 邮件通知 -->
+        <div id="email" class="tab-content hidden">
+            <div class="card">
+                <h2>发送邮件通知</h2>
+                <div class="email-form">
+                    <div class="form-group">
+                        <label>SMTP 服务器</label>
+                        <input type="text" id="smtp-server" placeholder="smtp.qq.com">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>端口</label>
+                            <input type="number" id="smtp-port" value="587">
+                        </div>
+                        <div class="form-group">
+                            <label>用户名</label>
+                            <input type="text" id="smtp-user" placeholder="your@email.com">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>密码/授权码</label>
+                        <input type="password" id="smtp-pass" placeholder="授权码">
+                    </div>
+                    <div class="form-group">
+                        <label>发件人</label>
+                        <input type="email" id="email-from" placeholder="your@email.com">
+                    </div>
+                    <div class="form-group">
+                        <label>收件人</label>
+                        <input type="email" id="email-to" placeholder="recipient@email.com">
+                    </div>
+                    <div class="form-group">
+                        <label>主题</label>
+                        <input type="text" id="email-subject" placeholder="TaskMod 通知">
+                    </div>
+                    <div class="form-group">
+                        <label>内容</label>
+                        <textarea id="email-body" rows="5" placeholder="邮件内容..."></textarea>
+                    </div>
+                    <button class="btn btn-primary" onclick="sendEmail()">发送邮件</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加任务弹窗 -->
+    <div id="addTaskModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>添加定时任务</h3>
+                <button class="modal-close" onclick="hideModal('addTaskModal')">&times;</button>
+            </div>
+            <div class="form-group">
+                <label>任务类型</label>
+                <select id="task-type" onchange="updateTaskForm()">
+                    <option value="daily">每天执行</option>
+                    <option value="weekly">指定星期</option>
+                    <option value="interval">间隔执行</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>执行时间</label>
+                <input type="time" id="task-time">
+            </div>
+            <div class="form-group" id="weeks-group">
+                <label>星期 (1=周一, 7=周日, 逗号分隔)</label>
+                <input type="text" id="task-weeks" value="1,2,3,4,5" placeholder="1,2,3,4,5">
+            </div>
+            <div class="form-group hidden" id="interval-group">
+                <label>间隔分钟数</label>
+                <input type="number" id="task-interval" value="5" min="1">
+            </div>
+            <div class="form-group">
+                <label>脚本名称</label>
+                <select id="task-script"></select>
+            </div>
+            <button class="btn btn-primary" onclick="addTask()">添加任务</button>
+        </div>
+    </div>
+
+    <!-- 图片预览 -->
+    <div id="imagePreview" class="preview-modal" onclick="this.classList.remove('show')">
+        <img id="preview-img" src="">
+    </div>
+
+    <script>
+        let currentScript = '';
+
+        // 自动刷新定时器
+        let autoRefreshTimer = null;
+        let currentTab = 'dashboard';
+
+        // 标签切换
+        function showTab(name) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.nav button').forEach(el => el.classList.remove('active'));
+            document.getElementById(name).classList.remove('hidden');
+            document.getElementById('tab-' + name).classList.add('active');
+            currentTab = name;
+
+            // 清除自动刷新
+            if (autoRefreshTimer) {
+                clearInterval(autoRefreshTimer);
+                autoRefreshTimer = null;
+            }
+
+            switch(name) {
+                case 'dashboard': refreshStatus(); break;
+                case 'tasks': loadTasks(); break;
+                case 'logs':
+                    loadLogs();
+                    // 日志页面自动刷新
+                    autoRefreshTimer = setInterval(loadLogs, 5000);
+                    break;
+                case 'screenshots': loadScreenshots(); break;
+                case 'scripts': loadScripts(); break;
+                case 'config': loadConfig(); break;
+                case 'email': loadEmailConfig(); break;
+            }
+        }
+
+        // Toast 提示
+        function showToast(msg, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = msg;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        // 弹窗控制
+        function showModal(id) {
+            document.getElementById(id).classList.add('show');
+            if (id === 'addTaskModal') loadScriptsForSelect();
+        }
+        function hideModal(id) {
+            document.getElementById(id).classList.remove('show');
+        }
+
+        // API 调用
+        async function api(url, options = {}) {
+            const res = await fetch(url, {
+                headers: { 'Content-Type': 'application/json' },
+                ...options
+            });
+            return res.json();
+        }
+
+        // 刷新状态
+        async function refreshStatus() {
+            const data = await api('/api/status');
+            if (data.success) {
+                const d = data.data;
+                document.getElementById('status-card').innerHTML = `
+                    <div class="status-item"><div class="label">运行时间</div><div class="value">${d.uptime || 'N/A'}</div></div>
+                    <div class="status-item"><div class="label">任务数量</div><div class="value">${d.tasks_count}</div></div>
+                    <div class="status-item"><div class="label">截图数量</div><div class="value">${d.screenshots_count}</div></div>
+                    <div class="status-item"><div class="label">磁盘信息</div><div class="value" style="font-size:14px">${d.disk || 'N/A'}</div></div>
+                `;
+            }
+        }
+
+        // 任务管理
+        async function loadTasks() {
+            const data = await api('/api/tasks');
+            const tbody = document.getElementById('tasks-table');
+            if (data.success && data.data.length > 0) {
+                tbody.innerHTML = data.data.map(t => `
+                    <tr>
+                        <td>${t.id}</td>
+                        <td>${t.time}</td>
+                        <td>${t.weeks}</td>
+                        <td>${t.script}</td>
+                        <td>${t.task_type}</td>
+                        <td><button class="btn btn-danger" onclick="deleteTask(${t.id})">删除</button></td>
+                    </tr>
+                `).join('');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center">暂无任务</td></tr>';
+            }
+        }
+
+        async function addTask() {
+            const type = document.getElementById('task-type').value;
+            const req = {
+                time: type === 'interval' ? 'every' : document.getElementById('task-time').value,
+                script: document.getElementById('task-script').value,
+                task_type: type,
+                weeks: type === 'weekly' ? document.getElementById('task-weeks').value : undefined,
+                interval: type === 'interval' ? parseInt(document.getElementById('task-interval').value) : undefined
+            };
+            const data = await api('/api/tasks', { method: 'POST', body: JSON.stringify(req) });
+            showToast(data.message, data.success ? 'success' : 'error');
+            if (data.success) {
+                hideModal('addTaskModal');
+                loadTasks();
+            }
+        }
+
+        async function deleteTask(id) {
+            if (!confirm('确定删除此任务？')) return;
+            const data = await api(`/api/tasks/${id}`, { method: 'DELETE' });
+            showToast(data.message, data.success ? 'success' : 'error');
+            if (data.success) loadTasks();
+        }
+
+        // 日志
+        async function loadLogs() {
+            const data = await api('/api/logs?limit=200');
+            const viewer = document.getElementById('log-viewer');
+            viewer.textContent = data.success ? data.data.join('\n') : '加载失败';
+        }
+
+        async function clearLogs() {
+            if (!confirm('确定清空日志？')) return;
+            const data = await api('/api/logs/clear', { method: 'POST' });
+            showToast(data.message, data.success ? 'success' : 'error');
+            if (data.success) loadLogs();
+        }
+
+        // 截图
+        async function loadScreenshots() {
+            const data = await api('/api/screenshots');
+            const grid = document.getElementById('screenshot-grid');
+            if (data.success && data.data.length > 0) {
+                grid.innerHTML = data.data.map(name => `
+                    <div class="screenshot-item">
+                        <img src="/api/screenshots/${name}" onclick="previewImage('/api/screenshots/${name}')">
+                        <div class="info">
+                            <div class="name">${name}</div>
+                            <div class="actions">
+                                <button class="btn btn-danger" onclick="deleteScreenshot('${name}')">删除</button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                grid.innerHTML = '<p style="text-align:center; color:#666;">暂无截图</p>';
+            }
+        }
+
+        async function takeScreenshot() {
+            const data = await api('/api/screenshots/take', { method: 'POST' });
+            showToast(data.message || (data.success ? '截图成功: ' + data.data : '截图失败'), data.success ? 'success' : 'error');
+            if (data.success) loadScreenshots();
+        }
+
+        async function deleteScreenshot(name) {
+            if (!confirm('确定删除此截图？')) return;
+            const data = await api(`/api/screenshots/${name}`, { method: 'DELETE' });
+            showToast(data.message, data.success ? 'success' : 'error');
+            if (data.success) loadScreenshots();
+        }
+
+        function previewImage(src) {
+            document.getElementById('preview-img').src = src;
+            document.getElementById('imagePreview').classList.add('show');
+        }
+
+        // 脚本管理
+        async function loadScripts() {
+            const data = await api('/api/scripts');
+            const list = document.getElementById('scripts-list');
+            if (data.success && data.data.length > 0) {
+                list.innerHTML = data.data.map(name => `
+                    <div style="display:flex; align-items:center; gap:10px; padding:10px; border-bottom:1px solid #eee;">
+                        <span style="flex:1">${name}</span>
+                        <button class="btn btn-primary" onclick="editScript('${name}')">编辑</button>
+                        <button class="btn btn-success" onclick="triggerScript('${name}')">执行</button>
+                    </div>
+                `).join('');
+            } else {
+                list.innerHTML = '<p style="text-align:center; color:#666;">暂无脚本</p>';
+            }
+        }
+
+        async function editScript(name) {
+            currentScript = name;
+            document.getElementById('script-name').textContent = name;
+            document.getElementById('script-editor-card').style.display = 'block';
+            const data = await api(`/api/scripts/${name}`);
+            if (data.success) {
+                document.getElementById('script-content').value = data.data;
+            }
+        }
+
+        async function saveScript() {
+            const data = await api(`/api/scripts/${currentScript}`, {
+                method: 'PUT',
+                body: JSON.stringify({ content: document.getElementById('script-content').value })
+            });
+            showToast(data.message, data.success ? 'success' : 'error');
+        }
+
+        async function triggerScript(name) {
+            const data = await api('/api/trigger', {
+                method: 'POST',
+                body: JSON.stringify({ script: name })
+            });
+            showToast(data.message, data.success ? 'success' : 'error');
+        }
+
+        function triggerCurrentScript() {
+            triggerScript(currentScript);
+        }
+
+        // 配置
+        async function loadConfig() {
+            const data = await api('/api/config');
+            if (data.success) {
+                document.getElementById('config-content').value = data.data;
+            }
+        }
+
+        async function saveConfig() {
+            const data = await api('/api/config', {
+                method: 'PUT',
+                body: JSON.stringify({ content: document.getElementById('config-content').value })
+            });
+            showToast(data.message, data.success ? 'success' : 'error');
+        }
+
+        // 邮件
+        async function loadEmailConfig() {
+            const data = await api('/api/email');
+            if (data.success && data.data) {
+                const d = data.data;
+                if (d.smtp_server) document.getElementById('smtp-server').value = d.smtp_server;
+                if (d.smtp_port) document.getElementById('smtp-port').value = d.smtp_port;
+                if (d.username) document.getElementById('smtp-user').value = d.username;
+                if (d.from) document.getElementById('email-from').value = d.from;
+                if (d.to) document.getElementById('email-to').value = d.to;
+            }
+        }
+
+        async function sendEmail() {
+            const req = {
+                smtp_server: document.getElementById('smtp-server').value,
+                smtp_port: parseInt(document.getElementById('smtp-port').value),
+                username: document.getElementById('smtp-user').value,
+                password: document.getElementById('smtp-pass').value,
+                from: document.getElementById('email-from').value,
+                to: document.getElementById('email-to').value,
+                subject: document.getElementById('email-subject').value,
+                body: document.getElementById('email-body').value
+            };
+            const data = await api('/api/email', { method: 'POST', body: JSON.stringify(req) });
+            showToast(data.message, data.success ? 'success' : 'error');
+        }
+
+        // 脚本选择器
+        async function loadScriptsForSelect() {
+            const data = await api('/api/scripts');
+            const select = document.getElementById('task-script');
+            if (data.success) {
+                select.innerHTML = data.data.map(name => `<option value="${name}">${name}</option>`).join('');
+            }
+        }
+
+        // 表单切换
+        function updateTaskForm() {
+            const type = document.getElementById('task-type').value;
+            document.getElementById('weeks-group').classList.toggle('hidden', type !== 'weekly');
+            document.getElementById('interval-group').classList.toggle('hidden', type !== 'interval');
+        }
+
+        // 初始化
+        refreshStatus();
+    </script>
+</body>
+</html>

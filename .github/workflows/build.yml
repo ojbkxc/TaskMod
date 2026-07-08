@@ -1,0 +1,88 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Install cross
+        run: cargo install cross
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            server/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('server/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build
+        working-directory: server
+        run: cross build --release --target aarch64-linux-android
+
+      - name: Package
+        id: package
+        run: |
+          # 获取版本号
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          # 将编译产物复制到模块目录
+          mkdir -p bin/arm64
+          cp server/target/aarch64-linux-android/release/taskmod-server bin/arm64/
+          chmod +x bin/arm64/taskmod-server
+
+          # 打包 Magisk 模块 (从仓库根目录打包)
+          zip -r TaskMod-${VERSION}.zip . \
+            -x ".git/*" \
+            -x ".github/*" \
+            -x "server/*" \
+            -x ".gitignore" \
+            -x "bin/.gitkeep"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TaskMod-${{ steps.package.outputs.version }}
+          path: TaskMod-${{ steps.package.outputs.version }}.zip
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: TaskMod ${{ steps.package.outputs.version }}
+          body: |
+            ## TaskMod ${{ steps.package.outputs.version }}
+
+            ### 功能
+            - 定时任务调度
+            - Web 管理面板 (端口 8080)
+            - 截图管理 (系统 screencap)
+            - 邮件通知
+
+            ### 安装
+            1. 下载 `TaskMod-${{ steps.package.outputs.version }}.zip`
+            2. 通过 Magisk 刷入
+            3. 浏览器访问 `http://设备IP:8080`
+
+            ### 文件
+            - `taskmod-server` - ARM64 Linux 二进制
+          files: TaskMod-${{ steps.package.outputs.version }}.zip
+          draft: false
+          prerelease: false
