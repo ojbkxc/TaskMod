@@ -27,8 +27,8 @@ tracing-subscriber = "0.3"
 # --- 邮件 (tokio1异步，无TLS避免C依赖) ---
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "hostname", "tokio1"] }
 
-# --- WebSocket ---
-tokio-tungstenite = "0.21"
+# --- WebSocket (服务端使用，禁用默认特性避免native-tls依赖) ---
+tokio-tungstenite = { version = "0.21", default-features = false, features = ["tokio-runtime"] }
 futures-util = "0.3"
 bytes = "1"
 
@@ -36,8 +36,8 @@ bytes = "1"
 reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"] }
 regex = "1.10"
 
-# --- MQTT (轻量级协议，按需加载，纯Rust实现) ---
-rumqttc = "0.24"
+# --- MQTT (轻量级协议，按需加载，使用rustls避免系统OpenSSL依赖) ---
+rumqttc = { version = "0.24", default-features = false, features = ["use-rustls-no-provider"] }
 
 [profile.release]
 opt-level = "z"
