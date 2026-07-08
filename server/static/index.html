@@ -55,16 +55,22 @@
         .toast.error { background: #ff4757; }
         @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         .hidden { display: none; }
-        .email-form { max-width: 500px; }
         .preview-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 1001; display: none; justify-content: center; align-items: center; }
         .preview-modal.show { display: flex; }
         .preview-modal img { max-width: 90%; max-height: 90%; }
+        .command-output { background: #1e1e1e; color: #0f0; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 13px; min-height: 100px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+        .node-palette { display: flex; flex-direction: column; gap: 8px; }
+        .palette-item { padding: 8px 12px; background: #667eea; color: white; border-radius: 6px; cursor: grab; text-align: center; font-size: 13px; }
+        .palette-item:hover { background: #5a6fd6; }
+        .wf-item { display: flex; align-items: center; gap: 10px; padding: 10px; border-bottom: 1px solid #eee; }
+        .wf-item .name { flex: 1; font-weight: 500; }
+        .wf-item .desc { color: #666; font-size: 13px; }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>TaskMod 管理面板</h1>
-        <p>Android 定时任务管理系统</p>
+        <p>Android 定时任务管理系统 | 端口 9527</p>
     </div>
 
     <div class="container">
@@ -75,7 +81,9 @@
             <button onclick="showTab('screenshots')" id="tab-screenshots">截图管理</button>
             <button onclick="showTab('scripts')" id="tab-scripts">脚本管理</button>
             <button onclick="showTab('config')" id="tab-config">配置编辑</button>
+            <button onclick="showTab('command')" id="tab-command">命令执行</button>
             <button onclick="showTab('email')" id="tab-email">邮件通知</button>
+            <button onclick="showTab('workflow')" id="tab-workflow">工作流</button>
         </div>
 
         <!-- 仪表盘 -->
@@ -133,6 +141,7 @@
         <div id="scripts" class="tab-content hidden">
             <div class="card">
                 <h2>脚本列表</h2>
+                <button class="btn btn-primary" onclick="showModal('newScriptModal')" style="margin-bottom: 15px;">+ 新建脚本</button>
                 <div id="scripts-list"></div>
             </div>
             <div class="card" id="script-editor-card" style="display: none;">
@@ -156,11 +165,50 @@
             </div>
         </div>
 
+        <!-- 命令执行 -->
+        <div id="command" class="tab-content hidden">
+            <div class="card">
+                <h2>ADB 命令执行</h2>
+                <div class="form-group">
+                    <label>输入命令 (shell)</label>
+                    <input type="text" id="cmd-input" placeholder="例如: input keyevent 26" onkeydown="if(event.key==='Enter')execCommand()">
+                </div>
+                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                    <button class="btn btn-primary" onclick="execCommand()">执行命令</button>
+                    <button class="btn btn-warning" onclick="clearOutput()">清空输出</button>
+                </div>
+                <div class="form-group">
+                    <label>执行结果</label>
+                    <div class="command-output" id="cmd-output">等待执行...</div>
+                </div>
+                <div class="card" style="background: #f8f9fa;">
+                    <h2 style="font-size: 14px; color: #666;">常用命令</h2>
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        <button class="btn btn-primary" onclick="quickCmd('input keyevent 26')">唤醒屏幕</button>
+                        <button class="btn btn-primary" onclick="quickCmd('input keyevent 3')">Home</button>
+                        <button class="btn btn-primary" onclick="quickCmd('input keyevent 4')">返回</button>
+                        <button class="btn btn-primary" onclick="quickCmd('screencap -p /sdcard/TaskMod/screenshots/test.png')">截图</button>
+                        <button class="btn btn-primary" onclick="quickCmd('getprop ro.product.model')">设备型号</button>
+                        <button class="btn btn-primary" onclick="quickCmd('cat /proc/uptime')">运行时间</button>
+                        <button class="btn btn-primary" onclick="quickCmd('df -h /sdcard')">存储信息</button>
+                        <button class="btn btn-primary" onclick="quickCmd('ps -A | grep taskmod')">查看进程</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- 邮件通知 -->
         <div id="email" class="tab-content hidden">
             <div class="card">
-                <h2>发送邮件通知</h2>
-                <div class="email-form">
+                <h2>邮件配置</h2>
+                <div style="max-width: 600px;">
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="enable-notify" style="width: auto;">
+                            <span>启用脚本执行完成后自动发送邮件通知</span>
+                        </label>
+                    </div>
+                    <hr style="margin: 15px 0; border: none; border-top: 1px solid #eee;">
                     <div class="form-group">
                         <label>SMTP 服务器</label>
                         <input type="text" id="smtp-server" placeholder="smtp.qq.com">
@@ -184,20 +232,74 @@
                         <input type="email" id="email-from" placeholder="your@email.com">
                     </div>
                     <div class="form-group">
-                        <label>收件人</label>
-                        <input type="email" id="email-to" placeholder="recipient@email.com">
+                        <label>收件人 (多个用逗号分隔)</label>
+                        <input type="text" id="email-to" placeholder="user1@qq.com, user2@qq.com">
                     </div>
                     <div class="form-group">
-                        <label>主题</label>
-                        <input type="text" id="email-subject" placeholder="TaskMod 通知">
+                        <label>默认主题模板</label>
+                        <input type="text" id="email-subject" placeholder="TaskMod 通知 - {script}">
+                        <small style="color: #666;">可用变量: {script} {time} {date}</small>
                     </div>
                     <div class="form-group">
-                        <label>内容</label>
-                        <textarea id="email-body" rows="5" placeholder="邮件内容..."></textarea>
+                        <label>默认内容模板</label>
+                        <textarea id="email-body" rows="5" placeholder="脚本 {script} 已于 {time} 执行完成"></textarea>
+                        <small style="color: #666;">可用变量: {script} {time} {date} {result}</small>
                     </div>
-                    <button class="btn btn-primary" onclick="sendEmail()">发送邮件</button>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-primary" onclick="saveEmailConfig()">保存配置</button>
+                        <button class="btn btn-success" onclick="testEmail()">发送测试邮件</button>
+                    </div>
                 </div>
             </div>
+        </div>
+
+        <!-- 工作流 -->
+        <div id="workflow" class="tab-content hidden">
+            <div class="card">
+                <h2>工作流管理</h2>
+                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                    <button class="btn btn-primary" onclick="createNewWorkflow()">新建工作流</button>
+                    <button class="btn btn-warning" onclick="loadWorkflows()">刷新列表</button>
+                </div>
+                <div id="workflow-list"></div>
+            </div>
+            <div class="card" id="workflow-editor-card" style="display: none;">
+                <h2>编辑工作流: <span id="workflow-name"></span></h2>
+                <div style="margin-bottom: 10px;">
+                    <input type="text" id="wf-name" placeholder="工作流名称" style="width: 200px; display: inline-block;">
+                    <input type="text" id="wf-desc" placeholder="描述" style="width: 300px; display: inline-block; margin-left: 10px;">
+                    <button class="btn btn-primary" onclick="saveWorkflow()" style="margin-left: 10px;">保存</button>
+                    <button class="btn btn-success" onclick="runCurrentWorkflow()" style="margin-left: 10px;">运行</button>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <div style="width: 200px; background: #f8f9fa; padding: 10px; border-radius: 8px;">
+                        <h3 style="font-size: 14px; margin-bottom: 10px;">节点类型</h3>
+                        <div class="node-palette">
+                            <div class="palette-item" draggable="true" data-type="start" ondragstart="onDragStart(event, 'start')">开始</div>
+                            <div class="palette-item" draggable="true" data-type="script" ondragstart="onDragStart(event, 'script')">执行脚本</div>
+                            <div class="palette-item" draggable="true" data-type="command" ondragstart="onDragStart(event, 'command')">执行命令</div>
+                            <div class="palette-item" draggable="true" data-type="delay" ondragstart="onDragStart(event, 'delay')">延时等待</div>
+                            <div class="palette-item" draggable="true" data-type="email" ondragstart="onDragStart(event, 'email')">发送邮件</div>
+                            <div class="palette-item" draggable="true" data-type="end" ondragstart="onDragStart(event, 'end')">结束</div>
+                        </div>
+                    </div>
+                    <div style="flex: 1; position: relative;">
+                        <canvas id="workflow-canvas" width="800" height="500" style="border: 1px solid #ddd; border-radius: 8px; background: white;"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 节点配置弹窗 -->
+    <div id="nodeConfigModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>节点配置</h3>
+                <button class="modal-close" onclick="hideModal('nodeConfigModal')">&times;</button>
+            </div>
+            <div id="node-config-form"></div>
+            <button class="btn btn-primary" onclick="saveNodeConfig()" style="margin-top: 10px;">保存</button>
         </div>
     </div>
 
@@ -236,6 +338,21 @@
         </div>
     </div>
 
+    <!-- 新建脚本弹窗 -->
+    <div id="newScriptModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>新建脚本</h3>
+                <button class="modal-close" onclick="hideModal('newScriptModal')">&times;</button>
+            </div>
+            <div class="form-group">
+                <label>脚本名称</label>
+                <input type="text" id="new-script-name" placeholder="例如: my_script.sh">
+            </div>
+            <button class="btn btn-primary" onclick="createScript()">创建</button>
+        </div>
+    </div>
+
     <!-- 图片预览 -->
     <div id="imagePreview" class="preview-modal" onclick="this.classList.remove('show')">
         <img id="preview-img" src="">
@@ -243,8 +360,6 @@
 
     <script>
         let currentScript = '';
-
-        // 自动刷新定时器
         let autoRefreshTimer = null;
         let currentTab = 'dashboard';
 
@@ -256,7 +371,6 @@
             document.getElementById('tab-' + name).classList.add('active');
             currentTab = name;
 
-            // 清除自动刷新
             if (autoRefreshTimer) {
                 clearInterval(autoRefreshTimer);
                 autoRefreshTimer = null;
@@ -267,13 +381,13 @@
                 case 'tasks': loadTasks(); break;
                 case 'logs':
                     loadLogs();
-                    // 日志页面自动刷新
                     autoRefreshTimer = setInterval(loadLogs, 5000);
                     break;
                 case 'screenshots': loadScreenshots(); break;
                 case 'scripts': loadScripts(); break;
                 case 'config': loadConfig(); break;
                 case 'email': loadEmailConfig(); break;
+                case 'workflow': loadWorkflows(); break;
             }
         }
 
@@ -310,10 +424,10 @@
             if (data.success) {
                 const d = data.data;
                 document.getElementById('status-card').innerHTML = `
-                    <div class="status-item"><div class="label">运行时间</div><div class="value">${d.uptime || 'N/A'}</div></div>
+                    <div class="status-item"><div class="label">运行时间</div><div class="value" style="font-size:16px">${d.uptime || 'N/A'}</div></div>
                     <div class="status-item"><div class="label">任务数量</div><div class="value">${d.tasks_count}</div></div>
                     <div class="status-item"><div class="label">截图数量</div><div class="value">${d.screenshots_count}</div></div>
-                    <div class="status-item"><div class="label">磁盘信息</div><div class="value" style="font-size:14px">${d.disk || 'N/A'}</div></div>
+                    <div class="status-item"><div class="label">磁盘信息</div><div class="value" style="font-size:12px">${d.disk || 'N/A'}</div></div>
                 `;
             }
         }
@@ -348,7 +462,7 @@
                 interval: type === 'interval' ? parseInt(document.getElementById('task-interval').value) : undefined
             };
             const data = await api('/api/tasks', { method: 'POST', body: JSON.stringify(req) });
-            showToast(data.message, data.success ? 'success' : 'error');
+            showToast(data.message || (data.success ? '任务添加成功' : '添加失败'), data.success ? 'success' : 'error');
             if (data.success) {
                 hideModal('addTaskModal');
                 loadTasks();
@@ -358,7 +472,7 @@
         async function deleteTask(id) {
             if (!confirm('确定删除此任务？')) return;
             const data = await api(`/api/tasks/${id}`, { method: 'DELETE' });
-            showToast(data.message, data.success ? 'success' : 'error');
+            showToast(data.message || (data.success ? '删除成功' : '删除失败'), data.success ? 'success' : 'error');
             if (data.success) loadTasks();
         }
 
@@ -366,13 +480,13 @@
         async function loadLogs() {
             const data = await api('/api/logs?limit=200');
             const viewer = document.getElementById('log-viewer');
-            viewer.textContent = data.success ? data.data.join('\n') : '加载失败';
+            viewer.textContent = data.success ? (data.data.length > 0 ? data.data.join('\n') : '暂无日志') : '加载失败';
         }
 
         async function clearLogs() {
             if (!confirm('确定清空日志？')) return;
             const data = await api('/api/logs/clear', { method: 'POST' });
-            showToast(data.message, data.success ? 'success' : 'error');
+            showToast(data.message || (data.success ? '日志已清空' : '清空失败'), data.success ? 'success' : 'error');
             if (data.success) loadLogs();
         }
 
@@ -399,14 +513,14 @@
 
         async function takeScreenshot() {
             const data = await api('/api/screenshots/take', { method: 'POST' });
-            showToast(data.message || (data.success ? '截图成功: ' + data.data : '截图失败'), data.success ? 'success' : 'error');
+            showToast(data.message || (data.success ? '截图成功' : '截图失败'), data.success ? 'success' : 'error');
             if (data.success) loadScreenshots();
         }
 
         async function deleteScreenshot(name) {
             if (!confirm('确定删除此截图？')) return;
             const data = await api(`/api/screenshots/${name}`, { method: 'DELETE' });
-            showToast(data.message, data.success ? 'success' : 'error');
+            showToast(data.message || (data.success ? '删除成功' : '删除失败'), data.success ? 'success' : 'error');
             if (data.success) loadScreenshots();
         }
 
@@ -428,7 +542,7 @@
                     </div>
                 `).join('');
             } else {
-                list.innerHTML = '<p style="text-align:center; color:#666;">暂无脚本</p>';
+                list.innerHTML = '<p style="text-align:center; color:#666;">暂无脚本，点击上方按钮创建</p>';
             }
         }
 
@@ -447,7 +561,27 @@
                 method: 'PUT',
                 body: JSON.stringify({ content: document.getElementById('script-content').value })
             });
-            showToast(data.message, data.success ? 'success' : 'error');
+            showToast(data.message || (data.success ? '保存成功' : '保存失败'), data.success ? 'success' : 'error');
+        }
+
+        async function createScript() {
+            const name = document.getElementById('new-script-name').value.trim();
+            if (!name) {
+                showToast('请输入脚本名称', 'error');
+                return;
+            }
+            const fileName = name.endsWith('.sh') ? name : name + '.sh';
+            const data = await api(`/api/scripts/${fileName}`, {
+                method: 'PUT',
+                body: JSON.stringify({ content: '#!/system/bin/sh\n\n' })
+            });
+            showToast(data.message || (data.success ? '创建成功' : '创建失败'), data.success ? 'success' : 'error');
+            if (data.success) {
+                hideModal('newScriptModal');
+                document.getElementById('new-script-name').value = '';
+                loadScripts();
+                editScript(fileName);
+            }
         }
 
         async function triggerScript(name) {
@@ -455,7 +589,7 @@
                 method: 'POST',
                 body: JSON.stringify({ script: name })
             });
-            showToast(data.message, data.success ? 'success' : 'error');
+            showToast(data.message || (data.success ? '已触发' : '触发失败'), data.success ? 'success' : 'error');
         }
 
         function triggerCurrentScript() {
@@ -475,24 +609,59 @@
                 method: 'PUT',
                 body: JSON.stringify({ content: document.getElementById('config-content').value })
             });
-            showToast(data.message, data.success ? 'success' : 'error');
+            showToast(data.message || (data.success ? '保存成功' : '保存失败'), data.success ? 'success' : 'error');
         }
 
-        // 邮件
+        // 命令执行
+        async function execCommand() {
+            const cmd = document.getElementById('cmd-input').value.trim();
+            if (!cmd) {
+                showToast('请输入命令', 'error');
+                return;
+            }
+            const output = document.getElementById('cmd-output');
+            output.textContent = '执行中...';
+            const data = await api('/api/command', {
+                method: 'POST',
+                body: JSON.stringify({ command: cmd })
+            });
+            if (data.success) {
+                output.textContent = data.data || '(无输出)';
+                showToast(data.message, 'success');
+            } else {
+                output.textContent = '错误: ' + (data.message || '执行失败');
+                showToast(data.message, 'error');
+            }
+        }
+
+        function quickCmd(cmd) {
+            document.getElementById('cmd-input').value = cmd;
+            execCommand();
+        }
+
+        function clearOutput() {
+            document.getElementById('cmd-output').textContent = '等待执行...';
+        }
+
+        // 邮件配置
         async function loadEmailConfig() {
             const data = await api('/api/email');
             if (data.success && data.data) {
                 const d = data.data;
+                document.getElementById('enable-notify').checked = d.enable_notify === 'true' || d.enable_notify === '1';
                 if (d.smtp_server) document.getElementById('smtp-server').value = d.smtp_server;
                 if (d.smtp_port) document.getElementById('smtp-port').value = d.smtp_port;
                 if (d.username) document.getElementById('smtp-user').value = d.username;
                 if (d.from) document.getElementById('email-from').value = d.from;
                 if (d.to) document.getElementById('email-to').value = d.to;
+                if (d.subject) document.getElementById('email-subject').value = d.subject;
+                if (d.body) document.getElementById('email-body').value = d.body;
             }
         }
 
-        async function sendEmail() {
+        async function saveEmailConfig() {
             const req = {
+                enable_notify: document.getElementById('enable-notify').checked ? 'true' : 'false',
                 smtp_server: document.getElementById('smtp-server').value,
                 smtp_port: parseInt(document.getElementById('smtp-port').value),
                 username: document.getElementById('smtp-user').value,
@@ -502,8 +671,23 @@
                 subject: document.getElementById('email-subject').value,
                 body: document.getElementById('email-body').value
             };
+            const data = await api('/api/email/save', { method: 'POST', body: JSON.stringify(req) });
+            showToast(data.message || (data.success ? '配置已保存' : '保存失败'), data.success ? 'success' : 'error');
+        }
+
+        async function testEmail() {
+            const req = {
+                smtp_server: document.getElementById('smtp-server').value,
+                smtp_port: parseInt(document.getElementById('smtp-port').value),
+                username: document.getElementById('smtp-user').value,
+                password: document.getElementById('smtp-pass').value,
+                from: document.getElementById('email-from').value,
+                to: document.getElementById('email-to').value,
+                subject: 'TaskMod 测试邮件',
+                body: '这是一封测试邮件，来自 TaskMod 管理面板。'
+            };
             const data = await api('/api/email', { method: 'POST', body: JSON.stringify(req) });
-            showToast(data.message, data.success ? 'success' : 'error');
+            showToast(data.message || (data.success ? '测试邮件已发送' : '发送失败'), data.success ? 'success' : 'error');
         }
 
         // 脚本选择器
@@ -520,6 +704,315 @@
             const type = document.getElementById('task-type').value;
             document.getElementById('weeks-group').classList.toggle('hidden', type !== 'weekly');
             document.getElementById('interval-group').classList.toggle('hidden', type !== 'interval');
+        }
+
+        // ========== 工作流编辑器 ==========
+        let currentWorkflow = null;
+        let wfNodes = [];
+        let wfEdges = [];
+        let selectedNode = null;
+        let draggingNode = null;
+        let connectingFrom = null;
+        let nodeIdCounter = 0;
+
+        // 加载工作流列表
+        async function loadWorkflows() {
+            const data = await api('/api/workflows');
+            const list = document.getElementById('workflow-list');
+            if (data.success && data.data.length > 0) {
+                list.innerHTML = data.data.map(wf => `
+                    <div class="wf-item">
+                        <span class="name">${wf.name}</span>
+                        <span class="desc">${wf.description || ''}</span>
+                        <button class="btn btn-primary" onclick="editWorkflow('${wf.id}')">编辑</button>
+                        <button class="btn btn-success" onclick="runWorkflow('${wf.id}')">运行</button>
+                        <button class="btn btn-danger" onclick="deleteWorkflow('${wf.id}')">删除</button>
+                    </div>
+                `).join('');
+            } else {
+                list.innerHTML = '<p style="text-align:center; color:#666;">暂无工作流，点击上方按钮创建</p>';
+            }
+        }
+
+        // 新建工作流
+        function createNewWorkflow() {
+            const id = 'wf_' + Date.now();
+            currentWorkflow = { id, name: '新工作流', description: '', nodes: [], edges: [], enabled: true };
+            wfNodes = [];
+            wfEdges = [];
+            nodeIdCounter = 0;
+            document.getElementById('wf-name').value = currentWorkflow.name;
+            document.getElementById('wf-desc').value = '';
+            document.getElementById('workflow-editor-card').style.display = 'block';
+            document.getElementById('workflow-name').textContent = currentWorkflow.name;
+            // 添加默认开始和结束节点
+            addNode('start', 100, 250, '开始');
+            addNode('end', 700, 250, '结束');
+            drawCanvas();
+        }
+
+        // 编辑工作流
+        async function editWorkflow(id) {
+            const data = await api(`/api/workflows/${id}`);
+            if (data.success) {
+                currentWorkflow = data.data;
+                wfNodes = currentWorkflow.nodes || [];
+                wfEdges = currentWorkflow.edges || [];
+                nodeIdCounter = wfNodes.length;
+                document.getElementById('wf-name').value = currentWorkflow.name;
+                document.getElementById('wf-desc').value = currentWorkflow.description;
+                document.getElementById('workflow-editor-card').style.display = 'block';
+                document.getElementById('workflow-name').textContent = currentWorkflow.name;
+                drawCanvas();
+            }
+        }
+
+        // 保存工作流
+        async function saveWorkflow() {
+            if (!currentWorkflow) return;
+            currentWorkflow.name = document.getElementById('wf-name').value;
+            currentWorkflow.description = document.getElementById('wf-desc').value;
+            currentWorkflow.nodes = wfNodes;
+            currentWorkflow.edges = wfEdges;
+            const data = await api('/api/workflows', {
+                method: 'POST',
+                body: JSON.stringify({ workflow: currentWorkflow })
+            });
+            showToast(data.message || (data.success ? '保存成功' : '保存失败'), data.success ? 'success' : 'error');
+        }
+
+        // 删除工作流
+        async function deleteWorkflow(id) {
+            if (!confirm('确定删除此工作流？')) return;
+            const data = await api(`/api/workflows/${id}`, { method: 'DELETE' });
+            showToast(data.message || (data.success ? '已删除' : '删除失败'), data.success ? 'success' : 'error');
+            if (data.success) loadWorkflows();
+        }
+
+        // 运行工作流
+        async function runWorkflow(id) {
+            const data = await api('/api/workflows/run', {
+                method: 'POST',
+                body: JSON.stringify({ workflow_id: id })
+            });
+            showToast(data.message || (data.success ? '已开始执行' : '执行失败'), data.success ? 'success' : 'error');
+        }
+
+        function runCurrentWorkflow() {
+            if (currentWorkflow) runWorkflow(currentWorkflow.id);
+        }
+
+        // 添加节点
+        function addNode(type, x, y, label) {
+            const id = 'node_' + (++nodeIdCounter);
+            const node = { id, type, x, y, label: label || type, config: {} };
+            wfNodes.push(node);
+            return node;
+        }
+
+        // Canvas 绘制
+        function drawCanvas() {
+            const canvas = document.getElementById('workflow-canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 绘制连线
+            ctx.strokeStyle = '#667eea';
+            ctx.lineWidth = 2;
+            for (const edge of wfEdges) {
+                const source = wfNodes.find(n => n.id === edge.source);
+                const target = wfNodes.find(n => n.id === edge.target);
+                if (source && target) {
+                    ctx.beginPath();
+                    ctx.moveTo(source.x + 60, source.y + 20);
+                    ctx.lineTo(target.x + 60, target.y + 20);
+                    ctx.stroke();
+                    // 箭头
+                    const angle = Math.atan2(target.y - source.y, target.x - source.x);
+                    ctx.beginPath();
+                    ctx.moveTo(target.x + 60, target.y + 20);
+                    ctx.lineTo(target.x + 60 - 10 * Math.cos(angle - 0.5), target.y + 20 - 10 * Math.sin(angle - 0.5));
+                    ctx.lineTo(target.x + 60 - 10 * Math.cos(angle + 0.5), target.y + 20 - 10 * Math.sin(angle + 0.5));
+                    ctx.closePath();
+                    ctx.fillStyle = '#667eea';
+                    ctx.fill();
+                }
+            }
+
+            // 绘制节点
+            const colors = { start: '#2ed573', end: '#ff4757', script: '#667eea', command: '#ffa502', delay: '#a55eea', email: '#1e90ff' };
+            for (const node of wfNodes) {
+                ctx.fillStyle = colors[node.type] || '#667eea';
+                ctx.beginPath();
+                // 兼容旧浏览器
+                if (ctx.roundRect) {
+                    ctx.roundRect(node.x, node.y, 120, 40, 8);
+                } else {
+                    ctx.rect(node.x, node.y, 120, 40);
+                }
+                ctx.fill();
+                ctx.fillStyle = 'white';
+                ctx.font = '13px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(node.label, node.x + 60, node.y + 25);
+                if (selectedNode === node.id) {
+                    ctx.strokeStyle = '#333';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // 拖拽放置
+        function onDragStart(event, type) {
+            event.dataTransfer.setData('nodeType', type);
+        }
+
+        const canvas = document.getElementById('workflow-canvas');
+        canvas.addEventListener('dragover', (e) => e.preventDefault());
+        canvas.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const type = e.dataTransfer.getData('nodeType');
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left - 60;
+            const y = e.clientY - rect.top - 20;
+            const labels = { start: '开始', end: '结束', script: '执行脚本', command: '执行命令', delay: '延时等待', email: '发送邮件' };
+            addNode(type, x, y, labels[type] || type);
+            drawCanvas();
+        });
+
+        // 鼠标事件
+        let isDragging = false;
+        let dragOffset = { x: 0, y: 0 };
+
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+            for (const node of wfNodes) {
+                if (mx >= node.x && mx <= node.x + 120 && my >= node.y && my <= node.y + 40) {
+                    selectedNode = node.id;
+                    draggingNode = node;
+                    isDragging = true;
+                    dragOffset = { x: mx - node.x, y: my - node.y };
+                    drawCanvas();
+                    return;
+                }
+            }
+            selectedNode = null;
+            drawCanvas();
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (isDragging && draggingNode) {
+                const rect = canvas.getBoundingClientRect();
+                draggingNode.x = e.clientX - rect.left - dragOffset.x;
+                draggingNode.y = e.clientY - rect.top - dragOffset.y;
+                drawCanvas();
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            isDragging = false;
+            draggingNode = null;
+        });
+
+        // 双击配置节点
+        canvas.addEventListener('dblclick', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+            for (const node of wfNodes) {
+                if (mx >= node.x && mx <= node.x + 120 && my >= node.y && my <= node.y + 40) {
+                    openNodeConfig(node);
+                    return;
+                }
+            }
+        });
+
+        // 右键连线
+        canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+            for (const node of wfNodes) {
+                if (mx >= node.x && mx <= node.x + 120 && my >= node.y && my <= node.y + 40) {
+                    if (connectingFrom) {
+                        if (connectingFrom !== node.id) {
+                            wfEdges.push({ id: 'edge_' + Date.now(), source: connectingFrom, target: node.id });
+                            drawCanvas();
+                        }
+                        connectingFrom = null;
+                        showToast('连线完成', 'success');
+                    } else {
+                        connectingFrom = node.id;
+                        showToast('点击另一个节点完成连线', 'success');
+                    }
+                    return;
+                }
+            }
+            connectingFrom = null;
+        });
+
+        // 删除节点（Delete键）
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Delete' && selectedNode && currentTab === 'workflow') {
+                wfNodes = wfNodes.filter(n => n.id !== selectedNode);
+                wfEdges = wfEdges.filter(e => e.source !== selectedNode && e.target !== selectedNode);
+                selectedNode = null;
+                drawCanvas();
+            }
+        });
+
+        // 节点配置
+        function openNodeConfig(node) {
+            const form = document.getElementById('node-config-form');
+            let html = `<div class="form-group"><label>节点名称</label><input type="text" id="nc-label" value="${node.label}"></div>`;
+            switch (node.type) {
+                case 'script':
+                    html += `<div class="form-group"><label>脚本名称</label><input type="text" id="nc-script" value="${node.config.script || ''}" placeholder="例如: midea.sh"></div>`;
+                    break;
+                case 'command':
+                    html += `<div class="form-group"><label>命令</label><input type="text" id="nc-command" value="${node.config.command || ''}" placeholder="例如: input keyevent 26"></div>`;
+                    break;
+                case 'delay':
+                    html += `<div class="form-group"><label>延时秒数</label><input type="number" id="nc-seconds" value="${node.config.seconds || 1}" min="1"></div>`;
+                    break;
+                case 'email':
+                    html += `<div class="form-group"><label>收件人 (留空使用默认配置)</label><input type="text" id="nc-to" value="${node.config.to || ''}"></div>`;
+                    html += `<div class="form-group"><label>主题</label><input type="text" id="nc-subject" value="${node.config.subject || ''}"></div>`;
+                    html += `<div class="form-group"><label>内容</label><textarea id="nc-body" rows="3">${node.config.body || ''}</textarea></div>`;
+                    break;
+            }
+            form.innerHTML = html;
+            selectedNode = node.id;
+            showModal('nodeConfigModal');
+        }
+
+        function saveNodeConfig() {
+            const node = wfNodes.find(n => n.id === selectedNode);
+            if (!node) return;
+            node.label = document.getElementById('nc-label')?.value || node.label;
+            switch (node.type) {
+                case 'script':
+                    node.config.script = document.getElementById('nc-script')?.value || '';
+                    break;
+                case 'command':
+                    node.config.command = document.getElementById('nc-command')?.value || '';
+                    break;
+                case 'delay':
+                    node.config.seconds = parseInt(document.getElementById('nc-seconds')?.value || '1');
+                    break;
+                case 'email':
+                    node.config.to = document.getElementById('nc-to')?.value || '';
+                    node.config.subject = document.getElementById('nc-subject')?.value || '';
+                    node.config.body = document.getElementById('nc-body')?.value || '';
+                    break;
+            }
+            hideModal('nodeConfigModal');
+            drawCanvas();
+            showToast('节点配置已更新', 'success');
         }
 
         // 初始化

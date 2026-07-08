@@ -18,7 +18,7 @@ start_web_server() {
     chmod 755 "$SERVER_BIN"
     mkdir -p "$SCREENSHOTS_DIR"
     nohup "$SERVER_BIN" >> "$LOG_FILE" 2>&1 &
-    log "Web 管理服务已启动 (端口 8080)"
+    log "Web 管理服务已启动 (端口 9527)"
   else
     log "Web 服务二进制不存在: $SERVER_BIN"
   fi

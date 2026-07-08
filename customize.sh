@@ -30,12 +30,12 @@ chmod 644 /sdcard/TaskMod/README.txt
 chmod 755 $MODPATH/bin/taskmod-server 2>/dev/null
 
 ui_print "----------------------------------"
-ui_print "  TaskMod v4.0 安装成功"
+ui_print "  TaskMod $(grep_prop version $MODPATH/module.prop) 安装成功"
 ui_print "  定时任务管理 + Web面板"
 ui_print "----------------------------------"
 ui_print "配置文件：/sdcard/TaskMod/schedule.conf"
 ui_print "脚本目录：/sdcard/TaskMod/scripts/"
 ui_print "截图目录：/sdcard/TaskMod/screenshots/"
-ui_print "管理面板：http://localhost:8080"
+ui_print "管理面板：http://localhost:9527"
 ui_print "修改配置后无需重启, 30秒内自动生效"
 ui_print "----------------------------------"

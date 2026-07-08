@@ -114,14 +114,14 @@ jobs:
 
             ### 功能
             - 定时任务调度
-            - Web 管理面板 (端口 8080)
+            - Web 管理面板 (端口 9527)
             - 截图管理 (系统 screencap)
             - 邮件通知
 
             ### 安装
             1. 下载 `TaskMod-${{ steps.version.outputs.version }}.zip`
             2. 通过 Magisk 刷入
-            3. 浏览器访问 `http://设备IP:8080`
+            3. 浏览器访问 `http://设备IP:9527`
           files: TaskMod-${{ steps.version.outputs.version }}.zip
           draft: false
           prerelease: false
