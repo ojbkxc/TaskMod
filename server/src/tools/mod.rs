@@ -43,7 +43,11 @@ impl ToolRegistry {
     }
 
     pub async fn execute(&self, name: &str, args: &str) -> Option<String> {
-        self.tools.get(name).map(|tool| tool.execute(args).await)
+        if let Some(tool) = self.tools.get(name) {
+            Some(tool.execute(args).await)
+        } else {
+            None
+        }
     }
 }
 

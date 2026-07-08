@@ -254,8 +254,6 @@ pub async fn send_control(
     Json(req): Json<ControlRequest>,
     _state: SharedMirrorState,
 ) -> Json<ApiResponse<String>> {
-    use tokio_tungstenite::tungstenite::protocol::Message as WsMessage;
-
     let result = match req.action.as_str() {
         "touch" | "touch_down" => {
             let x = req.x.unwrap_or(0.0) as i32;
@@ -384,7 +382,7 @@ pub async fn mirror_ws(
 
         if let Some(mut video_rx) = state.get_video_rx() {
             while let Ok(data) = video_rx.recv().await {
-                if let Err(_) = write.send(tokio_tungstenite::tungstenite::protocol::Message::Binary(data)).await {
+                if let Err(_) = write.send(axum::extract::ws::Message::Binary(data)).await {
                     break;
                 }
             }
@@ -401,7 +399,7 @@ pub async fn audio_ws(
 
         if let Some(mut audio_rx) = state.get_audio_rx() {
             while let Ok(data) = audio_rx.recv().await {
-                if let Err(_) = write.send(tokio_tungstenite::tungstenite::protocol::Message::Binary(data)).await {
+                if let Err(_) = write.send(axum::extract::ws::Message::Binary(data)).await {
                     break;
                 }
             }

@@ -8,6 +8,7 @@ use tokio::process::Command;
 use crate::config::{SCHEDULE_FILE, SCREENSHOTS_DIR, LOG_FILE, SCRIPTS_DIR, WORKFLOWS_DIR, EMAIL_CONF};
 use crate::data::models::{CommandRequest, EmailConfig, ConfigUpdate, Workflow, WorkflowSaveRequest, WorkflowRunRequest, MqttConfig};
 use crate::data::response::ApiResponse;
+use crate::utils::adb;
 use crate::utils::email;
 use crate::utils::mqtt;
 
@@ -570,7 +571,7 @@ pub async fn execute_workflow(workflow: Workflow, context: Option<serde_json::Va
                 
                 if !text.is_empty() {
                     let engine = node.config.get("engine").and_then(|v| v.as_str()).map(|s| s.to_string());
-                    let _ = utils::adb::tts_speak(&text, engine).await;
+                    let _ = adb::tts_speak(&text, engine).await;
                     log(&format!("TTS语音播放: {}", text));
                 }
             }
@@ -650,7 +651,7 @@ pub async fn execute_workflow(workflow: Workflow, context: Option<serde_json::Va
                 }
                 
                 if !topic.is_empty() {
-                    if let Err(e) = utils::mqtt::publish(topic, payload).await {
+                    if let Err(e) = mqtt::publish(topic, payload).await {
                         log(&format!("MQTT发布失败: {}", e));
                     } else {
                         log(&format!("MQTT发布成功: {}", topic));

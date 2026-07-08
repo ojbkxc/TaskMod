@@ -80,12 +80,12 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
         let mut conversation_messages: Vec<serde_json::Value> = Vec::new();
 
         while let Some(msg) = read.next().await {
-            if let Ok(tokio_tungstenite::tungstenite::protocol::Message::Text(text)) = msg {
+            if let Ok(axum::extract::ws::Message::Text(text)) = msg {
                 let req: Result<AiChatRequest, _> = serde_json::from_str(&text);
                 if let Ok(req) = req {
                     let provider = get_ai_provider(&req.provider_id);
                     if provider.is_none() {
-                        let _ = write.send(tokio_tungstenite::tungstenite::protocol::Message::Text(
+                        let _ = write.send(axum::extract::ws::Message::Text(
                             serde_json::to_string(&json!({
                                 "type": "error",
                                 "message": "供应商不存在"
@@ -98,7 +98,7 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                     let client = match Client::builder().build() {
                         Ok(c) => c,
                         Err(_) => {
-                            let _ = write.send(tokio_tungstenite::tungstenite::protocol::Message::Text(
+                            let _ = write.send(axum::extract::ws::Message::Text(
                                 serde_json::to_string(&json!({
                                     "type": "error",
                                     "message": "创建客户端失败"
@@ -183,7 +183,7 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                         {
                             Ok(r) => r,
                             Err(e) => {
-                                let _ = write.send(tokio_tungstenite::tungstenite::protocol::Message::Text(
+                                let _ = write.send(axum::extract::ws::Message::Text(
                                     serde_json::to_string(&json!({
                                         "type": "error",
                                         "message": format!("API请求失败: {}", e)
@@ -194,7 +194,7 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                         };
 
                         if !response.status().is_success() {
-                            let _ = write.send(tokio_tungstenite::tungstenite::protocol::Message::Text(
+                            let _ = write.send(axum::extract::ws::Message::Text(
                                 serde_json::to_string(&json!({
                                     "type": "error",
                                     "message": format!("API返回错误: {}", response.status())
@@ -275,7 +275,7 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                         tool_calls.sort_by_key(|tc| tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0));
 
                         if !full_response.is_empty() {
-                            let _ = write.send(tokio_tungstenite::tungstenite::protocol::Message::Text(
+                            let _ = write.send(axum::extract::ws::Message::Text(
                                 serde_json::to_string(&json!({
                                     "type": "message",
                                     "content": full_response
@@ -284,7 +284,7 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
 
                             let images: Vec<String> = extract_images(&full_response);
                             for img_url in images {
-                                let _ = write.send(tokio_tungstenite::tungstenite::protocol::Message::Text(
+                                let _ = write.send(axum::extract::ws::Message::Text(
                                     serde_json::to_string(&json!({
                                         "type": "image",
                                         "url": img_url
@@ -327,7 +327,7 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                                 conversation_messages.push(tr.clone());
                             }
 
-                            let _ = write.send(tokio_tungstenite::tungstenite::protocol::Message::Text(
+                            let _ = write.send(axum::extract::ws::Message::Text(
                                 serde_json::to_string(&json!({
                                     "type": "tool_result",
                                     "results": tool_results
