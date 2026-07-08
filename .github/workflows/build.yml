@@ -48,10 +48,14 @@ jobs:
         run: |
           # 优先使用手动输入的版本号，否则从 tag 提取
           if [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
+            TAG_VERSION="${{ github.event.inputs.version }}"
           else
-            VERSION=${GITHUB_REF#refs/tags/v}
+            TAG_VERSION=${GITHUB_REF#refs/tags/}
           fi
+          echo "tag=$TAG_VERSION" >> $GITHUB_OUTPUT
+
+          # 去掉 v 前缀用于文件更新
+          VERSION=${TAG_VERSION#v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
           # 计算 versionCode (1.0.1 -> 1000001)
@@ -70,7 +74,7 @@ jobs:
           # 更新 Cargo.toml
           sed -i "0,/^version = \".*\"/s/^version = \".*\"/version = \"$VERSION\"/" server/Cargo.toml
 
-          echo "Updated version to $VERSION (code: $VERSION_CODE)"
+          echo "Updated to $TAG_VERSION (code: $VERSION_CODE)"
 
       - name: Build
         working-directory: server
@@ -103,8 +107,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: TaskMod ${{ steps.version.outputs.version }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: TaskMod ${{ steps.version.outputs.tag }}
           body: |
             ## TaskMod ${{ steps.version.outputs.version }}
 
