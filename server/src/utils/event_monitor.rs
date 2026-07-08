@@ -49,8 +49,8 @@ where
 }
 
 fn notify_event(event: SystemEvent) {
-    let handlers = EVENT_HANDLERS.lock().unwrap().clone();
-    for handler in handlers {
+    let handlers = EVENT_HANDLERS.lock().unwrap();
+    for handler in handlers.iter() {
         handler(event.clone());
     }
 }

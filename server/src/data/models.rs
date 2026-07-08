@@ -100,7 +100,7 @@ pub struct WorkflowEdge {
     pub target: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct WorkflowTriggerConfig {
     #[serde(default)]
     pub wifi_ssid: String,

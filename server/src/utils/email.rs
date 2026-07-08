@@ -136,7 +136,7 @@ async fn send_email_inner(
     let to_addrs: Vec<Mailbox> = config.to.split(',')
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
-        .map(|s| s.parse())
+        .map(|s| s.parse::<Mailbox>())
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| {
             log("Email", &format!("收件人地址无效: {}", e));

@@ -76,7 +76,7 @@ fn handle_event(event: utils::event_monitor::SystemEvent) {
             continue;
         }
 
-        let trigger_matches = match (&workflow.trigger_type, &event) {
+        let trigger_matches = match (workflow.trigger_type.as_str(), &event) {
             ("wifi_connected", SystemEvent::WifiConnected { ssid, .. }) => {
                 workflow.trigger_config.wifi_ssid.is_empty() || workflow.trigger_config.wifi_ssid == *ssid
             }
