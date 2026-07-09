@@ -6,7 +6,7 @@ use std::fs;
 use tokio::process::Command;
 
 use crate::config::{SCHEDULE_FILE, SCREENSHOTS_DIR, LOG_FILE, SCRIPTS_DIR, WORKFLOWS_DIR};
-use crate::data::models::{CommandRequest, EmailConfig, ConfigUpdate, Workflow, WorkflowSaveRequest, WorkflowRunRequest, MqttConfig};
+use crate::data::models::{CommandRequest, EmailConfig, ConfigUpdate, Workflow, WorkflowSaveRequest, WorkflowRunRequest};
 use crate::data::response::ApiResponse;
 use crate::utils::adb;
 use crate::utils::email;
@@ -227,16 +227,8 @@ pub async fn get_mqtt_config() -> Json<serde_json::Value> {
     }
 }
 
-pub async fn save_mqtt_config(Json(config): Json<crate::data::models::MqttConfig>) -> Json<ApiResponse<String>> {
-    let mqtt_config = crate::utils::mqtt::MqttConfig {
-        enabled: config.enabled,
-        broker: config.broker,
-        topic_prefix: config.topic_prefix,
-        username: config.username,
-        password: config.password,
-        client_id: config.client_id,
-    };
-    match mqtt::save_mqtt_config(&mqtt_config) {
+pub async fn save_mqtt_config(Json(config): Json<mqtt::MqttConfig>) -> Json<ApiResponse<String>> {
+    match mqtt::save_mqtt_config(&config) {
         Ok(_) => {
             mqtt::stop_mqtt().await;
             tokio::spawn(async {

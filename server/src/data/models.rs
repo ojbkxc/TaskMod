@@ -135,23 +135,3 @@ pub struct WorkflowSaveRequest {
 pub struct WorkflowRunRequest {
     pub workflow_id: String,
 }
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct MqttConfig {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default = "default_broker")]
-    pub broker: String,
-    #[serde(default = "default_topic_prefix")]
-    pub topic_prefix: String,
-    #[serde(default)]
-    pub username: String,
-    #[serde(default)]
-    pub password: String,
-    #[serde(default = "default_client_id")]
-    pub client_id: String,
-}
-
-fn default_broker() -> String { "tcp://localhost:1883".to_string() }
-fn default_topic_prefix() -> String { "taskmod".to_string() }
-fn default_client_id() -> String { "taskmod-device".to_string() }

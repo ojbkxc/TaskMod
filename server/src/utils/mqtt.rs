@@ -1,15 +1,27 @@
 use std::fs;
+use serde::Deserialize;
 
 use crate::config::{LOG_FILE, MQTT_CONF};
 
+#[derive(Debug, Deserialize, Clone)]
 pub struct MqttConfig {
-    pub broker: String,
-    pub topic_prefix: String,
-    pub username: String,
-    pub password: String,
-    pub client_id: String,
+    #[serde(default)]
     pub enabled: bool,
+    #[serde(default = "default_broker")]
+    pub broker: String,
+    #[serde(default = "default_topic_prefix")]
+    pub topic_prefix: String,
+    #[serde(default)]
+    pub username: String,
+    #[serde(default)]
+    pub password: String,
+    #[serde(default = "default_client_id")]
+    pub client_id: String,
 }
+
+fn default_broker() -> String { "tcp://localhost:1883".to_string() }
+fn default_topic_prefix() -> String { "taskmod".to_string() }
+fn default_client_id() -> String { "taskmod-device".to_string() }
 
 impl Default for MqttConfig {
     fn default() -> Self {
