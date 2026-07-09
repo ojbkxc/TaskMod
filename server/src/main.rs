@@ -265,6 +265,10 @@ async fn main() -> anyhow::Result<()> {
         // AI Hub: MCP工具历史 & 使用量统计
         .route("/api/ai/mcp-history", get(api::ai_hub::list_mcp_history).post(api::ai_hub::record_mcp_tool_call).delete(api::ai_hub::clear_mcp_history))
         .route("/api/ai/usage", get(api::ai_hub::get_usage_stats).post(api::ai_hub::record_usage))
+        // 设备文件上传 & 剪贴板同步 (借鉴QtScrcpy)
+        .route("/api/device/upload-file", post(api::mirror::upload_file_to_device))
+        .route("/api/device/clipboard", get(api::mirror::get_device_clipboard).put(api::mirror::set_device_clipboard))
+        .route("/api/device/info", get(api::mirror::get_device_info))
         .merge(mirror_routes)
         .layer(CorsLayer::permissive());
 

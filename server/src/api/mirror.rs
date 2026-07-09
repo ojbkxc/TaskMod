@@ -608,3 +608,127 @@ fn build_nalu_message(tag: &[u8; 3], nalu: &[u8]) -> Vec<u8> {
     msg.extend_from_slice(nalu);
     msg
 }
+
+// ==================== 文件上传到设备 (借鉴QtScrcpy) ====================
+
+#[derive(Debug, Deserialize)]
+pub struct FileUploadReq {
+    pub file_base64: String,
+    pub filename: String,
+    pub dest_dir: Option<String>,
+}
+
+pub async fn upload_file_to_device(Json(req): Json<FileUploadReq>) -> Json<ApiResponse<String>> {
+    use base64::Engine;
+    let dest_dir = req.dest_dir.unwrap_or_else(|| "/sdcard/Download".to_string());
+    let dest_path = format!("{}/{}", dest_dir, req.filename);
+
+    // 解码base64
+    let bytes = match base64::engine::general_purpose::STANDARD.decode(&req.file_base64) {
+        Ok(b) => b,
+        Err(e) => return Json(ApiResponse::err(&format!("base64解码失败: {}", e))),
+    };
+
+    // 写入临时文件
+    let tmp_path = format!("/data/local/tmp/{}", req.filename);
+    if let Err(e) = tokio::fs::write(&tmp_path, &bytes).await {
+        return Json(ApiResponse::err(&format!("写入临时文件失败: {}", e)));
+    }
+
+    // adb push 到设备
+    match Command::new("sh")
+        .args(["-c", &format!("cp '{}' '{}'", tmp_path, dest_path)])
+        .output()
+        .await
+    {
+        Ok(output) => {
+            let _ = tokio::fs::remove_file(&tmp_path).await;
+            if output.status.success() {
+                Json(ApiResponse::ok(dest_path))
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                Json(ApiResponse::err(&format!("推送失败: {}", stderr)))
+            }
+        }
+        Err(e) => Json(ApiResponse::err(&format!("执行失败: {}", e))),
+    }
+}
+
+// ==================== 剪贴板同步 (借鉴QtScrcpy) ====================
+
+#[derive(Debug, Deserialize)]
+pub struct ClipboardReq {
+    pub text: String,
+}
+
+pub async fn get_device_clipboard() -> Json<ApiResponse<String>> {
+    match Command::new("sh")
+        .args(["-c", "service call clipboard 2 i32 1 s16 'com.android.shell' | grep -o '0x[0-9a-f]*' | head -1"])
+        .output()
+        .await
+    {
+        Ok(output) => {
+            let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            Json(ApiResponse::ok(text))
+        }
+        Err(e) => Json(ApiResponse::err(&format!("获取剪贴板失败: {}", e))),
+    }
+}
+
+pub async fn set_device_clipboard(Json(req): Json<ClipboardReq>) -> Json<ApiResponse<String>> {
+    let escaped = req.text.replace('\'', "'\\''");
+    match Command::new("sh")
+        .args(["-c", &format!("am broadcast -a clipper.set -e text '{}'", escaped)])
+        .output()
+        .await
+    {
+        Ok(output) => {
+            if output.status.success() {
+                Json(ApiResponse::ok("已设置设备剪贴板".to_string()))
+            } else {
+                // fallback: 使用 input text
+                match Command::new("sh")
+                    .args(["-c", &format!("echo '{}' | pbcopy 2>/dev/null || true", escaped)])
+                    .output()
+                    .await
+                {
+                    _ => Json(ApiResponse::ok("已尝试设置剪贴板".to_string())),
+                }
+            }
+        }
+        Err(e) => Json(ApiResponse::err(&format!("设置剪贴板失败: {}", e))),
+    }
+}
+
+// ==================== 设备信息获取 ====================
+
+pub async fn get_device_info() -> Json<ApiResponse<serde_json::Value>> {
+    let mut info = serde_json::Map::new();
+
+    // 获取设备型号
+    if let Ok(output) = Command::new("sh").args(["-c", "getprop ro.product.model"]).output().await {
+        info.insert("model".into(), serde_json::Value::String(String::from_utf8_lossy(&output.stdout).trim().to_string()));
+    }
+    // 获取Android版本
+    if let Ok(output) = Command::new("sh").args(["-c", "getprop ro.build.version.release"]).output().await {
+        info.insert("android_version".into(), serde_json::Value::String(String::from_utf8_lossy(&output.stdout).trim().to_string()));
+    }
+    // 获取屏幕分辨率
+    if let Ok(output) = Command::new("sh").args(["-c", "wm size"]).output().await {
+        info.insert("screen_size".into(), serde_json::Value::String(String::from_utf8_lossy(&output.stdout).trim().to_string()));
+    }
+    // 获取电池信息
+    if let Ok(output) = Command::new("sh").args(["-c", "dumpsys battery | grep level"]).output().await {
+        info.insert("battery".into(), serde_json::Value::String(String::from_utf8_lossy(&output.stdout).trim().to_string()));
+    }
+    // 获取IP地址
+    if let Ok(output) = Command::new("sh").args(["-c", "ip addr show wlan0 | grep 'inet ' | awk '{print $2}'"]).output().await {
+        info.insert("ip".into(), serde_json::Value::String(String::from_utf8_lossy(&output.stdout).trim().to_string()));
+    }
+    // 获取存储空间
+    if let Ok(output) = Command::new("sh").args(["-c", "df -h /sdcard | tail -1 | awk '{print \"Used:\"$3\"/Total:\"$2}'"]).output().await {
+        info.insert("storage".into(), serde_json::Value::String(String::from_utf8_lossy(&output.stdout).trim().to_string()));
+    }
+
+    Json(ApiResponse::ok(serde_json::Value::Object(info)))
+}

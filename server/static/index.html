@@ -452,6 +452,34 @@
                     <button class="btn btn-primary" onclick="startApp()">启动应用</button>
                 </div>
             </div>
+
+            <!-- 设备信息 (借鉴QtScrcpy) -->
+            <div class="card">
+                <h2>设备信息</h2>
+                <button class="btn btn-info" onclick="loadDeviceInfo()" style="margin-bottom:10px;">刷新设备信息</button>
+                <div id="device-info" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;"></div>
+            </div>
+
+            <!-- 文件上传到设备 (借鉴QtScrcpy) -->
+            <div class="card">
+                <h2>文件上传到设备</h2>
+                <div id="file-drop-zone" style="border:2px dashed #ccc;border-radius:8px;padding:30px;text-align:center;cursor:pointer;transition:all 0.3s;" ondragover="event.preventDefault();this.style.borderColor='#007bff';this.style.background='#f0f7ff';" ondragleave="this.style.borderColor='#ccc';this.style.background='';" ondrop="handleFileDrop(event)">
+                    <p style="color:#888;margin:0;">拖拽文件到此处上传到设备 /sdcard/Download/</p>
+                    <p style="color:#aaa;font-size:12px;margin:5px 0 0;">或点击选择文件</p>
+                    <input type="file" id="file-upload-input" style="display:none;" multiple onchange="handleFileSelect(this.files)">
+                </div>
+                <div id="file-upload-progress" style="margin-top:10px;"></div>
+            </div>
+
+            <!-- 剪贴板同步 (借鉴QtScrcpy) -->
+            <div class="card">
+                <h2>剪贴板同步</h2>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <button class="btn btn-info" onclick="getDeviceClipboard()">获取设备剪贴板</button>
+                    <button class="btn btn-primary" onclick="setDeviceClipboard()">设置设备剪贴板</button>
+                </div>
+                <textarea id="clipboard-text" rows="3" placeholder="剪贴板内容..." style="width:100%;margin-top:10px;resize:vertical;"></textarea>
+            </div>
         </div>
 
         <!-- AI助手 -->
@@ -3076,6 +3104,84 @@
             } else {
                 showToast(data.message || '获取失败', 'error');
             }
+        }
+
+        // ==================== 设备信息 (借鉴QtScrcpy) ====================
+        async function loadDeviceInfo() {
+            const data = await api('/api/device/info');
+            const el = document.getElementById('device-info');
+            if (!data.success) { el.innerHTML = '<p style="color:#aaa;">获取失败</p>'; return; }
+            const info = data.data;
+            const icons = { model:'📱', android_version:'🤖', screen_size:'🖥️', battery:'🔋', ip:'🌐', storage:'💾' };
+            const labels = { model:'设备型号', android_version:'Android版本', screen_size:'屏幕分辨率', battery:'电池', ip:'IP地址', storage:'存储空间' };
+            el.innerHTML = Object.entries(info).map(([k,v]) =>
+                `<div class="card" style="padding:12px;text-align:center;">
+                    <div style="font-size:24px;">${icons[k]||'📊'}</div>
+                    <div style="font-size:18px;font-weight:bold;margin:5px 0;">${v||'N/A'}</div>
+                    <div style="color:#888;font-size:12px;">${labels[k]||k}</div>
+                </div>`
+            ).join('');
+        }
+
+        // ==================== 文件上传到设备 (借鉴QtScrcpy) ====================
+        document.getElementById('file-drop-zone')?.addEventListener('click', () => {
+            document.getElementById('file-upload-input')?.click();
+        });
+
+        function handleFileDrop(e) {
+            e.preventDefault();
+            e.currentTarget.style.borderColor = '#ccc';
+            e.currentTarget.style.background = '';
+            const files = e.dataTransfer.files;
+            if (files.length > 0) uploadFilesToDevice(files);
+        }
+
+        function handleFileSelect(files) {
+            if (files.length > 0) uploadFilesToDevice(files);
+        }
+
+        async function uploadFilesToDevice(files) {
+            const progress = document.getElementById('file-upload-progress');
+            for (const file of files) {
+                progress.innerHTML = `<p>正在上传: ${file.name} (${(file.size/1024).toFixed(1)}KB)...</p>`;
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const base64 = e.target.result.split(',')[1];
+                    const data = await api('/api/device/upload-file', {
+                        method: 'POST',
+                        body: JSON.stringify({ file_base64: base64, filename: file.name })
+                    });
+                    if (data.success) {
+                        progress.innerHTML += `<p style="color:#28a745;">✓ ${file.name} → ${data.data}</p>`;
+                    } else {
+                        progress.innerHTML += `<p style="color:#dc3545;">✗ ${file.name}: ${data.message}</p>`;
+                    }
+                };
+                reader.readAsDataURL(file);
+                // 等待上传完成再处理下一个
+                await new Promise(r => setTimeout(r, 500));
+            }
+        }
+
+        // ==================== 剪贴板同步 (借鉴QtScrcpy) ====================
+        async function getDeviceClipboard() {
+            const data = await api('/api/device/clipboard');
+            if (data.success) {
+                document.getElementById('clipboard-text').value = data.data;
+                showToast('已获取设备剪贴板');
+            } else {
+                showToast(data.message || '获取失败', 'error');
+            }
+        }
+
+        async function setDeviceClipboard() {
+            const text = document.getElementById('clipboard-text').value;
+            if (!text) { showToast('请输入文本', 'error'); return; }
+            const data = await api('/api/device/clipboard', {
+                method: 'PUT',
+                body: JSON.stringify({ text })
+            });
+            showToast(data.success ? '已设置设备剪贴板' : (data.message || '设置失败'), data.success ? 'success' : 'error');
         }
 
         document.getElementById('mirror-canvas').addEventListener('click', async (e) => {

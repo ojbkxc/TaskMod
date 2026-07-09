@@ -1,6 +1,7 @@
 use axum::{Json, extract::Path, extract::Query};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::fs;
@@ -409,7 +410,7 @@ pub struct SkillVariable {
 pub struct SkillReq {
     pub name: String,
     pub description: Option<String>,
-    pub prompt_template: String,
+    pub prompt_template: Option<String>,
     pub variables: Option<Vec<SkillVariable>>,
     pub enabled: Option<bool>,
     pub category: Option<String>,
@@ -453,7 +454,7 @@ pub async fn create_skill(Json(req): Json<SkillReq>) -> Json<ApiResponse<Skill>>
         id: gen_id(),
         name: req.name,
         description: req.description.unwrap_or_default(),
-        prompt_template: req.prompt_template,
+        prompt_template: req.prompt_template.unwrap_or_default(),
         variables: req.variables.unwrap_or_default(),
         enabled: req.enabled.unwrap_or(true),
         category: req.category.unwrap_or_default(),
@@ -477,7 +478,7 @@ pub async fn update_skill(
     };
     skill.name = req.name;
     skill.description = req.description.unwrap_or_default();
-    skill.prompt_template = req.prompt_template;
+    skill.prompt_template = req.prompt_template.unwrap_or(skill.prompt_template);
     if let Some(vars) = req.variables { skill.variables = vars; }
     if let Some(enabled) = req.enabled { skill.enabled = enabled; }
     if let Some(cat) = req.category { skill.category = cat; }
@@ -767,6 +768,8 @@ pub async fn create_mcp_server(Json(req): Json<McpServerReq>) -> Json<ApiRespons
         url: req.url.unwrap_or_default(),
         enabled: req.enabled.unwrap_or(false),
         auto_connect: req.auto_connect.unwrap_or(false),
+        allowed_tools: req.allowed_tools.unwrap_or_default(),
+        cached_tools: req.cached_tools.unwrap_or_default(),
         created_at: now_ms(),
     };
     match write_json_file(&mcp_path(&server.id), &server).await {
@@ -792,6 +795,8 @@ pub async fn update_mcp_server(
     if let Some(u) = req.url { server.url = u; }
     if let Some(enabled) = req.enabled { server.enabled = enabled; }
     if let Some(auto) = req.auto_connect { server.auto_connect = auto; }
+    if let Some(at) = req.allowed_tools { server.allowed_tools = at; }
+    if let Some(ct) = req.cached_tools { server.cached_tools = ct; }
     match write_json_file(&path, &server).await {
         Ok(()) => Json(ApiResponse::ok(server)),
         Err(e) => Json(ApiResponse::err(&format!("保存失败: {}", e))),
@@ -1118,7 +1123,7 @@ pub struct UploadImageReq {
 pub async fn upload_image(Json(req): Json<UploadImageReq>) -> Json<serde_json::Value> {
     use crate::config::UPLOAD_DIR;
     let _ = fs::create_dir_all(UPLOAD_DIR).await;
-    let id = ts_id();
+    let id = gen_id();
     let ext = match req.mime_type.as_deref() {
         Some("image/png") => "png",
         Some("image/jpeg") | Some("image/jpg") => "jpg",
@@ -1189,7 +1194,7 @@ pub async fn import_skill_from_github(Json(req): Json<SkillImportReq>) -> Json<s
                 }
                 // 尝试解析为 JSON SkillReq 格式
                 if let Ok(req_skill) = serde_json::from_str::<SkillReq>(&content) {
-                    let id = ts_id();
+                    let id = gen_id();
                     let skill = Skill {
                         id: id.clone(),
                         name: req_skill.name,
@@ -1197,16 +1202,16 @@ pub async fn import_skill_from_github(Json(req): Json<SkillImportReq>) -> Json<s
                         prompt_template: req_skill.prompt_template.unwrap_or_default(),
                         variables: req_skill.variables.unwrap_or_default(),
                         enabled: req_skill.enabled.unwrap_or(true),
-                        source: Some(format!("github:{}", req.github_url)),
-                        category: req_skill.category,
-                        created_at: ts_now(),
+                        source: format!("github:{}", req.github_url),
+                        category: req_skill.category.unwrap_or_default(),
+                        created_at: now_ms(),
                     };
                     let path = skill_path(&id);
                     let _ = write_json_file(&path, &skill).await;
                     return Json(json!({"ok": true, "skill": skill}));
                 }
                 // 作为纯文本 prompt_template 处理
-                let id = ts_id();
+                let id = gen_id();
                 let name = req.name.clone().unwrap_or_else(|| {
                     raw_url.split('/').last().unwrap_or("imported_skill").replace(".json", "").replace(".md", "")
                 });
@@ -1217,9 +1222,9 @@ pub async fn import_skill_from_github(Json(req): Json<SkillImportReq>) -> Json<s
                     prompt_template: content,
                     variables: vec![],
                     enabled: true,
-                    source: Some(format!("github:{}", req.github_url)),
-                    category: req.category,
-                    created_at: ts_now(),
+                    source: format!("github:{}", req.github_url),
+                    category: req.category.unwrap_or_default(),
+                    created_at: now_ms(),
                 };
                 let path = skill_path(&id);
                 let _ = write_json_file(&path, &skill).await;
