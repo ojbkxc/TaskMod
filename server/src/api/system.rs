@@ -6,7 +6,7 @@ use std::fs;
 use tokio::process::Command;
 
 use crate::config::{SCHEDULE_FILE, SCREENSHOTS_DIR, LOG_FILE, SCRIPTS_DIR, WORKFLOWS_DIR};
-use crate::data::models::{CommandRequest, EmailConfig, ConfigUpdate, Workflow, WorkflowSaveRequest, WorkflowRunRequest};
+use crate::data::models::{CommandRequest, EmailConfig, ConfigUpdate, Workflow, WorkflowSaveRequest, WorkflowRunRequest, MqttConfigRequest};
 use crate::data::response::ApiResponse;
 use crate::utils::adb;
 use crate::utils::email;
@@ -227,14 +227,15 @@ pub async fn get_mqtt_config() -> Json<serde_json::Value> {
     }
 }
 
-pub async fn save_mqtt_config(Json(config): Json<serde_json::Value>) -> Json<ApiResponse<String>> {
-    let enabled = config.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
-    let broker = config.get("broker").and_then(|v| v.as_str()).unwrap_or("tcp://localhost:1883").to_string();
-    let topic_prefix = config.get("topic_prefix").and_then(|v| v.as_str()).unwrap_or("taskmod").to_string();
-    let username = config.get("username").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let password = config.get("password").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let client_id = config.get("client_id").and_then(|v| v.as_str()).unwrap_or("taskmod-device").to_string();
-    let mqtt_config = mqtt::MqttConfig { enabled, broker, topic_prefix, username, password, client_id };
+pub async fn save_mqtt_config(Json(req): Json<MqttConfigRequest>) -> Json<ApiResponse<String>> {
+    let mqtt_config = mqtt::MqttConfig {
+        enabled: req.enabled,
+        broker: req.broker,
+        topic_prefix: req.topic_prefix,
+        username: req.username,
+        password: req.password,
+        client_id: req.client_id,
+    };
     if let Err(e) = mqtt::save_mqtt_config(&mqtt_config) {
         return Json(ApiResponse::err(&format!("保存失败: {}", e)));
     }
