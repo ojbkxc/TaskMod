@@ -28,6 +28,7 @@ tower-http = { version = "0.4", features = ["cors"] }
 # --- 工具库 ---
 chrono = { version = "0.4.42", features = ["serde", "clock"], default-features = false }
 anyhow = "1.0"
+base64 = "0.22"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 lazy_static = "1.4"

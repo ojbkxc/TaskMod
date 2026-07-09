@@ -90,6 +90,7 @@
             <button onclick="showTab('mirror')" id="tab-mirror">投屏控制</button>
             <button onclick="showTab('tts')" id="tab-tts">语音播报</button>
             <button onclick="showTab('ai')" id="tab-ai">AI助手</button>
+            <button onclick="showTab('aihub')" id="tab-aihub" style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;">AI Hub</button>
             <button onclick="showTab('settings')" id="tab-settings">服务设置</button>
         </div>
 
@@ -485,6 +486,539 @@
                 </div>
             </div>
         </div>
+
+        <!-- AI Hub -->
+        <div id="aihub" class="tab-content hidden">
+            <div class="card">
+                <h2>AI Hub</h2>
+                <div style="display:flex;gap:6px;margin-bottom:15px;flex-wrap:wrap;">
+                    <button class="btn btn-primary" onclick="showAiTab('ai-chat')" id="aitab-ai-chat">对话</button>
+                    <button class="btn" onclick="showAiTab('ai-sessions')" id="aitab-ai-sessions">历史</button>
+                    <button class="btn" onclick="showAiTab('ai-presets')" id="aitab-ai-presets">预设</button>
+                    <button class="btn" onclick="showAiTab('ai-memories')" id="aitab-ai-memories">记忆</button>
+                    <button class="btn" onclick="showAiTab('ai-skills')" id="aitab-ai-skills">Skill</button>
+                    <button class="btn" onclick="showAiTab('ai-saved')" id="aitab-ai-saved">保存项</button>
+                    <button class="btn" onclick="showAiTab('ai-projects')" id="aitab-ai-projects">项目</button>
+                    <button class="btn" onclick="showAiTab('ai-mcp')" id="aitab-ai-mcp">MCP</button>
+                    <button class="btn" onclick="showAiTab('ai-screenshot')" id="aitab-ai-screenshot">截图分析</button>
+                </div>
+
+                <!-- AI 对话 -->
+                <div id="ai-chat" class="ai-subtab">
+                    <div style="display:flex;gap:10px;margin-bottom:10px;align-items:center;">
+                        <select id="ai-chat-provider" style="flex:1;" onchange="aiChatSwitchProvider()"></select>
+                        <button class="btn btn-success" onclick="aiNewSession()">新对话</button>
+                        <button class="btn btn-warning" onclick="aiScreenshotAnalyze()">截图分析</button>
+                    </div>
+                    <div id="ai-chat-messages" style="height:400px;overflow-y:auto;background:#f8f9fa;border-radius:8px;padding:15px;margin-bottom:10px;"></div>
+                    <div style="display:flex;gap:10px;">
+                        <textarea id="ai-chat-input" rows="2" placeholder="输入消息... (Enter发送，Shift+Enter换行)" style="flex:1;resize:none;" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();aiChatSend();}"></textarea>
+                        <button class="btn btn-primary" onclick="aiChatSend()" style="align-self:flex-end;">发送</button>
+                    </div>
+                </div>
+
+                <!-- 对话历史 -->
+                <div id="ai-sessions" class="ai-subtab hidden">
+                    <div id="ai-sessions-list"></div>
+                </div>
+
+                <!-- Prompt预设 -->
+                <div id="ai-presets" class="ai-subtab hidden">
+                    <button class="btn btn-success" onclick="showPresetModal()" style="margin-bottom:10px;">新建预设</button>
+                    <div id="ai-presets-list"></div>
+                </div>
+
+                <!-- 记忆系统 -->
+                <div id="ai-memories" class="ai-subtab hidden">
+                    <div style="display:flex;gap:10px;margin-bottom:10px;">
+                        <input type="text" id="ai-memory-search" placeholder="搜索记忆..." style="flex:1;" oninput="loadMemories()">
+                        <button class="btn btn-success" onclick="showMemoryModal()">新建记忆</button>
+                    </div>
+                    <div id="ai-memories-list"></div>
+                </div>
+
+                <!-- Skill系统 -->
+                <div id="ai-skills" class="ai-subtab hidden">
+                    <button class="btn btn-success" onclick="showSkillModal()" style="margin-bottom:10px;">新建Skill</button>
+                    <div id="ai-skills-list"></div>
+                </div>
+
+                <!-- 保存项 -->
+                <div id="ai-saved" class="ai-subtab hidden">
+                    <button class="btn btn-success" onclick="showSavedItemModal()" style="margin-bottom:10px;">新建保存项</button>
+                    <div id="ai-saved-list"></div>
+                </div>
+
+                <!-- 项目上下文 -->
+                <div id="ai-projects" class="ai-subtab hidden">
+                    <button class="btn btn-success" onclick="showProjectModal()" style="margin-bottom:10px;">新建项目</button>
+                    <div id="ai-projects-list"></div>
+                </div>
+
+                <!-- MCP服务器 -->
+                <div id="ai-mcp" class="ai-subtab hidden">
+                    <button class="btn btn-success" onclick="showMcpModal()" style="margin-bottom:10px;">新建MCP服务器</button>
+                    <div id="ai-mcp-list"></div>
+                </div>
+
+                <!-- 截图分析 -->
+                <div id="ai-screenshot" class="ai-subtab hidden">
+                    <div class="card" style="margin:0;">
+                        <h2>截图 + AI 视觉分析</h2>
+                        <p style="color:#666;margin-bottom:15px;">截取当前设备屏幕，发送给AI进行视觉分析</p>
+                        <div style="display:flex;gap:10px;margin-bottom:15px;">
+                            <input type="text" id="ai-screenshot-prompt" placeholder="分析提示词（留空使用默认）" style="flex:1;">
+                            <button class="btn btn-primary" onclick="aiScreenshotAnalyze()">截图并分析</button>
+                        </div>
+                        <div id="ai-screenshot-result" style="background:#f8f9fa;border-radius:8px;padding:15px;min-height:100px;white-space:pre-wrap;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Hub 弹窗 -->
+        <div class="modal" id="presetModal">
+            <div class="modal-content">
+                <div class="modal-header"><h3 id="presetModalTitle">新建预设</h3><button class="modal-close" onclick="hideModal('presetModal')">&times;</button></div>
+                <input type="hidden" id="preset-edit-id">
+                <div class="form-group"><label>名称</label><input type="text" id="preset-name" placeholder="如：ADB调试助手"></div>
+                <div class="form-group"><label>描述</label><input type="text" id="preset-desc" placeholder="简短描述"></div>
+                <div class="form-group"><label>System Prompt</label><textarea id="preset-prompt" rows="6" placeholder="系统提示词..."></textarea></div>
+                <div class="form-group"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="preset-enabled" style="width:auto;">启用</label></div>
+                <button class="btn btn-primary" onclick="savePreset()">保存</button>
+            </div>
+        </div>
+
+        <div class="modal" id="memoryModal">
+            <div class="modal-content">
+                <div class="modal-header"><h3 id="memoryModalTitle">新建记忆</h3><button class="modal-close" onclick="hideModal('memoryModal')">&times;</button></div>
+                <input type="hidden" id="memory-edit-id">
+                <div class="form-group"><label>内容</label><textarea id="memory-content" rows="4" placeholder="记忆内容..."></textarea></div>
+                <div class="form-group"><label>分类</label><input type="text" id="memory-category" placeholder="如：偏好、设备信息"></div>
+                <div class="form-group"><label>标签（逗号分隔）</label><input type="text" id="memory-tags" placeholder="tag1, tag2"></div>
+                <div class="form-group"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="memory-pinned" style="width:auto;">置顶</label></div>
+                <button class="btn btn-primary" onclick="saveMemory()">保存</button>
+            </div>
+        </div>
+
+        <div class="modal" id="skillModal">
+            <div class="modal-content">
+                <div class="modal-header"><h3 id="skillModalTitle">新建Skill</h3><button class="modal-close" onclick="hideModal('skillModal')">&times;</button></div>
+                <input type="hidden" id="skill-edit-id">
+                <div class="form-group"><label>名称</label><input type="text" id="skill-name" placeholder="如：ADB自动化"></div>
+                <div class="form-group"><label>描述</label><input type="text" id="skill-desc" placeholder="简短描述"></div>
+                <div class="form-group"><label>分类</label><input type="text" id="skill-category" placeholder="如：自动化、调试"></div>
+                <div class="form-group"><label>Prompt模板</label><textarea id="skill-prompt" rows="6" placeholder="使用 {{变量名}} 定义变量"></textarea></div>
+                <div class="form-group"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="skill-enabled" style="width:auto;" checked>启用</label></div>
+                <button class="btn btn-primary" onclick="saveSkill()">保存</button>
+            </div>
+        </div>
+
+        <div class="modal" id="savedItemModal">
+            <div class="modal-content">
+                <div class="modal-header"><h3 id="savedItemModalTitle">新建保存项</h3><button class="modal-close" onclick="hideModal('savedItemModal')">&times;</button></div>
+                <input type="hidden" id="saved-edit-id">
+                <div class="form-group"><label>标题</label><input type="text" id="saved-title" placeholder="标题"></div>
+                <div class="form-group"><label>类型</label><select id="saved-kind"><option value="snippet">代码片段</option><option value="bookmark">书签</option><option value="command">命令</option></select></div>
+                <div class="form-group"><label>内容</label><textarea id="saved-content" rows="4" placeholder="内容..."></textarea></div>
+                <div class="form-group"><label>标签（逗号分隔）</label><input type="text" id="saved-tags" placeholder="tag1, tag2"></div>
+                <button class="btn btn-primary" onclick="saveSavedItem()">保存</button>
+            </div>
+        </div>
+
+        <div class="modal" id="projectModal">
+            <div class="modal-content">
+                <div class="modal-header"><h3 id="projectModalTitle">新建项目</h3><button class="modal-close" onclick="hideModal('projectModal')">&times;</button></div>
+                <input type="hidden" id="project-edit-id">
+                <div class="form-group"><label>名称</label><input type="text" id="project-name" placeholder="项目名称"></div>
+                <div class="form-group"><label>描述</label><input type="text" id="project-desc" placeholder="项目描述"></div>
+                <div class="form-group"><label>指令</label><textarea id="project-instructions" rows="4" placeholder="项目上下文指令，AI对话时自动注入..."></textarea></div>
+                <div class="form-group"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="project-enabled" style="width:auto;">启用</label></div>
+                <div class="form-group"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="project-auto-inject" style="width:auto;">自动注入到AI对话</label></div>
+                <button class="btn btn-primary" onclick="saveProject()">保存</button>
+            </div>
+        </div>
+
+        <div class="modal" id="mcpModal">
+            <div class="modal-content">
+                <div class="modal-header"><h3 id="mcpModalTitle">新建MCP服务器</h3><button class="modal-close" onclick="hideModal('mcpModal')">&times;</button></div>
+                <input type="hidden" id="mcp-edit-id">
+                <div class="form-group"><label>名称</label><input type="text" id="mcp-name" placeholder="服务器名称"></div>
+                <div class="form-group"><label>传输方式</label><select id="mcp-transport"><option value="stdio">stdio</option><option value="sse">SSE</option><option value="http">HTTP</option></select></div>
+                <div class="form-group"><label>命令（stdio模式）</label><input type="text" id="mcp-command" placeholder="如：npx"></div>
+                <div class="form-group"><label>参数（JSON数组）</label><input type="text" id="mcp-args" placeholder='["-y","@modelcontextprotocol/server-filesystem"]'></div>
+                <div class="form-group"><label>URL（SSE/HTTP模式）</label><input type="text" id="mcp-url" placeholder="http://localhost:3000"></div>
+                <div class="form-group"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="mcp-enabled" style="width:auto;">启用</label></div>
+                <div class="form-group"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="mcp-auto-connect" style="width:auto;">自动连接</label></div>
+                <button class="btn btn-primary" onclick="saveMcpServer()">保存</button>
+            </div>
+        </div>
+
+        <style>
+            .ai-subtab { min-height: 300px; }
+            .chat-msg { margin-bottom: 12px; display: flex; gap: 10px; }
+            .chat-msg.user { justify-content: flex-end; }
+            .chat-msg .bubble { max-width: 80%; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+            .chat-msg.user .bubble { background: #667eea; color: white; border-bottom-right-radius: 4px; }
+            .chat-msg.assistant .bubble { background: white; color: #333; border: 1px solid #e0e0e0; border-bottom-left-radius: 4px; }
+            .chat-msg.system .bubble { background: #fff3cd; color: #856404; font-size: 12px; border: 1px solid #ffc107; }
+            .chat-msg.tool .bubble { background: #e8f5e9; color: #2e7d32; font-size: 12px; border: 1px solid #4caf50; font-family: monospace; }
+            .hub-item { display:flex; justify-content:space-between; align-items:center; padding:12px 15px; border-bottom:1px solid #eee; transition: background 0.2s; }
+            .hub-item:hover { background: #f8f9fa; }
+            .hub-item .info { flex:1; }
+            .hub-item .title { font-weight:500; margin-bottom:4px; }
+            .hub-item .meta { font-size:12px; color:#888; }
+            .hub-item .actions { display:flex; gap:6px; }
+            .tag { display:inline-block; padding:2px 8px; background:#e8eaf6; color:#667eea; border-radius:10px; font-size:11px; margin-right:4px; }
+            .badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; }
+            .badge.on { background:#e8f5e9; color:#2e7d32; }
+            .badge.off { background:#ffebee; color:#c62828; }
+        </style>
+
+        <script>
+            // ==================== AI Hub 通用 ====================
+            function showAiTab(name) {
+                document.querySelectorAll('.ai-subtab').forEach(el => el.classList.add('hidden'));
+                document.querySelectorAll('[id^="aitab-"]').forEach(el => { el.classList.remove('btn-primary'); });
+                document.getElementById(name)?.classList.remove('hidden');
+                document.getElementById('aitab-' + name)?.classList.add('btn-primary');
+                const loaders = { 'ai-sessions': loadSessions, 'ai-presets': loadPresets, 'ai-memories': loadMemories, 'ai-skills': loadSkills, 'ai-saved': loadSavedItems, 'ai-projects': loadProjects, 'ai-mcp': loadMcpServers };
+                loaders[name]?.();
+            }
+
+            function hubItem(id, title, meta, badges, actions) {
+                return `<div class="hub-item"><div class="info"><div class="title">${title} ${badges||''}</div><div class="meta">${meta}</div></div><div class="actions">${actions}</div></div>`;
+            }
+
+            function timeAgo(ts) { const d = Date.now() - ts; if (d < 60000) return '刚刚'; if (d < 3600000) return Math.floor(d/60000)+'分钟前'; if (d < 86400000) return Math.floor(d/3600000)+'小时前'; return Math.floor(d/86400000)+'天前'; }
+
+            // ==================== AI 对话（WebSocket） ====================
+            let aiWs = null, aiSessionId = null, aiCurrentMessages = [], aiStreamBuf = '';
+
+            async function loadProviders() {
+                const data = await api('/api/ai/providers');
+                const sel = document.getElementById('ai-chat-provider');
+                if (!data.success || !data.data?.length) { sel.innerHTML = '<option>请先添加AI Provider</option>'; return; }
+                sel.innerHTML = data.data.filter(p=>p.enabled).map(p => `<option value="${p.id}">${p.name} (${p.model})</option>`).join('');
+            }
+
+            async function aiNewSession() {
+                const sel = document.getElementById('ai-chat-provider');
+                const provId = sel.value;
+                if (!provId || provId === '请先添加AI Provider') { showToast('请先添加AI Provider', 'error'); return; }
+                const prov = (await api('/api/ai/providers')).data?.find(p => p.id === provId);
+                const data = await api('/api/ai/sessions', { method: 'POST', body: JSON.stringify({ provider_id: provId, provider_name: prov?.name || '', model: prov?.model || '' }) });
+                if (data.success) { aiSessionId = data.data.id; aiCurrentMessages = []; renderChat(); showToast('新对话已创建'); }
+            }
+
+            async function aiResumeSession(id) {
+                const data = await api('/api/ai/sessions/' + id);
+                if (data.success) { aiSessionId = id; aiCurrentMessages = data.data.messages || []; renderChat(); showAiTab('ai-chat'); }
+            }
+
+            function renderChat() {
+                const el = document.getElementById('ai-chat-messages');
+                if (!aiCurrentMessages.length) { el.innerHTML = '<div style="text-align:center;color:#aaa;padding:40px;">开始新对话或恢复历史会话</div>'; return; }
+                el.innerHTML = aiCurrentMessages.map(m => {
+                    const cls = m.role === 'tool' ? 'tool' : m.role;
+                    return `<div class="chat-msg ${cls}"><div class="bubble">${(m.content||'').replace(/</g,'&lt;')}</div></div>`;
+                }).join('');
+                el.scrollTop = el.scrollHeight;
+            }
+
+            function aiChatSend() {
+                const input = document.getElementById('ai-chat-input');
+                const text = input.value.trim();
+                if (!text) return;
+                input.value = '';
+
+                if (!aiSessionId) { aiNewSession().then(() => { if (aiSessionId) doAiSend(text); }); return; }
+                doAiSend(text);
+            }
+
+            function doAiSend(text) {
+                aiCurrentMessages.push({ role: 'user', content: text });
+                renderChat();
+
+                const provId = document.getElementById('ai-chat-provider').value;
+                const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                if (aiWs) { try { aiWs.close(); } catch(e){} }
+                aiWs = new WebSocket(`${wsProto}//${location.host}/ws/ai-chat`);
+
+                aiStreamBuf = '';
+                aiCurrentMessages.push({ role: 'assistant', content: '' });
+
+                aiWs.onopen = () => {
+                    aiWs.send(JSON.stringify({
+                        message: text,
+                        provider_id: provId,
+                        session_id: aiSessionId,
+                        conversation_history: aiCurrentMessages.slice(0, -2)
+                    }));
+                };
+
+                aiWs.onmessage = (evt) => {
+                    try {
+                        const msg = JSON.parse(evt.data);
+                        if (msg.type === 'chunk') {
+                            aiStreamBuf += msg.content;
+                            aiCurrentMessages[aiCurrentMessages.length - 1].content = aiStreamBuf;
+                            renderChat();
+                        } else if (msg.type === 'tool_call') {
+                            aiCurrentMessages.push({ role: 'tool', content: `[调用工具] ${msg.name}: ${msg.arguments}` });
+                            renderChat();
+                        } else if (msg.type === 'tool_result') {
+                            aiCurrentMessages.push({ role: 'tool', content: `[结果] ${msg.result}` });
+                            renderChat();
+                        } else if (msg.type === 'done') {
+                            // 自动保存会话
+                            api('/api/ai/sessions/' + aiSessionId, { method: 'PUT', body: JSON.stringify({ messages: aiCurrentMessages }) });
+                        } else if (msg.type === 'error') {
+                            aiCurrentMessages.push({ role: 'system', content: '错误: ' + msg.content });
+                            renderChat();
+                        }
+                    } catch(e) {}
+                };
+
+                aiWs.onerror = () => { aiCurrentMessages.push({ role: 'system', content: '连接错误' }); renderChat(); };
+                aiWs.onclose = () => { aiWs = null; };
+            }
+
+            // ==================== 对话历史 ====================
+            async function loadSessions() {
+                const data = await api('/api/ai/sessions');
+                const el = document.getElementById('ai-sessions-list');
+                if (!data.success || !data.data?.length) { el.innerHTML = '<p style="color:#aaa;text-align:center;padding:20px;">暂无对话历史</p>'; return; }
+                el.innerHTML = data.data.map(s =>
+                    hubItem(s.id, s.title, `${s.model} | ${timeAgo(s.updated_at)} | ${s.messages?.length||0}条消息`,
+                        s.pinned ? '<span class="badge on">置顶</span>' : '',
+                        `<button class="btn btn-primary" onclick="aiResumeSession('${s.id}')">恢复</button>
+                         <button class="btn btn-warning" onclick="exportSession('${s.id}')">导出</button>
+                         <button class="btn btn-danger" onclick="deleteSession('${s.id}')">删除</button>`)
+                ).join('');
+            }
+
+            async function deleteSession(id) { if (!confirm('确定删除此对话？')) return; await api('/api/ai/sessions/'+id, {method:'DELETE'}); loadSessions(); }
+            async function exportSession(id) {
+                const data = await api('/api/ai/export', { method:'POST', body: JSON.stringify({session_id:id,format:'markdown'}) });
+                if (data.success) { const blob = new Blob([data.data],{type:'text/markdown'}); const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='chat-export.md'; a.click(); showToast('导出成功'); }
+            }
+
+            // ==================== Prompt预设 ====================
+            async function loadPresets() {
+                const data = await api('/api/ai/presets');
+                const el = document.getElementById('ai-presets-list');
+                if (!data.success || !data.data?.length) { el.innerHTML = '<p style="color:#aaa;text-align:center;padding:20px;">暂无预设</p>'; return; }
+                el.innerHTML = data.data.map(p =>
+                    hubItem(p.id, p.name, p.description,
+                        p.enabled ? '<span class="badge on">启用</span>' : '<span class="badge off">禁用</span>',
+                        `<button class="btn btn-primary" onclick="editPreset('${p.id}')">编辑</button>
+                         <button class="btn btn-danger" onclick="deletePreset('${p.id}')">删除</button>`)
+                ).join('');
+            }
+
+            function showPresetModal(p) {
+                document.getElementById('preset-edit-id').value = p?.id || '';
+                document.getElementById('preset-name').value = p?.name || '';
+                document.getElementById('preset-desc').value = p?.description || '';
+                document.getElementById('preset-prompt').value = p?.system_prompt || '';
+                document.getElementById('preset-enabled').checked = p?.enabled ?? false;
+                document.getElementById('presetModalTitle').textContent = p ? '编辑预设' : '新建预设';
+                showModal('presetModal');
+            }
+
+            async function editPreset(id) { const data = await api('/api/ai/presets'); const p = data.data?.find(x=>x.id===id); if(p) showPresetModal(p); }
+            async function savePreset() {
+                const id = document.getElementById('preset-edit-id').value;
+                const body = { name: document.getElementById('preset-name').value, description: document.getElementById('preset-desc').value, system_prompt: document.getElementById('preset-prompt').value, enabled: document.getElementById('preset-enabled').checked };
+                const res = id ? await api('/api/ai/presets/'+id,{method:'PUT',body:JSON.stringify(body)}) : await api('/api/ai/presets',{method:'POST',body:JSON.stringify(body)});
+                showToast(res.success?'保存成功':'保存失败',res.success?'success':'error'); hideModal('presetModal'); loadPresets();
+            }
+            async function deletePreset(id) { if(!confirm('确定删除？'))return; await api('/api/ai/presets/'+id,{method:'DELETE'}); loadPresets(); }
+
+            // ==================== 记忆系统 ====================
+            async function loadMemories() {
+                const q = document.getElementById('ai-memory-search')?.value || '';
+                const data = await api('/api/ai/memories' + (q ? '?q='+encodeURIComponent(q) : ''));
+                const el = document.getElementById('ai-memories-list');
+                if (!data.success || !data.data?.length) { el.innerHTML = '<p style="color:#aaa;text-align:center;padding:20px;">暂无记忆</p>'; return; }
+                el.innerHTML = data.data.map(m =>
+                    hubItem(m.id, m.content.substring(0,80)+(m.content.length>80?'...':''), `${m.category||'未分类'} | ${timeAgo(m.updated_at)}` + (m.tags?.length?` | ${m.tags.map(t=>'<span class="tag">'+t+'</span>').join('')}`:''),
+                        m.pinned ? '<span class="badge on">置顶</span>' : '',
+                        `<button class="btn btn-primary" onclick="editMemory('${m.id}')">编辑</button>
+                         <button class="btn btn-danger" onclick="deleteMemory('${m.id}')">删除</button>`)
+                ).join('');
+            }
+
+            function showMemoryModal(m) {
+                document.getElementById('memory-edit-id').value = m?.id || '';
+                document.getElementById('memory-content').value = m?.content || '';
+                document.getElementById('memory-category').value = m?.category || '';
+                document.getElementById('memory-tags').value = m?.tags?.join(', ') || '';
+                document.getElementById('memory-pinned').checked = m?.pinned ?? false;
+                document.getElementById('memoryModalTitle').textContent = m ? '编辑记忆' : '新建记忆';
+                showModal('memoryModal');
+            }
+
+            async function editMemory(id) { const data = await api('/api/ai/memories'); const m = data.data?.find(x=>x.id===id); if(m) showMemoryModal(m); }
+            async function saveMemory() {
+                const id = document.getElementById('memory-edit-id').value;
+                const body = { content: document.getElementById('memory-content').value, category: document.getElementById('memory-category').value, tags: document.getElementById('memory-tags').value.split(',').map(s=>s.trim()).filter(Boolean), pinned: document.getElementById('memory-pinned').checked };
+                const res = id ? await api('/api/ai/memories/'+id,{method:'PUT',body:JSON.stringify(body)}) : await api('/api/ai/memories',{method:'POST',body:JSON.stringify(body)});
+                showToast(res.success?'保存成功':'保存失败',res.success?'success':'error'); hideModal('memoryModal'); loadMemories();
+            }
+            async function deleteMemory(id) { if(!confirm('确定删除？'))return; await api('/api/ai/memories/'+id,{method:'DELETE'}); loadMemories(); }
+
+            // ==================== Skill系统 ====================
+            async function loadSkills() {
+                const data = await api('/api/ai/skills');
+                const el = document.getElementById('ai-skills-list');
+                if (!data.success || !data.data?.length) { el.innerHTML = '<p style="color:#aaa;text-align:center;padding:20px;">暂无Skill</p>'; return; }
+                el.innerHTML = data.data.map(s =>
+                    hubItem(s.id, s.name, `${s.category||'未分类'} | ${s.description||'无描述'}`,
+                        s.enabled ? '<span class="badge on">启用</span>' : '<span class="badge off">禁用</span>',
+                        `<button class="btn btn-primary" onclick="editSkill('${s.id}')">编辑</button>
+                         <button class="btn btn-danger" onclick="deleteSkill('${s.id}')">删除</button>`)
+                ).join('');
+            }
+
+            function showSkillModal(s) {
+                document.getElementById('skill-edit-id').value = s?.id || '';
+                document.getElementById('skill-name').value = s?.name || '';
+                document.getElementById('skill-desc').value = s?.description || '';
+                document.getElementById('skill-category').value = s?.category || '';
+                document.getElementById('skill-prompt').value = s?.prompt_template || '';
+                document.getElementById('skill-enabled').checked = s?.enabled ?? true;
+                document.getElementById('skillModalTitle').textContent = s ? '编辑Skill' : '新建Skill';
+                showModal('skillModal');
+            }
+
+            async function editSkill(id) { const data = await api('/api/ai/skills'); const s = data.data?.find(x=>x.id===id); if(s) showSkillModal(s); }
+            async function saveSkill() {
+                const id = document.getElementById('skill-edit-id').value;
+                const body = { name: document.getElementById('skill-name').value, description: document.getElementById('skill-desc').value, category: document.getElementById('skill-category').value, prompt_template: document.getElementById('skill-prompt').value, enabled: document.getElementById('skill-enabled').checked };
+                const res = id ? await api('/api/ai/skills/'+id,{method:'PUT',body:JSON.stringify(body)}) : await api('/api/ai/skills',{method:'POST',body:JSON.stringify(body)});
+                showToast(res.success?'保存成功':'保存失败',res.success?'success':'error'); hideModal('skillModal'); loadSkills();
+            }
+            async function deleteSkill(id) { if(!confirm('确定删除？'))return; await api('/api/ai/skills/'+id,{method:'DELETE'}); loadSkills(); }
+
+            // ==================== 保存项 ====================
+            async function loadSavedItems() {
+                const data = await api('/api/ai/saved');
+                const el = document.getElementById('ai-saved-list');
+                if (!data.success || !data.data?.length) { el.innerHTML = '<p style="color:#aaa;text-align:center;padding:20px;">暂无保存项</p>'; return; }
+                el.innerHTML = data.data.map(s =>
+                    hubItem(s.id, s.title, `${s.kind} | ${timeAgo(s.updated_at)}` + (s.tags?.length?` | ${s.tags.map(t=>'<span class="tag">'+t+'</span>').join('')}`:''), '',
+                        `<button class="btn btn-primary" onclick="editSavedItem('${s.id}')">编辑</button>
+                         <button class="btn btn-warning" onclick="copySavedItem('${s.id}')">复制</button>
+                         <button class="btn btn-danger" onclick="deleteSavedItem('${s.id}')">删除</button>`)
+                ).join('');
+            }
+
+            function showSavedItemModal(s) {
+                document.getElementById('saved-edit-id').value = s?.id || '';
+                document.getElementById('saved-title').value = s?.title || '';
+                document.getElementById('saved-kind').value = s?.kind || 'snippet';
+                document.getElementById('saved-content').value = s?.content || '';
+                document.getElementById('saved-tags').value = s?.tags?.join(', ') || '';
+                document.getElementById('savedItemModalTitle').textContent = s ? '编辑保存项' : '新建保存项';
+                showModal('savedItemModal');
+            }
+
+            async function editSavedItem(id) { const data = await api('/api/ai/saved'); const s = data.data?.find(x=>x.id===id); if(s) showSavedItemModal(s); }
+            async function saveSavedItem() {
+                const id = document.getElementById('saved-edit-id').value;
+                const body = { title: document.getElementById('saved-title').value, kind: document.getElementById('saved-kind').value, content: document.getElementById('saved-content').value, tags: document.getElementById('saved-tags').value.split(',').map(s=>s.trim()).filter(Boolean) };
+                const res = id ? await api('/api/ai/saved/'+id,{method:'PUT',body:JSON.stringify(body)}) : await api('/api/ai/saved',{method:'POST',body:JSON.stringify(body)});
+                showToast(res.success?'保存成功':'保存失败',res.success?'success':'error'); hideModal('savedItemModal'); loadSavedItems();
+            }
+            async function deleteSavedItem(id) { if(!confirm('确定删除？'))return; await api('/api/ai/saved/'+id,{method:'DELETE'}); loadSavedItems(); }
+            async function copySavedItem(id) { const data = await api('/api/ai/saved'); const s = data.data?.find(x=>x.id===id); if(s) { navigator.clipboard?.writeText(s.content); showToast('已复制到剪贴板'); } }
+
+            // ==================== 项目上下文 ====================
+            async function loadProjects() {
+                const data = await api('/api/ai/projects');
+                const el = document.getElementById('ai-projects-list');
+                if (!data.success || !data.data?.length) { el.innerHTML = '<p style="color:#aaa;text-align:center;padding:20px;">暂无项目</p>'; return; }
+                el.innerHTML = data.data.map(p =>
+                    hubItem(p.id, p.name, p.description||'无描述',
+                        (p.enabled?'<span class="badge on">启用</span>':'<span class="badge off">禁用</span>') + (p.auto_inject?' <span class="badge on">自动注入</span>':''),
+                        `<button class="btn btn-primary" onclick="editProject('${p.id}')">编辑</button>
+                         <button class="btn btn-danger" onclick="deleteProject('${p.id}')">删除</button>`)
+                ).join('');
+            }
+
+            function showProjectModal(p) {
+                document.getElementById('project-edit-id').value = p?.id || '';
+                document.getElementById('project-name').value = p?.name || '';
+                document.getElementById('project-desc').value = p?.description || '';
+                document.getElementById('project-instructions').value = p?.instructions || '';
+                document.getElementById('project-enabled').checked = p?.enabled ?? false;
+                document.getElementById('project-auto-inject').checked = p?.auto_inject ?? false;
+                document.getElementById('projectModalTitle').textContent = p ? '编辑项目' : '新建项目';
+                showModal('projectModal');
+            }
+
+            async function editProject(id) { const data = await api('/api/ai/projects'); const p = data.data?.find(x=>x.id===id); if(p) showProjectModal(p); }
+            async function saveProject() {
+                const id = document.getElementById('project-edit-id').value;
+                const body = { name: document.getElementById('project-name').value, description: document.getElementById('project-desc').value, instructions: document.getElementById('project-instructions').value, enabled: document.getElementById('project-enabled').checked, auto_inject: document.getElementById('project-auto-inject').checked };
+                const res = id ? await api('/api/ai/projects/'+id,{method:'PUT',body:JSON.stringify(body)}) : await api('/api/ai/projects',{method:'POST',body:JSON.stringify(body)});
+                showToast(res.success?'保存成功':'保存失败',res.success?'success':'error'); hideModal('projectModal'); loadProjects();
+            }
+            async function deleteProject(id) { if(!confirm('确定删除？'))return; await api('/api/ai/projects/'+id,{method:'DELETE'}); loadProjects(); }
+
+            // ==================== MCP服务器 ====================
+            async function loadMcpServers() {
+                const data = await api('/api/ai/mcp');
+                const el = document.getElementById('ai-mcp-list');
+                if (!data.success || !data.data?.length) { el.innerHTML = '<p style="color:#aaa;text-align:center;padding:20px;">暂无MCP服务器</p>'; return; }
+                el.innerHTML = data.data.map(s =>
+                    hubItem(s.id, s.name, `${s.transport} | ${s.command||s.url||'未配置'}`,
+                        (s.enabled?'<span class="badge on">启用</span>':'<span class="badge off">禁用</span>') + (s.auto_connect?' <span class="badge on">自动连接</span>':''),
+                        `<button class="btn btn-primary" onclick="editMcpServer('${s.id}')">编辑</button>
+                         <button class="btn btn-danger" onclick="deleteMcpServer('${s.id}')">删除</button>`)
+                ).join('');
+            }
+
+            function showMcpModal(s) {
+                document.getElementById('mcp-edit-id').value = s?.id || '';
+                document.getElementById('mcp-name').value = s?.name || '';
+                document.getElementById('mcp-transport').value = s?.transport || 'stdio';
+                document.getElementById('mcp-command').value = s?.command || '';
+                document.getElementById('mcp-args').value = s?.args ? JSON.stringify(s.args) : '';
+                document.getElementById('mcp-url').value = s?.url || '';
+                document.getElementById('mcp-enabled').checked = s?.enabled ?? false;
+                document.getElementById('mcp-auto-connect').checked = s?.auto_connect ?? false;
+                document.getElementById('mcpModalTitle').textContent = s ? '编辑MCP服务器' : '新建MCP服务器';
+                showModal('mcpModal');
+            }
+
+            async function editMcpServer(id) { const data = await api('/api/ai/mcp'); const s = data.data?.find(x=>x.id===id); if(s) showMcpModal(s); }
+            async function saveMcpServer() {
+                const id = document.getElementById('mcp-edit-id').value;
+                let args = [];
+                try { args = JSON.parse(document.getElementById('mcp-args').value || '[]'); } catch(e) { showToast('参数格式错误，需要JSON数组','error'); return; }
+                const body = { name: document.getElementById('mcp-name').value, transport: document.getElementById('mcp-transport').value, command: document.getElementById('mcp-command').value, args, url: document.getElementById('mcp-url').value, enabled: document.getElementById('mcp-enabled').checked, auto_connect: document.getElementById('mcp-auto-connect').checked };
+                const res = id ? await api('/api/ai/mcp/'+id,{method:'PUT',body:JSON.stringify(body)}) : await api('/api/ai/mcp',{method:'POST',body:JSON.stringify(body)});
+                showToast(res.success?'保存成功':'保存失败',res.success?'success':'error'); hideModal('mcpModal'); loadMcpServers();
+            }
+            async function deleteMcpServer(id) { if(!confirm('确定删除？'))return; await api('/api/ai/mcp/'+id,{method:'DELETE'}); loadMcpServers(); }
+
+            // ==================== 截图分析 ====================
+            async function aiScreenshotAnalyze() {
+                const prompt = document.getElementById('ai-screenshot-prompt')?.value || '';
+                const el = document.getElementById('ai-screenshot-result');
+                if (el) el.textContent = '正在截图并分析...';
+                showToast('正在截图分析...');
+                const data = await api('/api/ai/screenshot', { method:'POST', body: JSON.stringify({prompt}) });
+                if (el) el.textContent = data.success ? data.data : ('分析失败: ' + data.message);
+                showToast(data.success ? '分析完成' : '分析失败', data.success ? 'success' : 'error');
+            }
+
+            // 初始化
+            loadProviders();
+        </script>
 
         <!-- 服务设置 -->
         <div id="settings" class="tab-content hidden">

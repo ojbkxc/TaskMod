@@ -598,6 +598,49 @@ fn save_ai_providers(providers: &[AiProvider]) -> Result<(), std::io::Error> {
     fs::write(AI_CONF, content)
 }
 
+/// 调用支持视觉的AI分析截图
+pub async fn call_ai_image_analyze(provider: &AiProvider, prompt: &str, img_base64: &str) -> Result<String, String> {
+    let api_url = format!("{}/chat/completions", provider.api_url.trim_end_matches('/'));
+    let body = json!({
+        "model": provider.model,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{}", img_base64)}}
+            ]
+        }],
+        "max_tokens": 2000
+    });
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| format!("创建HTTP客户端失败: {}", e))?;
+
+    let resp = client.post(&api_url)
+        .header("Authorization", format!("Bearer {}", provider.api_key))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("API请求失败: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("API返回错误: {}", resp.status()));
+    }
+
+    let json_resp: serde_json::Value = resp.json().await.map_err(|e| format!("解析响应失败: {}", e))?;
+    json_resp.get("choices")
+        .and_then(|c| c.as_array())
+        .and_then(|a| a.first())
+        .and_then(|c| c.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| "无法提取AI回复".to_string())
+}
+
 pub fn get_ai_provider(id: &str) -> Option<AiProvider> {
     load_ai_providers().into_iter().find(|p| p.id == id)
 }

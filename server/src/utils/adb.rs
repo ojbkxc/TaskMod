@@ -304,6 +304,20 @@ pub async fn screencap(filename: &str) -> String {
     }
 }
 
+/// 截图并返回 base64 编码（供AI视觉分析）
+pub async fn adb_screencap_base64() -> Result<String, String> {
+    use base64::Engine;
+    let output = Command::new("screencap")
+        .arg("-p")
+        .output()
+        .await
+        .map_err(|e| format!("截图失败: {}", e))?;
+    if !output.status.success() {
+        return Err("截图命令执行失败".to_string());
+    }
+    Ok(base64::engine::general_purpose::STANDARD.encode(&output.stdout))
+}
+
 pub async fn reboot() -> String {
     match Command::new("reboot").output().await {
         Ok(_) => "设备正在重启...".to_string(),

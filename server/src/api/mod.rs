@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod ai_hub;
 pub mod mirror;
 pub mod scripts;
 pub mod system;

@@ -95,6 +95,7 @@ fn log_to_file(msg: &str) {
 mod mqtt_impl {
     use rumqttc::{AsyncClient, Event, MqttOptions, QoS};
     use serde_json::json;
+    use std::fs;
     use std::sync::{Arc, Mutex};
     use tokio::process::Command;
 

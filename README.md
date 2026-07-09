@@ -55,6 +55,18 @@ https://github.com/ojbkxc/TaskMod
 - **日志查看** - AI 查看运行日志
 - **设备信息感知** - AI 自动获取屏幕分辨率和脚本列表
 
+### 🧠 AI Hub（高级AI功能）
+- **对话历史** - 自动保存对话记录，支持恢复、搜索、导出（Markdown/JSON）
+- **Prompt 预设** - 保存常用 system prompt 模板，一键切换
+- **记忆系统** - 跨对话持久化记忆，支持分类、标签、搜索、置顶
+- **Skill 系统** - 热加载 Skill 文件，定义可复用的 prompt 模板和变量
+- **保存项** - 保存常用代码片段、命令、书签，支持搜索和复制
+- **项目上下文** - 按项目分组指令和上下文，可自动注入到 AI 对话
+- **MCP 协议** - 集成 Model Context Protocol，支持 stdio/SSE/HTTP 传输
+- **截图+AI 视觉分析** - 截取设备屏幕，发送给 AI 进行视觉分析和操作建议
+- **对话导出** - 将对话导出为 Markdown 或 JSON 格式
+- **多供应商回退** - Provider 按顺序尝试直到成功，保证高可用
+
 ### 🔄 工作流引擎
 - **可视化工作流** - 通过节点连接构建自动化流程
 - **丰富节点类型** - start、script、command、delay、email、email_attachment、tts、end
@@ -83,6 +95,13 @@ TaskMod/
 │   ├── scripts/           # 脚本目录
 │   ├── screenshots/       # 截图目录
 │   ├── workflows/         # 工作流目录
+│   ├── chat_history/      # AI对话历史
+│   ├── memory/            # AI记忆系统
+│   ├── skills/            # AI Skill文件（热加载）
+│   ├── saved_items/       # AI保存项
+│   ├── projects/          # AI项目上下文
+│   ├── mcp/               # MCP服务器配置（热加载）
+│   ├── presets.json       # Prompt预设
 │   ├── schedule.conf      # 定时任务配置
 │   ├── email.conf         # 邮件配置
 │   ├── ai.conf            # AI 供应商配置
@@ -90,13 +109,21 @@ TaskMod/
 ├── server/                # Rust 服务器源码
 │   ├── src/               # 源代码
 │   │   ├── api/           # API 路由
+│   │   │   ├── ai.rs      # AI对话核心（Tool Calling、Provider回退）
+│   │   │   ├── ai_hub.rs  # AI Hub（历史、预设、记忆、Skill、MCP等）
+│   │   │   ├── mirror.rs  # 投屏控制
+│   │   │   ├── system.rs  # 系统管理、工作流
+│   │   │   ├── tasks.rs   # 定时任务
+│   │   │   ├── scripts.rs # 脚本管理
+│   │   │   └── tts.rs     # 语音播报
+│   │   ├── tools/         # AI Tool Calling 工具注册
 │   │   ├── data/          # 数据模型
 │   │   ├── utils/         # 工具模块
-│   │   │   ├── email.rs   # 邮件功能（统一实现）
-│   │   │   ├── mqtt.rs    # MQTT功能（纯Rust实现）
+│   │   │   ├── email.rs   # 邮件功能（指数退避重试）
+│   │   │   ├── mqtt.rs    # MQTT功能（条件编译）
 │   │   │   ├── adb.rs     # ADB命令封装
-│   │   │   └── service_manager.rs  # 服务热加载管理
-│   │   └── main.rs        # 入口文件
+│   │   │   └── event_monitor.rs  # 系统事件监控
+│   │   └── main.rs        # 入口文件（看门狗、Dead Man Switch）
 │   ├── static/            # Web 静态资源
 │   └── Cargo.toml         # 依赖配置
 ├── customize.sh           # Magisk 安装脚本

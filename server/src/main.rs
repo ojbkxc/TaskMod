@@ -58,6 +58,7 @@ fn ensure_dirs() {
     let _ = std::fs::create_dir_all(SCRIPTS_DIR);
     let _ = std::fs::create_dir_all(SCREENSHOTS_DIR);
     let _ = std::fs::create_dir_all(WORKFLOWS_DIR);
+    api::ai_hub::init_dirs().await;
 }
 
 fn handle_event(event: utils::event_monitor::SystemEvent) {
@@ -229,6 +230,30 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/ai/providers", get(api::ai::list_ai_providers).post(api::ai::add_ai_provider))
         .route("/api/ai/providers/:id", get(api::ai::get_ai_provider_api).put(api::ai::update_ai_provider).delete(api::ai::delete_ai_provider))
         .route("/ws/ai-chat", get(api::ai::ai_chat_ws))
+        // AI Hub: 对话历史
+        .route("/api/ai/sessions", get(api::ai_hub::list_sessions).post(api::ai_hub::create_session))
+        .route("/api/ai/sessions/:id", get(api::ai_hub::get_session).put(api::ai_hub::update_session).delete(api::ai_hub::delete_session))
+        // AI Hub: Prompt预设
+        .route("/api/ai/presets", get(api::ai_hub::list_presets).post(api::ai_hub::save_preset))
+        .route("/api/ai/presets/:id", put(api::ai_hub::update_preset).delete(api::ai_hub::delete_preset))
+        // AI Hub: 记忆系统
+        .route("/api/ai/memories", get(api::ai_hub::list_memories).post(api::ai_hub::create_memory))
+        .route("/api/ai/memories/:id", put(api::ai_hub::update_memory).delete(api::ai_hub::delete_memory))
+        // AI Hub: Skill系统
+        .route("/api/ai/skills", get(api::ai_hub::list_skills).post(api::ai_hub::create_skill))
+        .route("/api/ai/skills/:id", put(api::ai_hub::update_skill).delete(api::ai_hub::delete_skill))
+        // AI Hub: 保存项
+        .route("/api/ai/saved", get(api::ai_hub::list_saved_items).post(api::ai_hub::create_saved_item))
+        .route("/api/ai/saved/:id", put(api::ai_hub::update_saved_item).delete(api::ai_hub::delete_saved_item))
+        // AI Hub: 项目上下文
+        .route("/api/ai/projects", get(api::ai_hub::list_projects).post(api::ai_hub::create_project))
+        .route("/api/ai/projects/:id", put(api::ai_hub::update_project).delete(api::ai_hub::delete_project))
+        // AI Hub: MCP服务器
+        .route("/api/ai/mcp", get(api::ai_hub::list_mcp_servers).post(api::ai_hub::create_mcp_server))
+        .route("/api/ai/mcp/:id", put(api::ai_hub::update_mcp_server).delete(api::ai_hub::delete_mcp_server))
+        // AI Hub: 截图分析 & 对话导出
+        .route("/api/ai/screenshot", post(api::ai_hub::screenshot_analyze))
+        .route("/api/ai/export", post(api::ai_hub::export_session))
         .merge(mirror_routes)
         .layer(CorsLayer::permissive());
 
