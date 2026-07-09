@@ -750,7 +750,7 @@ pub async fn set_device_clipboard(Json(req): Json<ClipboardReq>) -> Json<ApiResp
                 }
             }
         }
-        Err(e) => {
+        Err(_e) => {
             let fallback = Command::new("sh")
                 .args(["-c", &format!("am broadcast -a clipper.set -e text '{}'", escape_for_shell(&text))])
                 .output()

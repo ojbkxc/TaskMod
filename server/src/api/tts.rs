@@ -54,7 +54,7 @@ pub async fn get_tts_engines() -> Json<ApiResponse<Vec<TtsEngineInfo>>> {
             }
         }
         Err(e) => {
-            log::warn!("cmd tts list engines failed: {}", e);
+            eprintln!("[TTS] cmd tts list engines failed: {}", e);
         }
     }
     
