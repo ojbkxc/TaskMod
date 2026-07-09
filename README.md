@@ -56,16 +56,20 @@ https://github.com/ojbkxc/TaskMod
 - **设备信息感知** - AI 自动获取屏幕分辨率和脚本列表
 
 ### 🧠 AI Hub（高级AI功能）
-- **对话历史** - 自动保存对话记录，支持恢复、搜索、导出（Markdown/JSON）
-- **Prompt 预设** - 保存常用 system prompt 模板，一键切换
-- **记忆系统** - 跨对话持久化记忆，支持分类、标签、搜索、置顶
-- **Skill 系统** - 热加载 Skill 文件，定义可复用的 prompt 模板和变量
-- **保存项** - 保存常用代码片段、命令、书签，支持搜索和复制
-- **项目上下文** - 按项目分组指令和上下文，可自动注入到 AI 对话
-- **MCP 协议** - 集成 Model Context Protocol，支持 stdio/SSE/HTTP 传输
+- **对话历史** - 自动保存对话记录，支持恢复、归档、置顶、导出（Markdown/JSON）
+- **Prompt 预设** - 保存常用 system prompt 模板，一键切换，支持活跃预设选择
+- **Prompt 控制面板** - 记忆注入开关、系统提示词开关、预设注入频率（首次/每轮/关闭）、强制回复语言
+- **记忆系统** - 跨对话持久化记忆，支持分类、标签、搜索、置顶，4种类型（用户偏好/反馈/主题/参考），2种作用域（全局/项目），智能关键词匹配注入
+- **Skill 系统** - 热加载 Skill 文件，定义可复用的 prompt 模板和变量，支持分类和来源标记
+- **场景模板** - 内置5个场景（总结/解释/翻译中英/调试分析），支持自定义，{text}变量替换
+- **保存项** - 保存常用代码片段、命令、书签，支持来源URL、搜索和一键复制
+- **项目上下文** - 按项目分组指令和上下文，可自动注入到 AI 对话，支持关联对话和记忆
+- **MCP 协议** - 集成 Model Context Protocol，支持 stdio/SSE/HTTP 传输，热加载配置
 - **截图+AI 视觉分析** - 截取设备屏幕，发送给 AI 进行视觉分析和操作建议
 - **对话导出** - 将对话导出为 Markdown 或 JSON 格式
 - **多供应商回退** - Provider 按顺序尝试直到成功，保证高可用
+- **记忆智能注入** - 根据用户消息关键词自动匹配最相关的记忆，按标签/名称/内容评分排序
+- **定时任务AI控制** - AI 可查看、添加、删除、修改定时任务
 
 ### 🔄 工作流引擎
 - **可视化工作流** - 通过节点连接构建自动化流程
@@ -102,6 +106,8 @@ TaskMod/
 │   ├── projects/          # AI项目上下文
 │   ├── mcp/               # MCP服务器配置（热加载）
 │   ├── presets.json       # Prompt预设
+│   ├── prompt_settings.json # Prompt注入设置（频率、语言、开关）
+│   ├── scenarios.json     # 场景模板（内置+自定义）
 │   ├── schedule.conf      # 定时任务配置
 │   ├── email.conf         # 邮件配置
 │   ├── ai.conf            # AI 供应商配置
@@ -117,6 +123,10 @@ TaskMod/
 │   │   │   ├── scripts.rs # 脚本管理
 │   │   │   └── tts.rs     # 语音播报
 │   │   ├── tools/         # AI Tool Calling 工具注册
+│   │   │   ├── mod.rs     # ToolRegistry 和 AiTool trait
+│   │   │   ├── adb_tools.rs  # 16个ADB操作工具
+│   │   │   ├── script_tools.rs # 6个脚本管理工具
+│   │   │   └── task_tools.rs  # 5个定时任务控制工具
 │   │   ├── data/          # 数据模型
 │   │   ├── utils/         # 工具模块
 │   │   │   ├── email.rs   # 邮件功能（指数退避重试）
@@ -195,7 +205,43 @@ every 5 check.sh
 查看最近 50 行日志    → AI 返回日志
 帮我说'你好'          → AI 调用 TTS 播放语音
 生成一张猫的图片      → AI 返回图片URL并显示
+帮我建个每天8点的定时任务 → AI 调用 add_task 创建任务
+把任务2改成9点执行    → AI 调用 modify_task 修改任务
+看看有哪些定时任务    → AI 调用 list_tasks 列出任务
+截图分析下当前界面    → AI 截图并用视觉模型分析
 ```
+
+### AI 工具列表
+
+| 类别 | 工具名 | 说明 |
+|------|--------|------|
+| ADB | adb_tap | 点击屏幕坐标 |
+| ADB | adb_swipe | 滑动屏幕 |
+| ADB | adb_keyevent | 模拟按键 |
+| ADB | adb_input_text | 输入文本 |
+| ADB | adb_screencap | 截图 |
+| ADB | adb_command | 执行shell命令 |
+| ADB | adb_start_app | 启动应用 |
+| ADB | adb_stop_app | 停止应用 |
+| ADB | adb_clear_app_data | 清除应用数据 |
+| ADB | adb_tts | 语音播报 |
+| ADB | adb_reboot | 重启设备 |
+| ADB | adb_shutdown | 关机 |
+| ADB | get_device_info | 获取设备信息 |
+| ADB | get_battery_info | 获取电池信息 |
+| ADB | get_wifi_info | 获取WiFi信息 |
+| ADB | get_running_apps | 获取运行应用 |
+| 脚本 | list_scripts | 列出所有脚本 |
+| 脚本 | read_script | 读取脚本内容 |
+| 脚本 | write_script | 创建/编辑脚本 |
+| 脚本 | delete_script | 删除脚本 |
+| 脚本 | run_script | 执行脚本 |
+| 脚本 | view_logs | 查看日志 |
+| 任务 | list_tasks | 查看定时任务 |
+| 任务 | add_task | 添加定时任务 |
+| 任务 | delete_task | 删除定时任务 |
+| 任务 | modify_task | 修改定时任务 |
+| 任务 | list_available_scripts | 列出可用脚本 |
 
 ### 工作流节点
 

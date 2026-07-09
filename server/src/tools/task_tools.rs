@@ -107,12 +107,13 @@ impl AiTool for AddTaskTool {
         })
     }
     fn execute(&self, args: &str) -> BoxFuture<'_, String> {
-        Box::pin(async {
-            let time = match parse_arg::<String>(args, "time") { Ok(v) => v, Err(e) => return e };
-            let script = match parse_arg::<String>(args, "script") { Ok(v) => v, Err(e) => return e };
-            let weeks = parse_arg::<String>(args, "weeks").unwrap_or_else(|_| "*".to_string());
-            let task_type = parse_arg::<String>(args, "task_type").unwrap_or_else(|_| "daily".to_string());
-            let interval = parse_arg::<i64>(args, "interval").ok().map(|v| v as u32);
+        let args = args.to_string();
+        Box::pin(async move {
+            let time = match parse_arg::<String>(&args, "time") { Ok(v) => v, Err(e) => return e };
+            let script = match parse_arg::<String>(&args, "script") { Ok(v) => v, Err(e) => return e };
+            let weeks = parse_arg::<String>(&args, "weeks").unwrap_or_else(|_| "*".to_string());
+            let task_type = parse_arg::<String>(&args, "task_type").unwrap_or_else(|_| "daily".to_string());
+            let interval = parse_arg::<i64>(&args, "interval").ok().map(|v| v as u32);
 
             // 检查脚本是否存在
             let script_path = format!("{}/{}", SCRIPTS_DIR, script);
@@ -143,8 +144,9 @@ impl AiTool for DeleteTaskTool {
         })
     }
     fn execute(&self, args: &str) -> BoxFuture<'_, String> {
-        Box::pin(async {
-            let id = match parse_arg::<i64>(args, "id") { Ok(v) => v as usize, Err(e) => return e };
+        let args = args.to_string();
+        Box::pin(async move {
+            let id = match parse_arg::<i64>(&args, "id") { Ok(v) => v as usize, Err(e) => return e };
             let mut tasks = read_tasks();
             if id == 0 || id > tasks.len() {
                 return format!("任务ID不存在，当前共{}个任务", tasks.len());
@@ -176,8 +178,9 @@ impl AiTool for ModifyTaskTool {
         })
     }
     fn execute(&self, args: &str) -> BoxFuture<'_, String> {
-        Box::pin(async {
-            let id = match parse_arg::<i64>(args, "id") { Ok(v) => v as usize, Err(e) => return e };
+        let args = args.to_string();
+        Box::pin(async move {
+            let id = match parse_arg::<i64>(&args, "id") { Ok(v) => v as usize, Err(e) => return e };
             let mut tasks = read_tasks();
             if id == 0 || id > tasks.len() {
                 return format!("任务ID不存在，当前共{}个任务", tasks.len());
@@ -185,17 +188,17 @@ impl AiTool for ModifyTaskTool {
 
             let task = &mut tasks[id - 1];
 
-            if let Ok(time) = parse_arg::<String>(args, "time") { task.0 = time; }
-            if let Ok(weeks) = parse_arg::<String>(args, "weeks") { task.1 = weeks; }
-            if let Ok(script) = parse_arg::<String>(args, "script") {
+            if let Ok(time) = parse_arg::<String>(&args, "time") { task.0 = time; }
+            if let Ok(weeks) = parse_arg::<String>(&args, "weeks") { task.1 = weeks; }
+            if let Ok(script) = parse_arg::<String>(&args, "script") {
                 let script_path = format!("{}/{}", SCRIPTS_DIR, script);
                 if !Path::new(&script_path).exists() {
                     return format!("脚本不存在: {}，可用脚本: {}", script, list_available_scripts().join(", "));
                 }
                 task.2 = script;
             }
-            if let Ok(task_type) = parse_arg::<String>(args, "task_type") { task.3 = task_type; }
-            if let Ok(interval) = parse_arg::<i64>(args, "interval") { task.4 = Some(interval as u32); }
+            if let Ok(task_type) = parse_arg::<String>(&args, "task_type") { task.3 = task_type; }
+            if let Ok(interval) = parse_arg::<i64>(&args, "interval") { task.4 = Some(interval as u32); }
 
             let desc = format!("{} {} {} [{}]", task.0, task.1, task.2, task.3);
             match write_tasks(&tasks) {

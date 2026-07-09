@@ -8,7 +8,7 @@ use std::fs;
 use crate::config::{AI_CONF, SCRIPTS_DIR};
 use crate::data::models::{AiProvider, AiProviderRequest, AiChatRequest};
 use crate::data::response::ApiResponse;
-use crate::tools::{adb_tools, script_tools, ToolRegistry};
+use crate::tools::{adb_tools, script_tools, task_tools, ToolRegistry};
 use crate::utils::adb;
 
 pub async fn list_ai_providers() -> Json<ApiResponse<Vec<AiProvider>>> {
@@ -154,6 +154,60 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                         "role": "user",
                         "content": req.message
                     }));
+
+                    // 注入记忆、预设、项目上下文（首次对话时）
+                    if conversation_messages.len() <= 2 {
+                        let settings = crate::api::ai_hub::get_prompt_settings_sync();
+
+                        // 注入预设
+                        if !settings.active_preset_id.is_empty() {
+                            let presets = crate::api::ai_hub::get_active_presets();
+                            if let Some(preset) = presets.iter().find(|p| p.id == settings.active_preset_id) {
+                                conversation_messages.insert(1, json!({
+                                    "role": "system",
+                                    "content": format!("## 预设指令\n\n{}", preset.system_prompt)
+                                }));
+                            }
+                        }
+
+                        // 注入项目上下文
+                        let projects = crate::api::ai_hub::get_active_projects_sync();
+                        if !projects.is_empty() {
+                            let project_ctx: String = projects.iter()
+                                .map(|p| format!("- **{}**: {}", p.name, p.instructions))
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            conversation_messages.insert(1, json!({
+                                "role": "system",
+                                "content": format!("## 项目上下文\n\n{}", project_ctx)
+                            }));
+                        }
+
+                        // 智能注入相关记忆
+                        let memories = crate::api::ai_hub::select_memories_for_prompt(&req.message, None);
+                        let mem_ctx = crate::api::ai_hub::build_memory_context(&memories);
+                        if !mem_ctx.is_empty() {
+                            conversation_messages.insert(1, json!({
+                                "role": "system",
+                                "content": mem_ctx
+                            }));
+                        }
+
+                        // 强制回复语言
+                        if !settings.force_response_language.is_empty() && settings.force_response_language != "auto" {
+                            let lang = match settings.force_response_language.as_str() {
+                                "zh-CN" => "请用中文回复",
+                                "en" => "Please respond in English",
+                                _ => "",
+                            };
+                            if !lang.is_empty() {
+                                conversation_messages.insert(1, json!({
+                                    "role": "system",
+                                    "content": lang
+                                }));
+                            }
+                        }
+                    }
 
                     let mut registry = ToolRegistry::new();
                     registry.register(Box::new(adb_tools::AdbTapTool));

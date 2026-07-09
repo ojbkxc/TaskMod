@@ -495,11 +495,13 @@
                     <button class="btn btn-primary" onclick="showAiTab('ai-chat')" id="aitab-ai-chat">对话</button>
                     <button class="btn" onclick="showAiTab('ai-sessions')" id="aitab-ai-sessions">历史</button>
                     <button class="btn" onclick="showAiTab('ai-presets')" id="aitab-ai-presets">预设</button>
+                    <button class="btn" onclick="showAiTab('ai-prompt-ctrl')" id="aitab-ai-prompt-ctrl">Prompt控制</button>
                     <button class="btn" onclick="showAiTab('ai-memories')" id="aitab-ai-memories">记忆</button>
                     <button class="btn" onclick="showAiTab('ai-skills')" id="aitab-ai-skills">Skill</button>
                     <button class="btn" onclick="showAiTab('ai-saved')" id="aitab-ai-saved">保存项</button>
                     <button class="btn" onclick="showAiTab('ai-projects')" id="aitab-ai-projects">项目</button>
                     <button class="btn" onclick="showAiTab('ai-mcp')" id="aitab-ai-mcp">MCP</button>
+                    <button class="btn" onclick="showAiTab('ai-scenarios')" id="aitab-ai-scenarios">场景</button>
                     <button class="btn" onclick="showAiTab('ai-screenshot')" id="aitab-ai-screenshot">截图分析</button>
                 </div>
 
@@ -561,6 +563,54 @@
                     <div id="ai-mcp-list"></div>
                 </div>
 
+                <!-- Prompt控制 -->
+                <div id="ai-prompt-ctrl" class="ai-subtab hidden">
+                    <div class="card" style="margin:0;">
+                        <h2>Prompt 注入控制</h2>
+                        <div style="max-width:600px;">
+                            <div class="form-group">
+                                <label style="display:flex;align-items:center;gap:10px;">
+                                    <input type="checkbox" id="pc-memory-enabled" style="width:auto;" onchange="savePromptSettings()">
+                                    <span>启用记忆注入（自动将相关记忆注入AI对话）</span>
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label style="display:flex;align-items:center;gap:10px;">
+                                    <input type="checkbox" id="pc-system-prompt" style="width:auto;" onchange="savePromptSettings()">
+                                    <span>启用系统提示词</span>
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label>预设注入频率</label>
+                                <select id="pc-cadence" onchange="savePromptSettings()">
+                                    <option value="default">默认（首次+每N轮）</option>
+                                    <option value="first_message">仅首轮</option>
+                                    <option value="every_message">每轮</option>
+                                    <option value="off">关闭</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>强制回复语言</label>
+                                <select id="pc-language" onchange="savePromptSettings()">
+                                    <option value="auto">自动</option>
+                                    <option value="zh-CN">中文</option>
+                                    <option value="en">English</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>活跃预设</label>
+                                <select id="pc-active-preset" onchange="savePromptSettings()"></select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 场景模板 -->
+                <div id="ai-scenarios" class="ai-subtab hidden">
+                    <button class="btn btn-success" onclick="showScenarioModal()" style="margin-bottom:10px;">新建场景</button>
+                    <div id="ai-scenarios-list"></div>
+                </div>
+
                 <!-- 截图分析 -->
                 <div id="ai-screenshot" class="ai-subtab hidden">
                     <div class="card" style="margin:0;">
@@ -593,8 +643,24 @@
             <div class="modal-content">
                 <div class="modal-header"><h3 id="memoryModalTitle">新建记忆</h3><button class="modal-close" onclick="hideModal('memoryModal')">&times;</button></div>
                 <input type="hidden" id="memory-edit-id">
+                <div class="form-group"><label>名称</label><input type="text" id="memory-name" placeholder="如：设备偏好"></div>
                 <div class="form-group"><label>内容</label><textarea id="memory-content" rows="4" placeholder="记忆内容..."></textarea></div>
                 <div class="form-group"><label>分类</label><input type="text" id="memory-category" placeholder="如：偏好、设备信息"></div>
+                <div class="form-group"><label>类型</label>
+                    <select id="memory-type">
+                        <option value="user">用户偏好</option>
+                        <option value="feedback">反馈</option>
+                        <option value="topic">主题</option>
+                        <option value="reference">参考</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>作用域</label>
+                    <select id="memory-scope" onchange="toggleMemoryProject()">
+                        <option value="global">全局</option>
+                        <option value="project">项目</option>
+                    </select>
+                </div>
+                <div class="form-group hidden" id="memory-project-group"><label>关联项目ID</label><input type="text" id="memory-project-id" placeholder="项目ID"></div>
                 <div class="form-group"><label>标签（逗号分隔）</label><input type="text" id="memory-tags" placeholder="tag1, tag2"></div>
                 <div class="form-group"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="memory-pinned" style="width:auto;">置顶</label></div>
                 <button class="btn btn-primary" onclick="saveMemory()">保存</button>
@@ -621,6 +687,7 @@
                 <div class="form-group"><label>标题</label><input type="text" id="saved-title" placeholder="标题"></div>
                 <div class="form-group"><label>类型</label><select id="saved-kind"><option value="snippet">代码片段</option><option value="bookmark">书签</option><option value="command">命令</option></select></div>
                 <div class="form-group"><label>内容</label><textarea id="saved-content" rows="4" placeholder="内容..."></textarea></div>
+                <div class="form-group"><label>来源URL</label><input type="text" id="saved-source-url" placeholder="https://..."></div>
                 <div class="form-group"><label>标签（逗号分隔）</label><input type="text" id="saved-tags" placeholder="tag1, tag2"></div>
                 <button class="btn btn-primary" onclick="saveSavedItem()">保存</button>
             </div>
@@ -654,6 +721,18 @@
             </div>
         </div>
 
+        <!-- 场景模板弹窗 -->
+        <div class="modal" id="scenarioModal">
+            <div class="modal-content">
+                <div class="modal-header"><h3 id="scenarioModalTitle">新建场景</h3><button class="modal-close" onclick="hideModal('scenarioModal')">&times;</button></div>
+                <input type="hidden" id="scenario-edit-id">
+                <div class="form-group"><label>名称</label><input type="text" id="scenario-label" placeholder="总结"></div>
+                <div class="form-group"><label>模板（用 {text} 表示选中文本）</label><textarea id="scenario-template" rows="5" placeholder="请总结以下内容：&#10;&#10;{text}"></textarea></div>
+                <div class="form-group"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="scenario-enabled" style="width:auto;" checked>启用</label></div>
+                <button class="btn btn-primary" onclick="saveScenario()">保存</button>
+            </div>
+        </div>
+
         <style>
             .ai-subtab { min-height: 300px; }
             .chat-msg { margin-bottom: 12px; display: flex; gap: 10px; }
@@ -682,7 +761,7 @@
                 document.querySelectorAll('[id^="aitab-"]').forEach(el => { el.classList.remove('btn-primary'); });
                 document.getElementById(name)?.classList.remove('hidden');
                 document.getElementById('aitab-' + name)?.classList.add('btn-primary');
-                const loaders = { 'ai-sessions': loadSessions, 'ai-presets': loadPresets, 'ai-memories': loadMemories, 'ai-skills': loadSkills, 'ai-saved': loadSavedItems, 'ai-projects': loadProjects, 'ai-mcp': loadMcpServers };
+                const loaders = { 'ai-sessions': loadSessions, 'ai-presets': loadPresets, 'ai-memories': loadMemories, 'ai-skills': loadSkills, 'ai-saved': loadSavedItems, 'ai-projects': loadProjects, 'ai-mcp': loadMcpServers, 'ai-prompt-ctrl': loadPromptSettings, 'ai-scenarios': loadScenarios };
                 loaders[name]?.();
             }
 
@@ -842,28 +921,43 @@
                 const data = await api('/api/ai/memories' + (q ? '?q='+encodeURIComponent(q) : ''));
                 const el = document.getElementById('ai-memories-list');
                 if (!data.success || !data.data?.length) { el.innerHTML = '<p style="color:#aaa;text-align:center;padding:20px;">暂无记忆</p>'; return; }
-                el.innerHTML = data.data.map(m =>
-                    hubItem(m.id, m.content.substring(0,80)+(m.content.length>80?'...':''), `${m.category||'未分类'} | ${timeAgo(m.updated_at)}` + (m.tags?.length?` | ${m.tags.map(t=>'<span class="tag">'+t+'</span>').join('')}`:''),
-                        m.pinned ? '<span class="badge on">置顶</span>' : '',
+                const typeLabels = { user:'用户偏好', feedback:'反馈', topic:'主题', reference:'参考' };
+                el.innerHTML = data.data.map(m => {
+                    const title = m.name ? m.name : m.content.substring(0,80)+(m.content.length>80?'...':'');
+                    const meta = `${typeLabels[m.memory_type]||'用户偏好'} | ${m.scope==='project'?'项目':'全局'} | ${m.category||'未分类'} | ${timeAgo(m.updated_at)}` +
+                        (m.tags?.length?` | ${m.tags.map(t=>'<span class="tag">'+t+'</span>').join('')}`:'');
+                    const badges = (m.pinned ? '<span class="badge on">置顶</span>' : '') +
+                        (m.scope === 'project' ? '<span class="badge badge-info">项目</span>' : '');
+                    return hubItem(m.id, title, meta, badges,
                         `<button class="btn btn-primary" onclick="editMemory('${m.id}')">编辑</button>
-                         <button class="btn btn-danger" onclick="deleteMemory('${m.id}')">删除</button>`)
-                ).join('');
+                         <button class="btn btn-danger" onclick="deleteMemory('${m.id}')">删除</button>`);
+                }).join('');
             }
 
             function showMemoryModal(m) {
                 document.getElementById('memory-edit-id').value = m?.id || '';
+                document.getElementById('memory-name').value = m?.name || '';
                 document.getElementById('memory-content').value = m?.content || '';
                 document.getElementById('memory-category').value = m?.category || '';
+                document.getElementById('memory-type').value = m?.memory_type || 'user';
+                document.getElementById('memory-scope').value = m?.scope || 'global';
+                document.getElementById('memory-project-id').value = m?.project_id || '';
                 document.getElementById('memory-tags').value = m?.tags?.join(', ') || '';
                 document.getElementById('memory-pinned').checked = m?.pinned ?? false;
                 document.getElementById('memoryModalTitle').textContent = m ? '编辑记忆' : '新建记忆';
+                toggleMemoryProject();
                 showModal('memoryModal');
+            }
+
+            function toggleMemoryProject() {
+                const scope = document.getElementById('memory-scope').value;
+                document.getElementById('memory-project-group').classList.toggle('hidden', scope !== 'project');
             }
 
             async function editMemory(id) { const data = await api('/api/ai/memories'); const m = data.data?.find(x=>x.id===id); if(m) showMemoryModal(m); }
             async function saveMemory() {
                 const id = document.getElementById('memory-edit-id').value;
-                const body = { content: document.getElementById('memory-content').value, category: document.getElementById('memory-category').value, tags: document.getElementById('memory-tags').value.split(',').map(s=>s.trim()).filter(Boolean), pinned: document.getElementById('memory-pinned').checked };
+                const body = { name: document.getElementById('memory-name').value, content: document.getElementById('memory-content').value, category: document.getElementById('memory-category').value, memory_type: document.getElementById('memory-type').value, scope: document.getElementById('memory-scope').value, project_id: document.getElementById('memory-project-id').value, tags: document.getElementById('memory-tags').value.split(',').map(s=>s.trim()).filter(Boolean), pinned: document.getElementById('memory-pinned').checked };
                 const res = id ? await api('/api/ai/memories/'+id,{method:'PUT',body:JSON.stringify(body)}) : await api('/api/ai/memories',{method:'POST',body:JSON.stringify(body)});
                 showToast(res.success?'保存成功':'保存失败',res.success?'success':'error'); hideModal('memoryModal'); loadMemories();
             }
@@ -920,6 +1014,7 @@
                 document.getElementById('saved-title').value = s?.title || '';
                 document.getElementById('saved-kind').value = s?.kind || 'snippet';
                 document.getElementById('saved-content').value = s?.content || '';
+                document.getElementById('saved-source-url').value = s?.source_url || '';
                 document.getElementById('saved-tags').value = s?.tags?.join(', ') || '';
                 document.getElementById('savedItemModalTitle').textContent = s ? '编辑保存项' : '新建保存项';
                 showModal('savedItemModal');
@@ -928,7 +1023,7 @@
             async function editSavedItem(id) { const data = await api('/api/ai/saved'); const s = data.data?.find(x=>x.id===id); if(s) showSavedItemModal(s); }
             async function saveSavedItem() {
                 const id = document.getElementById('saved-edit-id').value;
-                const body = { title: document.getElementById('saved-title').value, kind: document.getElementById('saved-kind').value, content: document.getElementById('saved-content').value, tags: document.getElementById('saved-tags').value.split(',').map(s=>s.trim()).filter(Boolean) };
+                const body = { title: document.getElementById('saved-title').value, kind: document.getElementById('saved-kind').value, content: document.getElementById('saved-content').value, source_url: document.getElementById('saved-source-url').value, tags: document.getElementById('saved-tags').value.split(',').map(s=>s.trim()).filter(Boolean) };
                 const res = id ? await api('/api/ai/saved/'+id,{method:'PUT',body:JSON.stringify(body)}) : await api('/api/ai/saved',{method:'POST',body:JSON.stringify(body)});
                 showToast(res.success?'保存成功':'保存失败',res.success?'success':'error'); hideModal('savedItemModal'); loadSavedItems();
             }
@@ -1016,8 +1111,95 @@
                 showToast(data.success ? '分析完成' : '分析失败', data.success ? 'success' : 'error');
             }
 
+            // ==================== Prompt 设置 ====================
+            async function loadPromptSettings() {
+                const [settings, presets] = await Promise.all([
+                    api('/api/ai/prompt-settings'),
+                    api('/api/ai/presets')
+                ]);
+                if (settings.success && settings.data) {
+                    const s = settings.data;
+                    document.getElementById('pc-memory-enabled').checked = s.memory_enabled !== false;
+                    document.getElementById('pc-system-prompt').checked = s.system_prompt_enabled !== false;
+                    document.getElementById('pc-cadence').value = s.preset_cadence || 'default';
+                    document.getElementById('pc-language').value = s.force_response_language || 'auto';
+                }
+                if (presets.success && presets.data) {
+                    const sel = document.getElementById('pc-active-preset');
+                    sel.innerHTML = '<option value="">无</option>' + presets.data.map(p =>
+                        `<option value="${p.id}" ${settings.data?.active_preset_id === p.id ? 'selected' : ''}>${p.name}</option>`
+                    ).join('');
+                }
+            }
+
+            async function savePromptSettings() {
+                const data = {
+                    memory_enabled: document.getElementById('pc-memory-enabled').checked,
+                    system_prompt_enabled: document.getElementById('pc-system-prompt').checked,
+                    preset_cadence: document.getElementById('pc-cadence').value,
+                    force_response_language: document.getElementById('pc-language').value,
+                    active_preset_id: document.getElementById('pc-active-preset').value
+                };
+                const res = await api('/api/ai/prompt-settings', { method: 'PUT', body: JSON.stringify(data) });
+                showToast(res.success ? '设置已保存' : '保存失败', res.success ? 'success' : 'error');
+            }
+
+            // ==================== 场景模板 ====================
+            async function loadScenarios() {
+                const data = await api('/api/ai/scenarios');
+                if (!data.success) return;
+                const el = document.getElementById('ai-scenarios-list');
+                if (!data.data?.length) { el.innerHTML = '<p style="color:#999;padding:20px;">暂无场景模板</p>'; return; }
+                el.innerHTML = data.data.map(s => hubItem(s.id, s.label, s.template.replace(/\n/g,' ').slice(0,80) + '...',
+                    (s.built_in ? '<span class="badge badge-info">内置</span>' : '') +
+                    (s.enabled ? '<span class="badge badge-success">启用</span>' : '<span class="badge">禁用</span>'),
+                    (s.built_in ? '' : `<button class="btn btn-small" onclick="editScenario('${s.id}')">编辑</button>`) +
+                    `<button class="btn btn-small btn-warn" onclick="toggleScenario('${s.id}',${!s.enabled})">${s.enabled?'禁用':'启用'}</button>` +
+                    (s.built_in ? '' : `<button class="btn btn-small btn-danger" onclick="deleteScenario('${s.id}')">删除</button>`)
+                )).join('');
+            }
+
+            function showScenarioModal(s) {
+                document.getElementById('scenario-edit-id').value = s ? s.id : '';
+                document.getElementById('scenario-label').value = s ? s.label : '';
+                document.getElementById('scenario-template').value = s ? s.template : '';
+                document.getElementById('scenario-enabled').checked = s ? s.enabled : true;
+                document.getElementById('scenarioModalTitle').textContent = s ? '编辑场景' : '新建场景';
+                showModal('scenarioModal');
+            }
+
+            async function editScenario(id) {
+                const data = await api('/api/ai/scenarios');
+                const s = data.data?.find(x => x.id === id);
+                if (s) showScenarioModal(s);
+            }
+
+            async function saveScenario() {
+                const id = document.getElementById('scenario-edit-id').value;
+                const body = {
+                    label: document.getElementById('scenario-label').value,
+                    template: document.getElementById('scenario-template').value,
+                    enabled: document.getElementById('scenario-enabled').checked
+                };
+                const res = id ? await api('/api/ai/scenarios/' + id, { method:'PUT', body:JSON.stringify(body) })
+                               : await api('/api/ai/scenarios', { method:'POST', body:JSON.stringify(body) });
+                showToast(res.success?'保存成功':'保存失败',res.success?'success':'error');
+                hideModal('scenarioModal'); loadScenarios();
+            }
+
+            async function toggleScenario(id, enabled) {
+                const data = await api('/api/ai/scenarios');
+                const s = data.data?.find(x => x.id === id);
+                if (!s) return;
+                await api('/api/ai/scenarios/' + id, { method:'PUT', body:JSON.stringify({ label:s.label, template:s.template, enabled }) });
+                loadScenarios();
+            }
+
+            async function deleteScenario(id) { if (!confirm('确定删除该场景？')) return; await api('/api/ai/scenarios/' + id, { method:'DELETE' }); loadScenarios(); }
+
             // 初始化
             loadProviders();
+            loadPromptSettings();
         </script>
 
         <!-- 服务设置 -->

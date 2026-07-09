@@ -254,6 +254,10 @@ async fn main() -> anyhow::Result<()> {
         // AI Hub: 截图分析 & 对话导出
         .route("/api/ai/screenshot", post(api::ai_hub::screenshot_analyze))
         .route("/api/ai/export", post(api::ai_hub::export_session))
+        // AI Hub: Prompt设置 & 场景模板
+        .route("/api/ai/prompt-settings", get(api::ai_hub::get_prompt_settings).put(api::ai_hub::update_prompt_settings))
+        .route("/api/ai/scenarios", get(api::ai_hub::list_scenarios).post(api::ai_hub::create_scenario))
+        .route("/api/ai/scenarios/:id", put(api::ai_hub::update_scenario).delete(api::ai_hub::delete_scenario))
         .merge(mirror_routes)
         .layer(CorsLayer::permissive());
 
