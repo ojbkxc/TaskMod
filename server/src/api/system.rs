@@ -235,16 +235,12 @@ pub async fn save_mqtt_config(Json(config): Json<serde_json::Value>) -> Json<Api
     let password = config.get("password").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let client_id = config.get("client_id").and_then(|v| v.as_str()).unwrap_or("taskmod-device").to_string();
     let mqtt_config = mqtt::MqttConfig { enabled, broker, topic_prefix, username, password, client_id };
-    match mqtt::save_mqtt_config(&mqtt_config) {
-        Ok(_) => {
-            mqtt::stop_mqtt().await;
-            tokio::spawn(async {
-                mqtt::start_mqtt().await;
-            });
-            Json(ApiResponse::ok_msg("ok".to_string(), "MQTT配置已保存，服务已重启"))
-        }
-        Err(e) => Json(ApiResponse::err(&format!("保存失败: {}", e))),
+    if let Err(e) = mqtt::save_mqtt_config(&mqtt_config) {
+        return Json(ApiResponse::err(&format!("保存失败: {}", e)));
     }
+    mqtt::stop_mqtt().await;
+    tokio::spawn(async { mqtt::start_mqtt().await; });
+    Json(ApiResponse::ok_msg("ok".to_string(), "MQTT配置已保存，服务已重启"))
 }
 
 pub async fn system_status() -> Json<serde_json::Value> {
