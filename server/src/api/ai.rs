@@ -83,17 +83,18 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
             if let Ok(axum::extract::ws::Message::Text(text)) = msg {
                 let req: Result<AiChatRequest, _> = serde_json::from_str(&text);
                 if let Ok(req) = req {
-                    let provider = get_ai_provider(&req.provider_id);
-                    if provider.is_none() {
-                        let _ = write.send(axum::extract::ws::Message::Text(
-                            serde_json::to_string(&json!({
-                                "type": "error",
-                                "message": "供应商不存在"
-                            })).unwrap_or_default()
-                        )).await;
-                        continue;
-                    }
-                    let provider = provider.unwrap();
+                    let provider = match get_ai_provider(&req.provider_id) {
+                        Some(p) => p,
+                        None => {
+                            let _ = write.send(axum::extract::ws::Message::Text(
+                                serde_json::to_string(&json!({
+                                    "type": "error",
+                                    "message": "供应商不存在"
+                                })).unwrap_or_default()
+                            )).await;
+                            continue;
+                        }
+                    };
 
                     let client = match Client::builder().build() {
                         Ok(c) => c,
@@ -746,14 +747,20 @@ pub fn get_ai_provider(id: &str) -> Option<AiProvider> {
 fn extract_images(text: &str) -> Vec<String> {
     let mut images = Vec::new();
 
-    let re = regex::Regex::new(r"!\[.*?\]\((https?://[^\)]+)\)").unwrap();
+    let re = match regex::Regex::new(r"!\[.*?\]\((https?://[^\)]+)\)") {
+        Ok(r) => r,
+        Err(_) => return images,
+    };
     for cap in re.captures_iter(text) {
         if let Some(url) = cap.get(1) {
             images.push(url.as_str().to_string());
         }
     }
 
-    let re_base64 = regex::Regex::new(r#"data:image/[a-zA-Z]+;base64,[^\s"'"]+"#).unwrap();
+    let re_base64 = match regex::Regex::new(r#"data:image/[a-zA-Z]+;base64,[^\s"'"]+"#) {
+        Ok(r) => r,
+        Err(_) => return images,
+    };
     for cap in re_base64.find_iter(text) {
         images.push(cap.as_str().to_string());
     }

@@ -238,7 +238,7 @@ pub async fn save_mqtt_config(Json(config): Json<MqttConfig>) -> Json<ApiRespons
     };
     match mqtt::save_mqtt_config(&mqtt_config) {
         Ok(_) => {
-            mqtt::stop_mqtt();
+            mqtt::stop_mqtt().await;
             tokio::spawn(async {
                 mqtt::start_mqtt().await;
             });

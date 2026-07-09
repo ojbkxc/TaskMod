@@ -37,7 +37,10 @@ fn start_watchdog(heartbeat: Arc<AtomicBool>, timeout_secs: u64) {
                         "TaskMod 主循环已超过 {} 秒未响应心跳。\n\n可能原因：\n- 主线程阻塞\n- 资源耗尽（内存/CPU）\n- 死锁\n\n请检查设备状态。",
                         timeout_secs
                     );
-                    let rt = tokio::runtime::Handle::current();
+                    let rt = match tokio::runtime::Handle::try_current() {
+                        Ok(h) => h,
+                        Err(_) => return,
+                    };
                     let _ = rt.block_on(utils::email::send_email(
                         &email_conf,
                         Some(&subject),
@@ -167,9 +170,16 @@ async fn main() -> anyhow::Result<()> {
         if email_conf.enable_notify {
             let subject = format!("[CRITICAL] TaskMod 崩溃 - {}", now.format("%Y-%m-%d %H:%M:%S"));
             let body = format!("位置: {}\n错误: {}\n\n请检查设备状态并重启服务。", location, msg);
-            let _ = tokio::runtime::Handle::current().block_on(
-                utils::email::send_email(&email_conf, Some(&subject), Some(&body), None)
-            );
+            // 在独立线程中发送邮件，避免嵌套运行时 panic
+            std::thread::spawn(move || {
+                let rt = match tokio::runtime::Runtime::new() {
+                    Ok(rt) => rt,
+                    Err(_) => return,
+                };
+                let _ = rt.block_on(
+                    utils::email::send_email(&email_conf, Some(&subject), Some(&body), None)
+                );
+            });
         }
         default_hook(info);
     }));
@@ -178,6 +188,15 @@ async fn main() -> anyhow::Result<()> {
     let heartbeat = Arc::new(AtomicBool::new(true));
     start_watchdog(heartbeat.clone(), 60);
 
+    // 先启动心跳更新，再执行可能耗时的初始化
+    let heartbeat_clone = heartbeat.clone();
+    tokio::spawn(async move {
+        loop {
+            heartbeat_clone.store(true, Ordering::Relaxed);
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        }
+    });
+
     let mirror_state = MirrorState::new_shared();
 
     utils::event_monitor::register_event_handler(handle_event);
@@ -185,14 +204,6 @@ async fn main() -> anyhow::Result<()> {
 
     tokio::spawn(async {
         utils::mqtt::start_mqtt().await;
-    });
-
-    // 定期更新心跳
-    tokio::spawn(async move {
-        loop {
-            heartbeat.store(true, Ordering::Relaxed);
-            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-        }
     });
 
     let mirror_routes = Router::new()

@@ -289,12 +289,23 @@ pub async fn send_control(
     State(state): State<SharedMirrorState>,
     Json(req): Json<ControlRequest>,
 ) -> Json<ApiResponse<String>> {
+    // Android 上 input 等命令可能不在 PATH 中，尝试常见路径
+    let input_cmd = if std::path::Path::new("/system/bin/input").exists() {
+        "/system/bin/input"
+    } else {
+        "input"
+    };
+    let sh_cmd = if std::path::Path::new("/system/bin/sh").exists() {
+        "/system/bin/sh"
+    } else {
+        "sh"
+    };
+
     let result = match req.action.as_str() {
         "touch" => {
             let x = req.x.unwrap_or(0.0) as i32;
             let y = req.y.unwrap_or(0.0) as i32;
-            // 使用tap更可靠，duration设为10ms避免太快被忽略
-            Command::new("input")
+            Command::new(input_cmd)
                 .arg("tap")
                 .arg(x.to_string())
                 .arg(y.to_string())
@@ -305,8 +316,7 @@ pub async fn send_control(
             let x = req.x.unwrap_or(0.0) as i32;
             let y = req.y.unwrap_or(0.0) as i32;
             state.set_last_touch(Some((x, y)));
-            // 使用短swipe模拟按下，不阻塞input系统
-            Command::new("input")
+            Command::new(input_cmd)
                 .arg("swipe")
                 .arg(x.to_string())
                 .arg(y.to_string())
@@ -320,8 +330,7 @@ pub async fn send_control(
             let x = req.x.unwrap_or(0.0) as i32;
             let y = req.y.unwrap_or(0.0) as i32;
             if let Some((prev_x, prev_y)) = state.get_last_touch() {
-                // 从上一个位置滑动到当前位置
-                Command::new("input")
+                Command::new(input_cmd)
                     .arg("swipe")
                     .arg(prev_x.to_string())
                     .arg(prev_y.to_string())
@@ -331,7 +340,6 @@ pub async fn send_control(
                     .status()
                     .await
             } else {
-                // 没有之前的位置，直接记录
                 state.set_last_touch(Some((x, y)));
                 return Json(ApiResponse::ok("移动完成".to_string()));
             }
@@ -340,15 +348,14 @@ pub async fn send_control(
             state.set_last_touch(None);
             return Json(ApiResponse::ok("抬起完成".to_string()));
         }
-        "back" => Command::new("input").arg("keyevent").arg("4").status().await,
-        "home" => Command::new("input").arg("keyevent").arg("3").status().await,
-        "recents" => Command::new("input").arg("keyevent").arg("187").status().await,
-        "power" => Command::new("input").arg("keyevent").arg("26").status().await,
-        "volume_up" => Command::new("input").arg("keyevent").arg("24").status().await,
-        "volume_down" => Command::new("input").arg("keyevent").arg("25").status().await,
+        "back" => Command::new(input_cmd).arg("keyevent").arg("4").status().await,
+        "home" => Command::new(input_cmd).arg("keyevent").arg("3").status().await,
+        "recents" => Command::new(input_cmd).arg("keyevent").arg("187").status().await,
+        "power" => Command::new(input_cmd).arg("keyevent").arg("26").status().await,
+        "volume_up" => Command::new(input_cmd).arg("keyevent").arg("24").status().await,
+        "volume_down" => Command::new(input_cmd).arg("keyevent").arg("25").status().await,
         "text" => {
             let text = req.text.unwrap_or_default();
-            // 对特殊字符进行转义，使用base64方式输入支持中文和空格
             let escaped = text
                 .replace("\\", "\\\\")
                 .replace(" ", "%s")
@@ -361,7 +368,7 @@ pub async fn send_control(
                 .replace(")", "\\)")
                 .replace("'", "\\'")
                 .replace("\"", "\\\"");
-            Command::new("input").arg("text").arg(escaped).status().await
+            Command::new(input_cmd).arg("text").arg(escaped).status().await
         }
         "swipe" => {
             let x1 = req.x.unwrap_or(0.0) as i32;
@@ -369,7 +376,7 @@ pub async fn send_control(
             let x2 = req.x2.unwrap_or(0.0) as i32;
             let y2 = req.y2.unwrap_or(0.0) as i32;
             let duration = req.duration.unwrap_or(300);
-            Command::new("input")
+            Command::new(input_cmd)
                 .arg("swipe")
                 .arg(x1.to_string())
                 .arg(y1.to_string())
@@ -383,8 +390,7 @@ pub async fn send_control(
             let x = req.x.unwrap_or(0.0) as i32;
             let y = req.y.unwrap_or(0.0) as i32;
             let dy = req.dy.unwrap_or(0.0) as i32;
-            // scroll is not a valid input command, use swipe instead
-            Command::new("input")
+            Command::new(input_cmd)
                 .arg("swipe")
                 .arg(x.to_string())
                 .arg(y.to_string())
@@ -396,7 +402,7 @@ pub async fn send_control(
         }
         "keyevent" => {
             let keycode = req.keycode.or(req.key_code).unwrap_or(0) as i32;
-            Command::new("input")
+            Command::new(input_cmd)
                 .arg("keyevent")
                 .arg(keycode.to_string())
                 .status()
@@ -407,7 +413,6 @@ pub async fn send_control(
         "collapse_panels" => Command::new("cmd").arg("statusbar").arg("collapse").status().await,
         "set_clipboard" => {
             let text = req.text.unwrap_or_default();
-            // 使用 am broadcast 方式设置剪贴板（兼容性更好）
             Command::new("am")
                 .arg("broadcast")
                 .arg("-a")
@@ -432,12 +437,11 @@ pub async fn send_control(
                 Err(e) => return Json(ApiResponse::err(&format!("获取失败: {}", e))),
             }
         }
-        "screen_on" => Command::new("input").arg("keyevent").arg("224").status().await,
-        "screen_off" => Command::new("input").arg("keyevent").arg("223").status().await,
+        "screen_on" => Command::new(input_cmd).arg("keyevent").arg("224").status().await,
+        "screen_off" => Command::new(input_cmd).arg("keyevent").arg("223").status().await,
         "start_app" => {
             let pkg = req.text.unwrap_or_default();
-            // 先用 cmd package resolve-activity 解析出主Activity名
-            let resolve_output = Command::new("sh")
+            let resolve_output = Command::new(sh_cmd)
                 .arg("-c")
                 .arg(format!("cmd package resolve-activity --brief {} | tail -1", &pkg))
                 .output()
@@ -458,7 +462,6 @@ pub async fn send_control(
                     }
                 }
             }
-            // fallback: 用 monkey 启动
             Command::new("monkey")
                 .arg("-p")
                 .arg(pkg)
@@ -469,7 +472,6 @@ pub async fn send_control(
                 .await
         }
         "rotate" => {
-            // 切换自动旋转：先关闭自动旋转，再切换方向
             let _ = Command::new("settings")
                 .arg("put")
                 .arg("system")
@@ -477,7 +479,6 @@ pub async fn send_control(
                 .arg("0")
                 .status()
                 .await;
-            // 获取当前旋转方向并切换
             let current = Command::new("settings")
                 .arg("get")
                 .arg("system")

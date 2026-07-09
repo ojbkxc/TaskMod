@@ -3035,12 +3035,18 @@
         }
 
         async function sendControl(action) {
-            const data = await api('/api/mirror/control', {
-                method: 'POST',
-                body: JSON.stringify({ action })
-            });
-            if (!data.success) {
-                showToast(data.message || '发送失败', 'error');
+            try {
+                const data = await api('/api/mirror/control', {
+                    method: 'POST',
+                    body: JSON.stringify({ action })
+                });
+                if (data.success) {
+                    showToast(data.data || '已发送', 'success');
+                } else {
+                    showToast(data.message || '发送失败', 'error');
+                }
+            } catch(e) {
+                showToast('请求失败: ' + e.message, 'error');
             }
         }
 
