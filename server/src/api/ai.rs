@@ -442,6 +442,20 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                                     "content": full_response
                                 }));
                             }
+                            // 自动为首轮对话生成标题
+                            if conversation_messages.len() <= 4 {
+                                let first_user = conversation_messages.iter()
+                                    .find(|m| m.get("role").and_then(|r| r.as_str()) == Some("user"))
+                                    .and_then(|m| m.get("content").and_then(|c| c.as_str()))
+                                    .unwrap_or("");
+                                let auto_title = crate::api::ai_hub::generate_title_from_message(first_user);
+                                let _ = write.send(axum::extract::ws::Message::Text(
+                                    serde_json::to_string(&json!({
+                                        "type": "title",
+                                        "title": auto_title
+                                    })).unwrap_or_default()
+                                )).await;
+                            }
                             break;
                         }
                     }
@@ -458,6 +472,7 @@ pub fn load_ai_providers() -> Vec<AiProvider> {
         .unwrap_or_default()
 }
 
+#[allow(dead_code)]
 pub fn get_ai_providers() -> Vec<AiProvider> {
     load_ai_providers()
 }
@@ -498,6 +513,7 @@ pub async fn call_ai_with_fallback(prompt: &str, provider_ids: Option<&[String]>
 }
 
 /// 带回退的图像生成
+#[allow(dead_code)]
 pub async fn call_ai_image_with_fallback(prompt: &str, size: &str, provider_ids: Option<&[String]>) -> Result<String, String> {
     let providers = if let Some(ids) = provider_ids {
         let all = load_ai_providers();
@@ -567,6 +583,7 @@ pub async fn call_ai(provider: &AiProvider, prompt: &str) -> Result<String, Stri
 }
 
 /// 调用AI生成图像（兼容DALL-E API）
+#[allow(dead_code)]
 pub async fn call_ai_image(provider: &AiProvider, prompt: &str, size: &str) -> Result<String, String> {
     let client = Client::builder().build().map_err(|e| format!("创建客户端失败: {}", e))?;
     
@@ -608,6 +625,7 @@ pub async fn call_ai_image(provider: &AiProvider, prompt: &str, size: &str) -> R
 }
 
 /// 调用AI生成嵌入向量
+#[allow(dead_code)]
 pub async fn call_ai_embedding(provider: &AiProvider, input: &str) -> Result<Vec<f64>, String> {
     let client = Client::builder().build().map_err(|e| format!("创建客户端失败: {}", e))?;
     

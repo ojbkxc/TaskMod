@@ -3179,6 +3179,12 @@
                         case 'error':
                             addAiMessage('system', '错误: ' + data.message);
                             break;
+                        case 'title':
+                            if (data.title && aiSessionId) {
+                                api('/api/ai/sessions/' + aiSessionId, { method:'PUT', body: JSON.stringify({ title: data.title }) });
+                                document.getElementById('ai-session-title').textContent = data.title;
+                            }
+                            break;
                     }
                 } catch (e) {
                     addAiMessage('system', '收到消息: ' + event.data);

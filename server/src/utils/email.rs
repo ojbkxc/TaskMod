@@ -41,6 +41,7 @@ impl Default for EmailConfig {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum EmailError {
     AuthError(String),
     NetworkError(String),

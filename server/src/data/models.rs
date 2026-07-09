@@ -11,6 +11,7 @@ pub struct Task {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct AddTaskRequest {
     pub time: String,
     pub weeks: Option<String>,

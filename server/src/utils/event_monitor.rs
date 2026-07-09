@@ -10,6 +10,7 @@ pub struct WifiState {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct BatteryState {
     pub capacity: i32,
     pub status: String,
@@ -17,6 +18,7 @@ pub struct BatteryState {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ScreenState {
     pub on: bool,
     pub brightness: i32,
@@ -281,15 +283,18 @@ pub fn start_monitor(interval_ms: u64) {
     });
 }
 
+#[allow(dead_code)]
 pub fn stop_monitor() {
     let mut running = IS_RUNNING.lock().unwrap();
     *running = false;
 }
 
+#[allow(dead_code)]
 pub fn is_monitor_running() -> bool {
     *IS_RUNNING.lock().unwrap()
 }
 
+#[allow(dead_code)]
 pub fn get_current_states() -> HashMap<String, serde_json::Value> {
     let mut states = HashMap::new();
     

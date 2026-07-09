@@ -220,6 +220,7 @@ impl AiTool for ViewLogsTool {
     }
 }
 
+#[allow(dead_code)]
 pub fn register_script_tools(registry: &mut crate::tools::ToolRegistry) {
     registry.register(Box::new(ListScriptsTool));
     registry.register(Box::new(ReadScriptTool));

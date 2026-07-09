@@ -64,6 +64,7 @@ pub fn parse_arg<T: serde::de::DeserializeOwned>(args: &str, name: &str) -> Resu
         .map_err(|_| format!("参数类型错误: {}", name))
 }
 
+#[allow(dead_code)]
 pub fn parse_args_str(args: &str) -> Result<String, String> {
     serde_json::from_str::<Value>(args)
         .map_err(|_| "参数解析失败".to_string())

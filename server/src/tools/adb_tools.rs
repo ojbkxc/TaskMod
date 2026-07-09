@@ -351,6 +351,7 @@ impl AiTool for AdbTtsTool {
     }
 }
 
+#[allow(dead_code)]
 pub fn register_adb_tools(registry: &mut crate::tools::ToolRegistry) {
     registry.register(Box::new(AdbTapTool));
     registry.register(Box::new(AdbSwipeTool));

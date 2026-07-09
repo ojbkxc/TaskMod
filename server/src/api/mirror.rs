@@ -20,6 +20,7 @@ pub struct MirrorStartRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct ControlRequest {
     action: String,
     x: Option<f32>,

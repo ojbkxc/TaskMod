@@ -420,6 +420,7 @@ fn skill_path(id: &str) -> String {
 }
 
 /// 获取所有已启用的Skill（同步，供AI模块调用）
+#[allow(dead_code)]
 pub fn get_enabled_skills_sync() -> Vec<Skill> {
     let mut items = Vec::new();
     if let Ok(entries) = std::fs::read_dir(SKILLS_DIR) {
@@ -719,6 +720,7 @@ fn mcp_path(id: &str) -> String {
 }
 
 /// 获取所有已启用的MCP服务器（同步）
+#[allow(dead_code)]
 pub fn get_enabled_mcp_servers_sync() -> Vec<McpServer> {
     let mut items = Vec::new();
     if let Ok(entries) = std::fs::read_dir(MCP_DIR) {
@@ -970,6 +972,7 @@ fn load_scenarios_sync() -> Vec<Scenario> {
         .unwrap_or_else(default_scenarios)
 }
 
+#[allow(dead_code)]
 pub fn get_enabled_scenarios_sync() -> Vec<Scenario> {
     load_scenarios_sync().into_iter().filter(|s| s.enabled).collect()
 }

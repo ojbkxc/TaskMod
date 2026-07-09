@@ -6,6 +6,7 @@ use crate::data::response::ApiResponse;
 use crate::utils::adb;
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct TtsRequest {
     pub text: String,
     pub engine: Option<String>,

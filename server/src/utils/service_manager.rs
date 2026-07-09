@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum ServiceStatus {
     Unloaded,
     Loading,
@@ -10,6 +11,7 @@ pub enum ServiceStatus {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ServiceInfo {
     pub status: ServiceStatus,
     pub ref_count: usize,

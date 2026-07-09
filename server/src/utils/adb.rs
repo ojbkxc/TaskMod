@@ -21,6 +21,7 @@ pub async fn run_command(cmd: &str) -> Result<String, String> {
 }
 
 /// 执行命令并返回原始Output
+#[allow(dead_code)]
 pub async fn run_command_raw(cmd: &str) -> Result<std::process::Output, String> {
     if cmd.trim().is_empty() {
         return Err("命令为空".to_string());

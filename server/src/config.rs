@@ -8,6 +8,7 @@ pub const AI_CONF: &str = "/sdcard/TaskMod/ai.conf";
 pub const MQTT_CONF: &str = "/sdcard/TaskMod/mqtt.conf";
 pub const LOG_FILE: &str = "/data/adb/modules/TaskMod/TaskMod.log";
 pub const WEB_PORT: u16 = 9527;
+#[allow(dead_code)]
 pub const MOD_DIR: &str = "/data/adb/modules/TaskMod";
 
 // AI 功能模块目录
