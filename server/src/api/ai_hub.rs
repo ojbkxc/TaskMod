@@ -1355,7 +1355,7 @@ pub async fn record_usage(Json(req): Json<RecordUsageReq>) -> Json<serde_json::V
     stats.total_input_tokens += req.input_tokens;
     stats.total_output_tokens += req.output_tokens;
     stats.total_reasoning_tokens += reasoning;
-    stats.last_updated = ts_now();
+    stats.last_updated = now_ms();
 
     let provider = stats.by_provider.entry(req.provider_id).or_default();
     provider.calls += 1;
