@@ -1160,7 +1160,7 @@ pub async fn get_image(Path(id): Path<String>) -> Result<axum::response::Respons
                 .header("content-type", mime)
                 .header("cache-control", "public, max-age=86400")
                 .body(axum::body::boxed(axum::body::Full::from(bytes)))
-                .unwrap());
+                .unwrap_or_else(|_| axum::response::Response::new(axum::body::boxed(axum::body::Full::from("构建响应失败")))));
         }
     }
     Err((axum::http::StatusCode::NOT_FOUND, "图片未找到".to_string()))
