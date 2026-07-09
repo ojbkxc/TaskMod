@@ -19,3 +19,6 @@ pub const PROJECTS_DIR: &str = "/sdcard/TaskMod/projects";
 pub const CHAT_HISTORY_DIR: &str = "/sdcard/TaskMod/chat_history";
 pub const SAVED_ITEMS_DIR: &str = "/sdcard/TaskMod/saved_items";
 pub const PRESETS_FILE: &str = "/sdcard/TaskMod/presets.json";
+pub const MCP_HISTORY_DIR: &str = "/sdcard/TaskMod/mcp_history";
+pub const USAGE_STATS_FILE: &str = "/sdcard/TaskMod/usage_stats.json";
+pub const UPLOAD_DIR: &str = "/sdcard/TaskMod/uploads";

@@ -258,6 +258,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/ai/prompt-settings", get(api::ai_hub::get_prompt_settings).put(api::ai_hub::update_prompt_settings))
         .route("/api/ai/scenarios", get(api::ai_hub::list_scenarios).post(api::ai_hub::create_scenario))
         .route("/api/ai/scenarios/:id", put(api::ai_hub::update_scenario).delete(api::ai_hub::delete_scenario))
+        // AI Hub: 图片上传 & Skill GitHub导入
+        .route("/api/ai/upload-image", post(api::ai_hub::upload_image))
+        .route("/api/ai/images/:id", get(api::ai_hub::get_image))
+        .route("/api/ai/skills/import", post(api::ai_hub::import_skill_from_github))
+        // AI Hub: MCP工具历史 & 使用量统计
+        .route("/api/ai/mcp-history", get(api::ai_hub::list_mcp_history).post(api::ai_hub::record_mcp_tool_call).delete(api::ai_hub::clear_mcp_history))
+        .route("/api/ai/usage", get(api::ai_hub::get_usage_stats).post(api::ai_hub::record_usage))
         .merge(mirror_routes)
         .layer(CorsLayer::permissive());
 

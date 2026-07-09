@@ -1,4 +1,5 @@
 use axum::{Json, extract::Path, extract::Query};
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -700,6 +701,12 @@ pub struct McpServer {
     pub enabled: bool,
     #[serde(default)]
     pub auto_connect: bool,
+    /// 工具权限控制：允许执行的工具列表，空表示全部允许
+    #[serde(default)]
+    pub allowed_tools: Vec<String>,
+    /// 工具缓存：上次发现的工具列表
+    #[serde(default)]
+    pub cached_tools: Vec<serde_json::Value>,
     pub created_at: i64,
 }
 
@@ -713,6 +720,8 @@ pub struct McpServerReq {
     pub url: Option<String>,
     pub enabled: Option<bool>,
     pub auto_connect: Option<bool>,
+    pub allowed_tools: Option<Vec<String>>,
+    pub cached_tools: Option<Vec<serde_json::Value>>,
 }
 
 fn mcp_path(id: &str) -> String {
@@ -1098,6 +1107,277 @@ pub fn build_memory_context(memories: &[Memory]) -> String {
     ctx
 }
 
+// ==================== 图片上传 ====================
+
+#[derive(Debug, Deserialize)]
+pub struct UploadImageReq {
+    pub image_base64: String,
+    pub mime_type: Option<String>,
+}
+
+pub async fn upload_image(Json(req): Json<UploadImageReq>) -> Json<serde_json::Value> {
+    use crate::config::UPLOAD_DIR;
+    let _ = fs::create_dir_all(UPLOAD_DIR).await;
+    let id = ts_id();
+    let ext = match req.mime_type.as_deref() {
+        Some("image/png") => "png",
+        Some("image/jpeg") | Some("image/jpg") => "jpg",
+        Some("image/gif") => "gif",
+        Some("image/webp") => "webp",
+        _ => "png",
+    };
+    let path = format!("{}/{}.{}", UPLOAD_DIR, id, ext);
+    match base64::engine::general_purpose::STANDARD.decode(&req.image_base64) {
+        Ok(bytes) => {
+            if fs::write(&path, &bytes).await.is_ok() {
+                Json(json!({"ok": true, "id": id, "path": path, "url": format!("/api/ai/images/{}", id)}))
+            } else {
+                Json(json!({"ok": false, "error": "写入失败"}))
+            }
+        }
+        Err(e) => Json(json!({"ok": false, "error": format!("base64解码失败: {}", e)})),
+    }
+}
+
+pub async fn get_image(Path(id): Path<String>) -> Result<axum::response::Response, (axum::http::StatusCode, String)> {
+    use crate::config::UPLOAD_DIR;
+    for ext in &["png", "jpg", "gif", "webp"] {
+        let path = format!("{}/{}.{}", UPLOAD_DIR, id, ext);
+        if let Ok(bytes) = fs::read(&path).await {
+            let mime = match *ext {
+                "png" => "image/png",
+                "jpg" => "image/jpeg",
+                "gif" => "image/gif",
+                "webp" => "image/webp",
+                _ => "application/octet-stream",
+            };
+            return Ok(axum::response::Response::builder()
+                .header("content-type", mime)
+                .header("cache-control", "public, max-age=86400")
+                .body(axum::body::boxed(axum::body::Full::from(bytes)))
+                .unwrap());
+        }
+    }
+    Err((axum::http::StatusCode::NOT_FOUND, "图片未找到".to_string()))
+}
+
+// ==================== Skill GitHub 导入 ====================
+
+#[derive(Debug, Deserialize)]
+pub struct SkillImportReq {
+    pub github_url: String,
+    pub name: Option<String>,
+    pub category: Option<String>,
+}
+
+pub async fn import_skill_from_github(Json(req): Json<SkillImportReq>) -> Json<serde_json::Value> {
+    // 将 GitHub URL 转换为 raw URL
+    let raw_url = req.github_url
+        .replace("github.com", "raw.githubusercontent.com")
+        .replace("/blob/", "/")
+        .replace("/tree/", "/");
+
+    match reqwest::get(&raw_url).await {
+        Ok(resp) => match resp.text().await {
+            Ok(content) => {
+                // 尝试解析为 JSON Skill 文件
+                if let Ok(skill) = serde_json::from_str::<Skill>(&content) {
+                    let id = skill.id.clone();
+                    let path = skill_path(&id);
+                    let _ = write_json_file(&path, &skill).await;
+                    return Json(json!({"ok": true, "skill": skill}));
+                }
+                // 尝试解析为 JSON SkillReq 格式
+                if let Ok(req_skill) = serde_json::from_str::<SkillReq>(&content) {
+                    let id = ts_id();
+                    let skill = Skill {
+                        id: id.clone(),
+                        name: req_skill.name,
+                        description: req_skill.description.unwrap_or_default(),
+                        prompt_template: req_skill.prompt_template.unwrap_or_default(),
+                        variables: req_skill.variables.unwrap_or_default(),
+                        enabled: req_skill.enabled.unwrap_or(true),
+                        source: Some(format!("github:{}", req.github_url)),
+                        category: req_skill.category,
+                        created_at: ts_now(),
+                    };
+                    let path = skill_path(&id);
+                    let _ = write_json_file(&path, &skill).await;
+                    return Json(json!({"ok": true, "skill": skill}));
+                }
+                // 作为纯文本 prompt_template 处理
+                let id = ts_id();
+                let name = req.name.clone().unwrap_or_else(|| {
+                    raw_url.split('/').last().unwrap_or("imported_skill").replace(".json", "").replace(".md", "")
+                });
+                let skill = Skill {
+                    id: id.clone(),
+                    name,
+                    description: format!("从 GitHub 导入: {}", req.github_url),
+                    prompt_template: content,
+                    variables: vec![],
+                    enabled: true,
+                    source: Some(format!("github:{}", req.github_url)),
+                    category: req.category,
+                    created_at: ts_now(),
+                };
+                let path = skill_path(&id);
+                let _ = write_json_file(&path, &skill).await;
+                Json(json!({"ok": true, "skill": skill}))
+            }
+            Err(e) => Json(json!({"ok": false, "error": format!("读取内容失败: {}", e)})),
+        },
+        Err(e) => Json(json!({"ok": false, "error": format!("请求失败: {}", e)})),
+    }
+}
+
+// ==================== MCP 工具历史 ====================
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct McpToolCall {
+    pub id: String,
+    pub server_id: String,
+    pub server_name: String,
+    pub tool_name: String,
+    pub arguments: serde_json::Value,
+    pub result: Option<String>,
+    pub success: bool,
+    pub duration_ms: u64,
+    pub called_at: i64,
+}
+
+fn mcp_history_path(id: &str) -> String {
+    format!("{}/{}.json", MCP_HISTORY_DIR, id)
+}
+
+pub async fn list_mcp_history(Query(params): Query<HashMap<String, String>>) -> Json<serde_json::Value> {
+    let limit = params.get("limit").and_then(|v| v.parse::<usize>().ok()).unwrap_or(50);
+    let server_id = params.get("server_id");
+
+    if let Ok(mut entries) = fs::read_dir(MCP_HISTORY_DIR).await {
+        let mut calls: Vec<McpToolCall> = vec![];
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                if let Ok(data) = fs::read_to_string(&path).await {
+                    if let Ok(call) = serde_json::from_str::<McpToolCall>(&data) {
+                        if server_id.map_or(true, |sid| &call.server_id == sid) {
+                            calls.push(call);
+                        }
+                    }
+                }
+            }
+        }
+        calls.sort_by(|a, b| b.called_at.cmp(&a.called_at));
+        calls.truncate(limit);
+        Json(json!({"ok": true, "history": calls}))
+    } else {
+        Json(json!({"ok": true, "history": []}))
+    }
+}
+
+pub async fn record_mcp_tool_call(Json(call): Json<McpToolCall>) -> Json<serde_json::Value> {
+    let _ = fs::create_dir_all(MCP_HISTORY_DIR).await;
+    let path = mcp_history_path(&call.id);
+    let _ = write_json_file(&path, &call).await;
+    Json(json!({"ok": true}))
+}
+
+pub async fn clear_mcp_history() -> Json<serde_json::Value> {
+    let _ = fs::create_dir_all(MCP_HISTORY_DIR).await;
+    if let Ok(mut entries) = fs::read_dir(MCP_HISTORY_DIR).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let _ = fs::remove_file(entry.path()).await;
+        }
+    }
+    Json(json!({"ok": true}))
+}
+
+// ==================== 使用量统计 ====================
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct UsageStats {
+    pub total_calls: u64,
+    pub total_input_tokens: u64,
+    pub total_output_tokens: u64,
+    pub total_reasoning_tokens: u64,
+    pub by_provider: HashMap<String, ProviderUsage>,
+    pub by_date: HashMap<String, DailyUsage>,
+    pub last_updated: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ProviderUsage {
+    pub calls: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub reasoning_tokens: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct DailyUsage {
+    pub calls: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RecordUsageReq {
+    pub provider_id: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub reasoning_tokens: Option<u64>,
+}
+
+pub async fn get_usage_stats() -> Json<serde_json::Value> {
+    let stats: UsageStats = if let Ok(data) = fs::read_to_string(USAGE_STATS_FILE).await {
+        serde_json::from_str(&data).unwrap_or_default()
+    } else {
+        UsageStats::default()
+    };
+    Json(json!({"ok": true, "stats": stats}))
+}
+
+pub async fn record_usage(Json(req): Json<RecordUsageReq>) -> Json<serde_json::Value> {
+    let mut stats: UsageStats = if let Ok(data) = fs::read_to_string(USAGE_STATS_FILE).await {
+        serde_json::from_str(&data).unwrap_or_default()
+    } else {
+        UsageStats::default()
+    };
+
+    let reasoning = req.reasoning_tokens.unwrap_or(0);
+    stats.total_calls += 1;
+    stats.total_input_tokens += req.input_tokens;
+    stats.total_output_tokens += req.output_tokens;
+    stats.total_reasoning_tokens += reasoning;
+    stats.last_updated = ts_now();
+
+    let provider = stats.by_provider.entry(req.provider_id).or_default();
+    provider.calls += 1;
+    provider.input_tokens += req.input_tokens;
+    provider.output_tokens += req.output_tokens;
+    provider.reasoning_tokens += reasoning;
+
+    let today = chrono_date();
+    let daily = stats.by_date.entry(today).or_default();
+    daily.calls += 1;
+    daily.input_tokens += req.input_tokens;
+    daily.output_tokens += req.output_tokens;
+
+    let _ = write_json_file(USAGE_STATS_FILE, &stats).await;
+    Json(json!({"ok": true}))
+}
+
+fn chrono_date() -> String {
+    let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    let days = secs / 86400;
+    let y = 1970 + days / 365;
+    let d = days % 365;
+    let m = d / 30 + 1;
+    let d = d % 30 + 1;
+    format!("{:04}-{:02}-{:02}", y, m, d)
+}
+
 // ==================== 对话标题自动生成 ====================
 
 pub fn generate_title_from_message(message: &str) -> String {
@@ -1111,11 +1391,15 @@ pub fn generate_title_from_message(message: &str) -> String {
 // ==================== 统一初始化 ====================
 
 pub async fn init_dirs() {
-    for dir in &[SKILLS_DIR, MCP_DIR, MEMORY_DIR, PROJECTS_DIR, CHAT_HISTORY_DIR, SAVED_ITEMS_DIR] {
+    for dir in &[SKILLS_DIR, MCP_DIR, MEMORY_DIR, PROJECTS_DIR, CHAT_HISTORY_DIR, SAVED_ITEMS_DIR, MCP_HISTORY_DIR, UPLOAD_DIR] {
         let _ = fs::create_dir_all(dir).await;
     }
     // 初始化预设文件
     if fs::metadata(PRESETS_FILE).await.is_err() {
         let _ = write_json_file(PRESETS_FILE, &Vec::<Preset>::new()).await;
+    }
+    // 初始化使用量统计
+    if fs::metadata(USAGE_STATS_FILE).await.is_err() {
+        let _ = write_json_file(USAGE_STATS_FILE, &UsageStats::default()).await;
     }
 }

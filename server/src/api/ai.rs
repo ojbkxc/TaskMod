@@ -283,6 +283,7 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
 
                         let mut stream = response.bytes_stream();
                         let mut full_response = String::new();
+                        let mut full_thinking = String::new();
                         let mut has_tool_call = false;
                         let mut streaming_msg_sent = false;
 
@@ -313,6 +314,20 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                                                     if let Some(first) = choices.as_array().and_then(|a| a.first()) {
                                                         if let Some(delta) = first.get("delta") {
                                                             let content = delta.get("content").and_then(|c| c.as_str()).unwrap_or("");
+                                                            // 思考链捕获 (DeepSeek reasoning_content)
+                                                            let reasoning = delta.get("reasoning_content")
+                                                                .and_then(|c| c.as_str())
+                                                                .or_else(|| delta.get("reasoning").and_then(|c| c.as_str()))
+                                                                .unwrap_or("");
+                                                            if !reasoning.is_empty() {
+                                                                full_thinking.push_str(reasoning);
+                                                                let _ = write.send(axum::extract::ws::Message::Text(
+                                                                    serde_json::to_string(&json!({
+                                                                        "type": "thinking",
+                                                                        "content": reasoning
+                                                                    })).unwrap_or_default()
+                                                                )).await;
+                                                            }
                                                             if !content.is_empty() {
                                                                 full_response.push_str(content);
                                                                 // Send streaming chunk to client
@@ -436,11 +451,15 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                                 })).unwrap_or_default()
                             )).await;
                         } else {
-                            if !full_response.is_empty() {
-                                conversation_messages.push(json!({
+                            if !full_response.is_empty() || !full_thinking.is_empty() {
+                                let mut msg = json!({
                                     "role": "assistant",
                                     "content": full_response
-                                }));
+                                });
+                                if !full_thinking.is_empty() {
+                                    msg["reasoning"] = serde_json::Value::String(full_thinking.clone());
+                                }
+                                conversation_messages.push(msg);
                             }
                             // 自动为首轮对话生成标题
                             if conversation_messages.len() <= 4 {

@@ -503,6 +503,7 @@
                     <button class="btn" onclick="showAiTab('ai-mcp')" id="aitab-ai-mcp">MCP</button>
                     <button class="btn" onclick="showAiTab('ai-scenarios')" id="aitab-ai-scenarios">场景</button>
                     <button class="btn" onclick="showAiTab('ai-screenshot')" id="aitab-ai-screenshot">截图分析</button>
+                    <button class="btn" onclick="showAiTab('ai-usage')" id="aitab-ai-usage">使用量</button>
                 </div>
 
                 <!-- AI 对话 -->
@@ -515,8 +516,15 @@
                     <div id="ai-chat-messages" style="height:400px;overflow-y:auto;background:#f8f9fa;border-radius:8px;padding:15px;margin-bottom:10px;"></div>
                     <div style="display:flex;gap:10px;">
                         <textarea id="ai-chat-input" rows="2" placeholder="输入消息... (Enter发送，Shift+Enter换行)" style="flex:1;resize:none;" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();aiChatSend();}"></textarea>
-                        <button class="btn btn-primary" onclick="aiChatSend()" style="align-self:flex-end;">发送</button>
+                        <div style="display:flex;flex-direction:column;gap:4px;align-self:flex-end;">
+                            <button class="btn btn-primary" onclick="aiChatSend()">发送</button>
+                            <label class="btn" style="font-size:12px;padding:2px 8px;cursor:pointer;background:#e9ecef;border-radius:4px;text-align:center;">
+                                图片
+                                <input type="file" accept="image/*" style="display:none;" onchange="uploadChatImage(this)">
+                            </label>
+                        </div>
                     </div>
+                    <div id="ai-chat-images" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;"></div>
                 </div>
 
                 <!-- 对话历史 -->
@@ -541,7 +549,10 @@
 
                 <!-- Skill系统 -->
                 <div id="ai-skills" class="ai-subtab hidden">
-                    <button class="btn btn-success" onclick="showSkillModal()" style="margin-bottom:10px;">新建Skill</button>
+                    <div style="display:flex;gap:8px;margin-bottom:10px;">
+                        <button class="btn btn-success" onclick="showSkillModal()">新建Skill</button>
+                        <button class="btn" style="background:#6f42c1;color:#fff;" onclick="showSkillImportModal()">从GitHub导入</button>
+                    </div>
                     <div id="ai-skills-list"></div>
                 </div>
 
@@ -559,8 +570,13 @@
 
                 <!-- MCP服务器 -->
                 <div id="ai-mcp" class="ai-subtab hidden">
-                    <button class="btn btn-success" onclick="showMcpModal()" style="margin-bottom:10px;">新建MCP服务器</button>
+                    <div style="display:flex;gap:8px;margin-bottom:10px;">
+                        <button class="btn btn-success" onclick="showMcpModal()">新建MCP服务器</button>
+                        <button class="btn" style="background:#17a2b8;color:#fff;" onclick="loadMcpHistory()">工具历史</button>
+                        <button class="btn btn-danger" onclick="clearMcpHistory()">清空历史</button>
+                    </div>
                     <div id="ai-mcp-list"></div>
+                    <div id="ai-mcp-history" style="margin-top:15px;"></div>
                 </div>
 
                 <!-- Prompt控制 -->
@@ -621,6 +637,14 @@
                             <button class="btn btn-primary" onclick="aiScreenshotAnalyze()">截图并分析</button>
                         </div>
                         <div id="ai-screenshot-result" style="background:#f8f9fa;border-radius:8px;padding:15px;min-height:100px;white-space:pre-wrap;"></div>
+                    </div>
+                </div>
+
+                <!-- 使用量统计 -->
+                <div id="ai-usage" class="ai-subtab hidden">
+                    <div class="card" style="margin:0;">
+                        <h2>使用量统计</h2>
+                        <div id="ai-usage-stats" style="margin-top:15px;">加载中...</div>
                     </div>
                 </div>
             </div>
@@ -761,7 +785,7 @@
                 document.querySelectorAll('[id^="aitab-"]').forEach(el => { el.classList.remove('btn-primary'); });
                 document.getElementById(name)?.classList.remove('hidden');
                 document.getElementById('aitab-' + name)?.classList.add('btn-primary');
-                const loaders = { 'ai-sessions': loadSessions, 'ai-presets': loadPresets, 'ai-memories': loadMemories, 'ai-skills': loadSkills, 'ai-saved': loadSavedItems, 'ai-projects': loadProjects, 'ai-mcp': loadMcpServers, 'ai-prompt-ctrl': loadPromptSettings, 'ai-scenarios': loadScenarios };
+                const loaders = { 'ai-sessions': loadSessions, 'ai-presets': loadPresets, 'ai-memories': loadMemories, 'ai-skills': loadSkills, 'ai-saved': loadSavedItems, 'ai-projects': loadProjects, 'ai-mcp': loadMcpServers, 'ai-prompt-ctrl': loadPromptSettings, 'ai-scenarios': loadScenarios, 'ai-usage': loadUsageStats };
                 loaders[name]?.();
             }
 
@@ -805,14 +829,49 @@
                 el.scrollTop = el.scrollHeight;
             }
 
+            let pendingImages = [];
+            function uploadChatImage(input) {
+                const file = input.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const base64 = e.target.result.split(',')[1];
+                    try {
+                        const res = await api('/api/ai/upload-image', {
+                            method: 'POST',
+                            body: JSON.stringify({ image_base64: base64, mime_type: file.type })
+                        });
+                        if (res.ok) {
+                            pendingImages.push({ url: res.url, base64: base64, mime: file.type });
+                            const preview = document.getElementById('ai-chat-images');
+                            const img = document.createElement('img');
+                            img.src = res.url;
+                            img.style.cssText = 'width:60px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #ddd;';
+                            preview.appendChild(img);
+                        }
+                    } catch(err) { console.error('图片上传失败:', err); }
+                };
+                reader.readAsDataURL(file);
+                input.value = '';
+            }
+
             function aiChatSend() {
                 const input = document.getElementById('ai-chat-input');
                 const text = input.value.trim();
-                if (!text) return;
+                if (!text && pendingImages.length === 0) return;
                 input.value = '';
 
-                if (!aiSessionId) { aiNewSession().then(() => { if (aiSessionId) doAiSend(text); }); return; }
-                doAiSend(text);
+                // 如果有图片，构造带图片的消息
+                let sendText = text;
+                if (pendingImages.length > 0) {
+                    const imgDesc = pendingImages.map((img, i) => `[图片${i+1}: ${img.url}]`).join(' ');
+                    sendText = imgDesc + (text ? '\n' + text : '');
+                    pendingImages = [];
+                    document.getElementById('ai-chat-images').innerHTML = '';
+                }
+
+                if (!aiSessionId) { aiNewSession().then(() => { if (aiSessionId) doAiSend(sendText); }); return; }
+                doAiSend(sendText);
             }
 
             function doAiSend(text) {
@@ -996,6 +1055,26 @@
             }
             async function deleteSkill(id) { if(!confirm('确定删除？'))return; await api('/api/ai/skills/'+id,{method:'DELETE'}); loadSkills(); }
 
+            function showSkillImportModal() {
+                const url = prompt('输入 GitHub 文件 URL:\n例如: https://github.com/user/repo/blob/main/skills/my_skill.json');
+                if (!url) return;
+                importSkillFromGithub(url);
+            }
+            async function importSkillFromGithub(url) {
+                try {
+                    const res = await api('/api/ai/skills/import', {
+                        method: 'POST',
+                        body: JSON.stringify({ github_url: url })
+                    });
+                    if (res.ok) {
+                        showToast('导入成功: ' + (res.skill?.name || ''), 'success');
+                        loadSkills();
+                    } else {
+                        showToast('导入失败: ' + (res.error || '未知错误'), 'error');
+                    }
+                } catch(e) { showToast('导入失败: ' + e.message, 'error'); }
+            }
+
             // ==================== 保存项 ====================
             async function loadSavedItems() {
                 const data = await api('/api/ai/saved');
@@ -1100,6 +1179,23 @@
             }
             async function deleteMcpServer(id) { if(!confirm('确定删除？'))return; await api('/api/ai/mcp/'+id,{method:'DELETE'}); loadMcpServers(); }
 
+            async function loadMcpHistory() {
+                const data = await api('/api/ai/mcp-history?limit=50');
+                const el = document.getElementById('ai-mcp-history');
+                if (!data.ok || !data.history?.length) { el.innerHTML = '<p style="color:#aaa;text-align:center;padding:10px;">暂无工具调用历史</p>'; return; }
+                el.innerHTML = '<h3 style="margin:10px 0;">工具调用历史</h3>' + data.history.map(h =>
+                    `<div class="card" style="padding:8px;margin-bottom:6px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <span><b>${h.tool_name}</b> <span style="color:#888;font-size:12px;">(${h.server_name})</span></span>
+                            <span style="font-size:12px;color:#888;">${timeAgo(h.called_at)} | ${h.duration_ms}ms</span>
+                        </div>
+                        <div style="font-size:12px;color:#666;margin-top:4px;">参数: ${typeof h.arguments==='string'?h.arguments:JSON.stringify(h.arguments)}</div>
+                        ${h.result ? `<div style="font-size:12px;color:${h.success?'#28a745':'#dc3545'};margin-top:2px;">结果: ${h.result.substring(0,200)}</div>` : ''}
+                    </div>`
+                ).join('');
+            }
+            async function clearMcpHistory() { if(!confirm('确定清空所有工具调用历史？'))return; await api('/api/ai/mcp-history',{method:'DELETE'}); showToast('已清空'); document.getElementById('ai-mcp-history').innerHTML=''; }
+
             // ==================== 截图分析 ====================
             async function aiScreenshotAnalyze() {
                 const prompt = document.getElementById('ai-screenshot-prompt')?.value || '';
@@ -1109,6 +1205,51 @@
                 const data = await api('/api/ai/screenshot', { method:'POST', body: JSON.stringify({prompt}) });
                 if (el) el.textContent = data.success ? data.data : ('分析失败: ' + data.message);
                 showToast(data.success ? '分析完成' : '分析失败', data.success ? 'success' : 'error');
+            }
+
+            // ==================== 使用量统计 ====================
+            async function loadUsageStats() {
+                const data = await api('/api/ai/usage');
+                const el = document.getElementById('ai-usage-stats');
+                if (!data.ok) { el.innerHTML = '<p style="color:#aaa;">暂无统计数据</p>'; return; }
+                const s = data.stats;
+                let html = `
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;">
+                        <div class="card" style="text-align:center;padding:15px;">
+                            <div style="font-size:28px;font-weight:bold;color:#007bff;">${s.total_calls}</div>
+                            <div style="color:#888;font-size:13px;">总调用次数</div>
+                        </div>
+                        <div class="card" style="text-align:center;padding:15px;">
+                            <div style="font-size:28px;font-weight:bold;color:#28a745;">${(s.total_input_tokens/1000).toFixed(1)}K</div>
+                            <div style="color:#888;font-size:13px;">输入Token</div>
+                        </div>
+                        <div class="card" style="text-align:center;padding:15px;">
+                            <div style="font-size:28px;font-weight:bold;color:#fd7e14;">${(s.total_output_tokens/1000).toFixed(1)}K</div>
+                            <div style="color:#888;font-size:13px;">输出Token</div>
+                        </div>
+                        <div class="card" style="text-align:center;padding:15px;">
+                            <div style="font-size:28px;font-weight:bold;color:#6f42c1;">${(s.total_reasoning_tokens/1000).toFixed(1)}K</div>
+                            <div style="color:#888;font-size:13px;">推理Token</div>
+                        </div>
+                    </div>`;
+                if (s.by_provider && Object.keys(s.by_provider).length > 0) {
+                    html += '<h3 style="margin:15px 0 10px;">按模型统计</h3>';
+                    for (const [pid, usage] of Object.entries(s.by_provider)) {
+                        html += `<div class="card" style="padding:10px;margin-bottom:8px;">
+                            <b>${pid}</b> — 调用 ${usage.calls} 次 | 输入 ${(usage.input_tokens/1000).toFixed(1)}K | 输出 ${(usage.output_tokens/1000).toFixed(1)}K | 推理 ${(usage.reasoning_tokens/1000).toFixed(1)}K
+                        </div>`;
+                    }
+                }
+                if (s.by_date && Object.keys(s.by_date).length > 0) {
+                    html += '<h3 style="margin:15px 0 10px;">按日期统计</h3>';
+                    const dates = Object.entries(s.by_date).sort((a,b) => b[0].localeCompare(a[0])).slice(0, 7);
+                    for (const [date, usage] of dates) {
+                        html += `<div class="card" style="padding:10px;margin-bottom:8px;">
+                            <b>${date}</b> — 调用 ${usage.calls} 次 | 输入 ${(usage.input_tokens/1000).toFixed(1)}K | 输出 ${(usage.output_tokens/1000).toFixed(1)}K
+                        </div>`;
+                    }
+                }
+                el.innerHTML = html;
             }
 
             // ==================== Prompt 设置 ====================
@@ -3161,6 +3302,9 @@
                 try {
                     const data = JSON.parse(event.data);
                     switch (data.type) {
+                        case 'thinking':
+                            appendThinkingMessage(data.content);
+                            break;
                         case 'stream':
                             appendStreamMessage(data.content);
                             break;
@@ -3245,6 +3389,40 @@
 
         function finalizeStreamMessage() {
             currentStreamDiv = null;
+            currentThinkingDiv = null;
+        }
+
+        let currentThinkingDiv = null;
+        function appendThinkingMessage(content) {
+            const container = document.getElementById('ai-chat-messages');
+            if (!currentThinkingDiv) {
+                currentThinkingDiv = document.createElement('details');
+                currentThinkingDiv.style.marginBottom = '8px';
+                currentThinkingDiv.style.padding = '6px 10px';
+                currentThinkingDiv.style.borderRadius = '8px';
+                currentThinkingDiv.style.background = '#f0f0f0';
+                currentThinkingDiv.style.border = '1px solid #ddd';
+                currentThinkingDiv.style.fontSize = '13px';
+                currentThinkingDiv.style.color = '#666';
+                const summary = document.createElement('summary');
+                summary.textContent = '思考过程';
+                summary.style.cursor = 'pointer';
+                summary.style.color = '#888';
+                summary.style.fontSize = '12px';
+                currentThinkingDiv.appendChild(summary);
+                const thinkContent = document.createElement('div');
+                thinkContent.style.whiteSpace = 'pre-wrap';
+                thinkContent.style.wordBreak = 'break-word';
+                thinkContent.style.marginTop = '4px';
+                thinkContent.style.maxHeight = '200px';
+                thinkContent.style.overflowY = 'auto';
+                currentThinkingDiv.appendChild(thinkContent);
+                currentThinkingDiv.dataset.thinkContent = '';
+                container.appendChild(currentThinkingDiv);
+            }
+            currentThinkingDiv.dataset.thinkContent += content;
+            currentThinkingDiv.querySelector('div').textContent = currentThinkingDiv.dataset.thinkContent;
+            container.scrollTop = container.scrollHeight;
         }
 
         function addAiMessage(type, content) {
