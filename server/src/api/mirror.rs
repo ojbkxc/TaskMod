@@ -120,16 +120,28 @@ pub async fn start_mirror(
                         residual.extend_from_slice(&buf[..n]);
                         let mut processed = 0;
                         while processed < residual.len() {
+                            // 查找当前 NALU 的起始码
                             let start_code = find_nalu_start(&residual[processed..]);
                             if start_code == residual.len() - processed {
-                                residual = residual[processed..].to_vec();
+                                // 没有找到完整的起始码，保留残余数据等待下次读取
                                 break;
                             }
                             processed += start_code;
 
+                            // 边界保护
+                            if processed >= residual.len() {
+                                break;
+                            }
+
+                            // 查找下一个 NALU 的起始码（即当前 NALU 的结束位置）
                             let end_pos = find_nalu_end(&residual[processed..]);
                             if end_pos == residual.len() - processed {
-                                residual = residual[processed..].to_vec();
+                                // 没有找到结束位置，保留残余数据等待下次读取
+                                break;
+                            }
+
+                            // 边界保护
+                            if processed + end_pos > residual.len() {
                                 break;
                             }
 
@@ -155,9 +167,9 @@ pub async fn start_mirror(
                                 _ => {}
                             }
                         }
-                        if processed == residual.len() {
+                        if processed >= residual.len() {
                             residual.clear();
-                        } else {
+                        } else if processed > 0 {
                             residual = residual[processed..].to_vec();
                         }
                     }
@@ -460,24 +472,34 @@ pub async fn mirror_status(State(state): State<SharedMirrorState>) -> Json<ApiRe
 }
 
 fn find_nalu_start(data: &[u8]) -> usize {
-    for i in 0..data.len().saturating_sub(4) {
-        if data[i] == 0 && data[i+1] == 0 && data[i+2] == 0 && data[i+3] == 1 {
-            return i + 4;
-        }
-        if i < data.len().saturating_sub(3) && data[i] == 0 && data[i+1] == 0 && data[i+2] == 1 {
-            return i + 3;
+    if data.len() < 3 {
+        return data.len();
+    }
+    for i in 0..=data.len() - 3 {
+        if data[i] == 0 && data[i + 1] == 0 {
+            if data[i + 2] == 1 {
+                return i + 3;
+            }
+            if i + 3 < data.len() && data[i + 2] == 0 && data[i + 3] == 1 {
+                return i + 4;
+            }
         }
     }
     data.len()
 }
 
 fn find_nalu_end(data: &[u8]) -> usize {
-    for i in 0..data.len().saturating_sub(4) {
-        if data[i] == 0 && data[i+1] == 0 && data[i+2] == 0 && data[i+3] == 1 {
-            return i;
-        }
-        if i < data.len().saturating_sub(3) && data[i] == 0 && data[i+1] == 0 && data[i+2] == 1 {
-            return i;
+    if data.len() < 3 {
+        return data.len();
+    }
+    for i in 1..=data.len() - 3 {
+        if data[i] == 0 && data[i + 1] == 0 {
+            if data[i + 2] == 1 {
+                return i;
+            }
+            if i + 3 < data.len() && data[i + 2] == 0 && data[i + 3] == 1 {
+                return i;
+            }
         }
     }
     data.len()
