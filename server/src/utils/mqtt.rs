@@ -252,7 +252,11 @@ mod mqtt_impl {
     }
 
     pub async fn stop_mqtt() {
-        if let Some(client) = MQTT_CLIENT.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        let client: Option<Arc<AsyncClient>>;
+        {
+            client = MQTT_CLIENT.lock().unwrap_or_else(|e| e.into_inner()).take();
+        }
+        if let Some(client) = client {
             let status_topic = match parse_mqtt_conf() {
                 Some(c) => format!("{}/status", c.topic_prefix),
                 None => "taskmod/status".to_string(),

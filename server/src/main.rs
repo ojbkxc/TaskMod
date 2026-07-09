@@ -1,5 +1,4 @@
-use axum::{routing::{delete, get, post, put}, Router, Json, body::BodyExt};
-use http::Request;
+use axum::{routing::{delete, get, post, put}, Router, Json};
 use serde_json;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -148,25 +147,15 @@ fn handle_event(event: utils::event_monitor::SystemEvent) {
     }
 }
 
-async fn save_mqtt_config_handler(req: Request<axum::body::Body>) -> Json<crate::data::response::ApiResponse<String>> {
-    let bytes = match req.into_body().to_bytes().await {
-        Ok(b) => b,
-        Err(e) => return Json(crate::data::response::ApiResponse::err(&format!("读取请求体失败: {}", e))),
+async fn save_mqtt_config_handler(Json(req): Json<crate::data::models::MqttConfigRequest>) -> Json<crate::data::response::ApiResponse<String>> {
+    let mqtt_config = utils::mqtt::MqttConfig { 
+        enabled: req.enabled, 
+        broker: req.broker, 
+        topic_prefix: req.topic_prefix, 
+        username: req.username, 
+        password: req.password, 
+        client_id: req.client_id 
     };
-    
-    let req_value: serde_json::Value = match serde_json::from_slice(&bytes) {
-        Ok(v) => v,
-        Err(e) => return Json(crate::data::response::ApiResponse::err(&format!("JSON解析失败: {}", e))),
-    };
-    
-    let enabled = req_value.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
-    let broker = req_value.get("broker").and_then(|v| v.as_str()).unwrap_or("tcp://localhost:1883").to_string();
-    let topic_prefix = req_value.get("topic_prefix").and_then(|v| v.as_str()).unwrap_or("taskmod").to_string();
-    let username = req_value.get("username").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let password = req_value.get("password").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let client_id = req_value.get("client_id").and_then(|v| v.as_str()).unwrap_or("taskmod-device").to_string();
-    
-    let mqtt_config = utils::mqtt::MqttConfig { enabled, broker, topic_prefix, username, password, client_id };
     
     if let Err(e) = utils::mqtt::save_mqtt_config(&mqtt_config) {
         return Json(crate::data::response::ApiResponse::err(&format!("保存失败: {}", e)));
