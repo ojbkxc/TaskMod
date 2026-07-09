@@ -1,4 +1,4 @@
-use axum::{routing::{delete, get, post}, Router};
+use axum::{routing::{delete, get, post, put}, Router};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -52,7 +52,7 @@ fn start_watchdog(heartbeat: Arc<AtomicBool>, timeout_secs: u64) {
     });
 }
 
-fn ensure_dirs() {
+async fn ensure_dirs() {
     use crate::config::{TASKMOD_DIR, SCRIPTS_DIR, SCREENSHOTS_DIR, WORKFLOWS_DIR};
     let _ = std::fs::create_dir_all(TASKMOD_DIR);
     let _ = std::fs::create_dir_all(SCRIPTS_DIR);
@@ -146,7 +146,7 @@ fn handle_event(event: utils::event_monitor::SystemEvent) {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
-    ensure_dirs();
+    ensure_dirs().await;
 
     // 设置 panic hook，在进程崩溃时发送告警邮件
     let default_hook = std::panic::take_hook();

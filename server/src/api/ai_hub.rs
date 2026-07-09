@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::fs;
 
 use crate::config::*;
-use crate::data::models::ApiResponse;
+use crate::data::response::ApiResponse;
 
 // ==================== 通用工具函数 ====================
 
@@ -762,7 +762,6 @@ pub struct ScreenshotAnalyzeReq {
 
 pub async fn screenshot_analyze(Json(req): Json<ScreenshotAnalyzeReq>) -> Json<ApiResponse<String>> {
     use crate::utils::adb;
-    use crate::api::ai::call_ai;
 
     let providers = crate::api::ai::get_enabled_providers();
     let provider = match providers.first() {

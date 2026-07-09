@@ -139,7 +139,9 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                                 7. 用adb_tts语音播报\n\
                                 8. 用get_device_info/get_battery_info/get_wifi_info查看设备状态\n\
                                 9. 用run_script/list_scripts/read_script/write_script管理脚本\n\
-                                10. 用view_logs查看系统日志\n\n\
+                                10. 用view_logs查看系统日志\n\
+                                11. 用list_tasks查看定时任务、add_task添加任务、delete_task删除任务、modify_task修改任务\n\
+                                12. 用list_available_scripts查看可用脚本列表\n\n\
                                 请根据用户请求调用工具完成任务。操作前先确认意图，危险操作需提醒用户。",
                                 device_model.trim(),
                                 screen_size,
@@ -176,6 +178,11 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                     registry.register(Box::new(script_tools::DeleteScriptTool));
                     registry.register(Box::new(script_tools::RunScriptTool));
                     registry.register(Box::new(script_tools::ViewLogsTool));
+                    registry.register(Box::new(task_tools::ListTasksTool));
+                    registry.register(Box::new(task_tools::AddTaskTool));
+                    registry.register(Box::new(task_tools::DeleteTaskTool));
+                    registry.register(Box::new(task_tools::ModifyTaskTool));
+                    registry.register(Box::new(task_tools::ListScriptsForTaskTool));
 
                     let tools = registry.get_tools_json();
                     let mut messages = conversation_messages.clone();
@@ -600,7 +607,7 @@ fn save_ai_providers(providers: &[AiProvider]) -> Result<(), std::io::Error> {
 
 /// 调用支持视觉的AI分析截图
 pub async fn call_ai_image_analyze(provider: &AiProvider, prompt: &str, img_base64: &str) -> Result<String, String> {
-    let api_url = format!("{}/chat/completions", provider.api_url.trim_end_matches('/'));
+    let api_url = format!("{}/chat/completions", provider.base_url.trim_end_matches('/'));
     let body = json!({
         "model": provider.model,
         "messages": [{

@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 pub mod adb_tools;
 pub mod script_tools;
+pub mod task_tools;
 
 pub trait AiTool: Send + Sync {
     fn name(&self) -> &str;
