@@ -384,6 +384,70 @@ pub fn get_ai_providers() -> Vec<AiProvider> {
     load_ai_providers()
 }
 
+/// 获取所有已启用的Provider列表
+pub fn get_enabled_providers() -> Vec<AiProvider> {
+    load_ai_providers().into_iter().filter(|p| p.enabled).collect()
+}
+
+/// 带回退的AI调用：按provider_ids顺序尝试，直到成功
+/// 如果provider_ids为空，则尝试所有已启用的Provider
+pub async fn call_ai_with_fallback(prompt: &str, provider_ids: Option<&[String]>) -> Result<String, String> {
+    let providers = if let Some(ids) = provider_ids {
+        let all = load_ai_providers();
+        ids.iter()
+            .filter_map(|id| all.iter().find(|p| p.id == *id && p.enabled).cloned())
+            .collect::<Vec<_>>()
+    } else {
+        get_enabled_providers()
+    };
+
+    if providers.is_empty() {
+        return Err("没有可用的AI Provider".to_string());
+    }
+
+    let mut last_error = String::new();
+    for provider in &providers {
+        match call_ai(provider, prompt).await {
+            Ok(result) => return Ok(result),
+            Err(e) => {
+                tracing::warn!("[AI回退] Provider '{}' ({}) 失败: {}", provider.name, provider.model, e);
+                last_error = format!("{}: {}", provider.name, e);
+            }
+        }
+    }
+
+    Err(format!("所有Provider都失败，最后一个错误: {}", last_error))
+}
+
+/// 带回退的图像生成
+pub async fn call_ai_image_with_fallback(prompt: &str, size: &str, provider_ids: Option<&[String]>) -> Result<String, String> {
+    let providers = if let Some(ids) = provider_ids {
+        let all = load_ai_providers();
+        ids.iter()
+            .filter_map(|id| all.iter().find(|p| p.id == *id && p.enabled).cloned())
+            .collect::<Vec<_>>()
+    } else {
+        get_enabled_providers()
+    };
+
+    if providers.is_empty() {
+        return Err("没有可用的AI Provider".to_string());
+    }
+
+    let mut last_error = String::new();
+    for provider in &providers {
+        match call_ai_image(provider, prompt, size).await {
+            Ok(result) => return Ok(result),
+            Err(e) => {
+                tracing::warn!("[AI图像回退] Provider '{}' 失败: {}", provider.name, e);
+                last_error = format!("{}: {}", provider.name, e);
+            }
+        }
+    }
+
+    Err(format!("所有Provider都失败，最后一个错误: {}", last_error))
+}
+
 pub async fn call_ai(provider: &AiProvider, prompt: &str) -> Result<String, String> {
     let client = Client::builder().build().map_err(|e| format!("创建客户端失败: {}", e))?;
     
@@ -422,6 +486,91 @@ pub async fn call_ai(provider: &AiProvider, prompt: &str) -> Result<String, Stri
         .ok_or("无法提取响应内容".to_string())?;
     
     Ok(content.to_string())
+}
+
+/// 调用AI生成图像（兼容DALL-E API）
+pub async fn call_ai_image(provider: &AiProvider, prompt: &str, size: &str) -> Result<String, String> {
+    let client = Client::builder().build().map_err(|e| format!("创建客户端失败: {}", e))?;
+    
+    let api_url = format!("{}/v1/images/generations", provider.base_url);
+    
+    let body = json!({
+        "model": provider.model,
+        "prompt": prompt,
+        "n": 1,
+        "size": size,
+        "response_format": "url"
+    });
+    
+    let response = client.post(&api_url)
+        .header("Authorization", format!("Bearer {}", provider.api_key))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("API请求失败: {}", e))?;
+    
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(format!("API返回错误: {} - {}", status, error_text));
+    }
+    
+    let json_response: serde_json::Value = response.json().await.map_err(|e| format!("解析响应失败: {}", e))?;
+    
+    let url = json_response
+        .get("data")
+        .and_then(|d| d.as_array())
+        .and_then(|a| a.first())
+        .and_then(|d| d.get("url"))
+        .and_then(|u| u.as_str())
+        .ok_or("无法提取图像URL".to_string())?;
+    
+    Ok(url.to_string())
+}
+
+/// 调用AI生成嵌入向量
+pub async fn call_ai_embedding(provider: &AiProvider, input: &str) -> Result<Vec<f64>, String> {
+    let client = Client::builder().build().map_err(|e| format!("创建客户端失败: {}", e))?;
+    
+    let api_url = format!("{}/v1/embeddings", provider.base_url);
+    
+    let body = json!({
+        "model": provider.model,
+        "input": input
+    });
+    
+    let response = client.post(&api_url)
+        .header("Authorization", format!("Bearer {}", provider.api_key))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("API请求失败: {}", e))?;
+    
+    if !response.status().is_success() {
+        return Err(format!("API返回错误: {}", response.status()));
+    }
+    
+    let json_response: serde_json::Value = response.json().await.map_err(|e| format!("解析响应失败: {}", e))?;
+    
+    let embedding = json_response
+        .get("data")
+        .and_then(|d| d.as_array())
+        .and_then(|a| a.first())
+        .and_then(|d| d.get("embedding"))
+        .and_then(|e| e.as_array())
+        .ok_or("无法提取嵌入向量".to_string())?;
+    
+    let result: Vec<f64> = embedding.iter()
+        .filter_map(|v| v.as_f64())
+        .collect();
+    
+    if result.is_empty() {
+        return Err("嵌入向量为空".to_string());
+    }
+    
+    Ok(result)
 }
 
 fn save_ai_providers(providers: &[AiProvider]) -> Result<(), std::io::Error> {

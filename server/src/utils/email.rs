@@ -224,6 +224,7 @@ where
     Fut: std::future::Future<Output = Result<String, EmailError>> + Send,
 {
     let mut last_error: Option<EmailError> = None;
+    let mut backoff = retry_interval.max(1);
     
     for attempt in 0..=max_retries {
         log("Email", &format!("第 {} 次尝试发送邮件", attempt + 1));
@@ -244,8 +245,9 @@ where
                 if is_retryable {
                     last_error = Some(e);
                     if attempt < max_retries {
-                        log("Email", &format!("{} 秒后重试...", retry_interval));
-                        tokio::time::sleep(Duration::from_secs(retry_interval)).await;
+                        log("Email", &format!("{} 秒后重试（指数退避）...", backoff));
+                        tokio::time::sleep(Duration::from_secs(backoff)).await;
+                        backoff = (backoff * 2).min(60); // 最大60秒
                     }
                 } else {
                     log("Email", &format!("非重试错误: {}", e));

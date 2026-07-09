@@ -598,16 +598,14 @@ pub async fn execute_workflow(workflow: Workflow, context: Option<serde_json::Va
                     continue;
                 }
                 
-                let providers = crate::api::ai::get_ai_providers();
-                let provider = match providers.iter().find(|p| p.id == provider_id && p.enabled) {
-                    Some(p) => p,
-                    None => {
-                        log("AI生成失败: 未找到启用的AI提供商");
-                        continue;
-                    }
+                // 支持回退：如果指定了provider_id就用单个，否则尝试所有已启用的
+                let result = if provider_id == "default" || provider_id.is_empty() {
+                    crate::api::ai::call_ai_with_fallback(&prompt, None).await
+                } else {
+                    crate::api::ai::call_ai_with_fallback(&prompt, Some(&[provider_id.to_string()])).await
                 };
                 
-                match crate::api::ai::call_ai(provider, &prompt).await {
+                match result {
                     Ok(response) => {
                         log(&format!("AI生成成功"));
                         let output_var = node.config.get("output_var").and_then(|v| v.as_str()).unwrap_or("ai_result");

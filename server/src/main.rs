@@ -1,5 +1,7 @@
 use axum::{routing::{delete, get, post}, Router};
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 
 use crate::config::WEB_PORT;
@@ -11,6 +13,44 @@ mod data;
 mod state;
 mod tools;
 mod utils;
+
+/// 看门狗：定期检测主循环是否卡死
+/// 如果心跳超过 timeout_secs 没有更新，发送告警邮件
+fn start_watchdog(heartbeat: Arc<AtomicBool>, timeout_secs: u64) {
+    if timeout_secs == 0 {
+        return;
+    }
+    std::thread::spawn(move || {
+        let mut last_alive = true;
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            if heartbeat.load(Ordering::Relaxed) {
+                heartbeat.store(false, Ordering::Relaxed);
+                last_alive = true;
+            } else if last_alive {
+                // 心跳未更新，可能卡死
+                let email_conf = utils::email::get_email_config();
+                if email_conf.enable_notify {
+                    let now = chrono::Local::now();
+                    let subject = format!("[WARNING] TaskMod 可能卡死 - {}", now.format("%Y-%m-%d %H:%M:%S"));
+                    let body = format!(
+                        "TaskMod 主循环已超过 {} 秒未响应心跳。\n\n可能原因：\n- 主线程阻塞\n- 资源耗尽（内存/CPU）\n- 死锁\n\n请检查设备状态。",
+                        timeout_secs
+                    );
+                    let rt = tokio::runtime::Handle::current();
+                    let _ = rt.block_on(utils::email::send_email(
+                        &email_conf,
+                        Some(&subject),
+                        Some(&body),
+                        None,
+                    ));
+                }
+                eprintln!("[看门狗] 警告: 主循环可能卡死，已超过 {} 秒未响应", timeout_secs);
+                last_alive = false;
+            }
+        }
+    });
+}
 
 fn ensure_dirs() {
     use crate::config::{TASKMOD_DIR, SCRIPTS_DIR, SCREENSHOTS_DIR, WORKFLOWS_DIR};
@@ -107,6 +147,36 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     ensure_dirs();
 
+    // 设置 panic hook，在进程崩溃时发送告警邮件
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let msg = if let Some(s) = info.payload().downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "Unknown panic".to_string()
+        };
+        let location = info.location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_else(|| "Unknown location".to_string());
+        let now = chrono::Local::now();
+        eprintln!("[CRITICAL] TaskMod 崩溃: {} at {}", msg, location);
+        let email_conf = utils::email::get_email_config();
+        if email_conf.enable_notify {
+            let subject = format!("[CRITICAL] TaskMod 崩溃 - {}", now.format("%Y-%m-%d %H:%M:%S"));
+            let body = format!("位置: {}\n错误: {}\n\n请检查设备状态并重启服务。", location, msg);
+            let _ = tokio::runtime::Handle::current().block_on(
+                utils::email::send_email(&email_conf, Some(&subject), Some(&body), None)
+            );
+        }
+        default_hook(info);
+    }));
+
+    // 启动看门狗（60秒超时）
+    let heartbeat = Arc::new(AtomicBool::new(true));
+    start_watchdog(heartbeat.clone(), 60);
+
     let mirror_state = MirrorState::new_shared();
 
     utils::event_monitor::register_event_handler(handle_event);
@@ -114,6 +184,14 @@ async fn main() -> anyhow::Result<()> {
 
     tokio::spawn(async {
         utils::mqtt::start_mqtt().await;
+    });
+
+    // 定期更新心跳
+    tokio::spawn(async move {
+        loop {
+            heartbeat.store(true, Ordering::Relaxed);
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        }
     });
 
     let mirror_routes = Router::new()
