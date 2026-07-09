@@ -11,6 +11,7 @@ use crate::data::response::ApiResponse;
 use crate::utils::adb;
 use crate::utils::email;
 use crate::utils::mqtt;
+use crate::utils::mqtt::MqttConfig;
 
 pub async fn index() -> Html<&'static str> {
     Html(include_str!("../../static/index.html"))
@@ -227,8 +228,16 @@ pub async fn get_mqtt_config() -> Json<serde_json::Value> {
     }
 }
 
-pub async fn save_mqtt_config(Json(config): Json<mqtt::MqttConfig>) -> Json<ApiResponse<String>> {
-    match mqtt::save_mqtt_config(&config) {
+pub async fn save_mqtt_config(Json(config): Json<serde_json::Value>) -> Json<ApiResponse<String>> {
+    let mqtt_config = MqttConfig {
+        enabled: config.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false),
+        broker: config.get("broker").and_then(|v| v.as_str()).unwrap_or("tcp://localhost:1883").to_string(),
+        topic_prefix: config.get("topic_prefix").and_then(|v| v.as_str()).unwrap_or("taskmod").to_string(),
+        username: config.get("username").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        password: config.get("password").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        client_id: config.get("client_id").and_then(|v| v.as_str()).unwrap_or("taskmod-device").to_string(),
+    };
+    match mqtt::save_mqtt_config(&mqtt_config) {
         Ok(_) => {
             mqtt::stop_mqtt().await;
             tokio::spawn(async {
