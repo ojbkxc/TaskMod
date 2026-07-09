@@ -5,8 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TaskMod - AI Assistant</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/marked.min.js"></script>
     <style>
+        @import 'tailwindcss';
+
         :root {
+            color-scheme: light;
             --ds-text: oklch(0.24 0.018 264);
             --ds-text-secondary: oklch(0.52 0.020 264);
             --ds-text-tertiary: oklch(0.70 0.015 264);
@@ -16,27 +20,46 @@
             --ds-card: oklch(0.998 0.002 264);
             --ds-surface: oklch(0.965 0.005 264);
             --ds-surface-hover: oklch(0.95 0.006 264);
+            --ds-bg-rgb: 250, 251, 253;
             --ds-border: oklch(0.90 0.008 264);
             --ds-border-hover: oklch(0.84 0.012 264);
+            --ds-selected-border: oklch(0.62 0.19 264 / 0.30);
             --ds-blue: oklch(0.62 0.19 264);
             --ds-blue-hover: oklch(0.56 0.20 266);
+            --ds-blue-soft: oklch(0.68 0.17 264);
             --ds-blue-light: oklch(0.96 0.025 264);
             --ds-blue-glow: oklch(0.62 0.19 264 / 0.14);
+            --ds-blue-shadow: 0 1px 2px oklch(0.30 0.12 264 / 0.18);
+            --ds-elevate-1: 0 0 0 1px var(--ds-border), inset 0 1px 0 oklch(1 0 0 / 0.05);
+            --ds-elevate-2: 0 0 0 1px var(--ds-border), 0 1px 2px oklch(0.25 0.02 264 / 0.05), inset 0 1px 0 oklch(1 0 0 / 0.06);
+            --ds-shadow-sm: var(--ds-elevate-1);
+            --ds-shadow-md: var(--ds-elevate-2);
+            --ds-shadow-lg: 0 0 0 1px var(--ds-border), 0 8px 24px oklch(0.25 0.04 264 / 0.10), inset 0 1px 0 oklch(1 0 0 / 0.07);
+            --radius-card: 0px;
+            --radius-ctrl: 6px;
+            --radius-pill: 999px;
             --ds-danger: oklch(0.64 0.22 25);
             --ds-danger-bg: oklch(0.96 0.03 25);
+            --ds-danger-bg-hover: oklch(0.93 0.05 25);
+            --ds-danger-border: oklch(0.88 0.06 25);
             --ds-success: oklch(0.70 0.15 162);
             --ds-success-bg: oklch(0.96 0.03 162);
+            --ds-success-border: oklch(0.88 0.07 162);
             --ds-warning: oklch(0.75 0.15 75);
             --ds-warning-bg: oklch(0.97 0.03 75);
+            --ds-warning-border: oklch(0.90 0.06 75);
             --ds-info: oklch(0.62 0.17 250);
             --ds-info-bg: oklch(0.96 0.03 250);
-            --radius-ctrl: 8px;
-            --radius-pill: 999px;
-            --ds-shadow-sm: 0 0 0 1px var(--ds-border), inset 0 1px 0 oklch(1 0 0 / 0.05);
-            --ds-shadow-md: 0 0 0 1px var(--ds-border), 0 1px 2px oklch(0.25 0.02 264 / 0.05), inset 0 1px 0 oklch(1 0 0 / 0.06);
+            --ds-info-border: oklch(0.88 0.05 250);
+            --ds-purple: oklch(0.62 0.18 300);
+            --ds-purple-bg: oklch(0.96 0.03 300);
+            --ds-purple-border: oklch(0.88 0.05 300);
+            --ds-switch-thumb: oklch(0.998 0.002 264);
+            --ds-logo-gradient-end: oklch(0.72 0.13 264);
         }
 
-        [data-theme='dark'] {
+        :root[data-theme='dark'] {
+            color-scheme: dark;
             --ds-text: oklch(0.93 0.012 264);
             --ds-text-secondary: oklch(0.76 0.015 264);
             --ds-text-tertiary: oklch(0.60 0.015 264);
@@ -46,40 +69,95 @@
             --ds-card: oklch(0.22 0.014 264);
             --ds-surface: oklch(0.25 0.014 264);
             --ds-surface-hover: oklch(0.29 0.015 264);
+            --ds-bg-rgb: 36, 38, 46;
             --ds-border: oklch(0.32 0.014 264);
             --ds-border-hover: oklch(0.40 0.016 264);
+            --ds-selected-border: oklch(0.75 0.13 264 / 0.42);
             --ds-blue: oklch(0.75 0.14 264);
             --ds-blue-hover: oklch(0.82 0.12 264);
+            --ds-blue-soft: oklch(0.80 0.11 264);
             --ds-blue-light: oklch(0.30 0.06 264 / 0.55);
             --ds-blue-glow: oklch(0.75 0.14 264 / 0.24);
+            --ds-blue-shadow: 0 1px 2px oklch(0.15 0.05 264 / 0.5);
+            --ds-elevate-1: 0 0 0 1px var(--ds-border), inset 0 1px 0 oklch(1 0 0 / 0.04);
+            --ds-elevate-2: 0 0 0 1px var(--ds-border), 0 1px 3px oklch(0.05 0.01 264 / 0.4), inset 0 1px 0 oklch(1 0 0 / 0.05);
+            --ds-shadow-sm: var(--ds-elevate-1);
+            --ds-shadow-md: var(--ds-elevate-2);
+            --ds-shadow-lg: 0 0 0 1px var(--ds-border), 0 12px 32px oklch(0.02 0.01 264 / 0.5), inset 0 1px 0 oklch(1 0 0 / 0.06);
             --ds-danger: oklch(0.72 0.18 25);
             --ds-danger-bg: oklch(0.30 0.06 25 / 0.5);
+            --ds-danger-bg-hover: oklch(0.34 0.08 25 / 0.6);
+            --ds-danger-border: oklch(0.55 0.12 25 / 0.5);
             --ds-success: oklch(0.78 0.14 162);
             --ds-success-bg: oklch(0.32 0.05 162 / 0.45);
+            --ds-success-border: oklch(0.55 0.10 162 / 0.5);
             --ds-warning: oklch(0.80 0.14 75);
             --ds-warning-bg: oklch(0.34 0.06 75 / 0.45);
+            --ds-warning-border: oklch(0.58 0.10 75 / 0.5);
             --ds-info: oklch(0.75 0.13 250);
             --ds-info-bg: oklch(0.32 0.05 250 / 0.45);
-            --ds-shadow-sm: 0 0 0 1px var(--ds-border), inset 0 1px 0 oklch(1 0 0 / 0.04);
-            --ds-shadow-md: 0 0 0 1px var(--ds-border), 0 1px 3px oklch(0.05 0.01 264 / 0.4), inset 0 1px 0 oklch(1 0 0 / 0.05);
+            --ds-info-border: oklch(0.55 0.09 250 / 0.5);
+            --ds-purple: oklch(0.74 0.14 300);
+            --ds-purple-bg: oklch(0.33 0.05 300 / 0.45);
+            --ds-purple-border: oklch(0.56 0.10 300 / 0.5);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme='light']) {
+                color-scheme: dark;
+                --ds-text: oklch(0.93 0.012 264);
+                --ds-text-secondary: oklch(0.76 0.015 264);
+                --ds-text-tertiary: oklch(0.60 0.015 264);
+                --ds-text-on-primary: oklch(0.18 0.02 264);
+                --ds-shell-bg: oklch(0.17 0.012 264);
+                --ds-bg: oklch(0.19 0.012 264);
+                --ds-card: oklch(0.22 0.014 264);
+                --ds-surface: oklch(0.25 0.014 264);
+                --ds-surface-hover: oklch(0.29 0.015 264);
+                --ds-border: oklch(0.32 0.014 264);
+                --ds-border-hover: oklch(0.40 0.016 264);
+                --ds-selected-border: oklch(0.75 0.13 264 / 0.42);
+                --ds-blue: oklch(0.75 0.14 264);
+                --ds-blue-hover: oklch(0.82 0.12 264);
+                --ds-blue-light: oklch(0.30 0.06 264 / 0.55);
+                --ds-blue-glow: oklch(0.75 0.14 264 / 0.24);
+                --ds-elevate-1: 0 0 0 1px var(--ds-border), inset 0 1px 0 oklch(1 0 0 / 0.04);
+                --ds-elevate-2: 0 0 0 1px var(--ds-border), 0 1px 3px oklch(0.05 0.01 264 / 0.4), inset 0 1px 0 oklch(1 0 0 / 0.05);
+                --ds-shadow-sm: var(--ds-elevate-1);
+                --ds-shadow-md: var(--ds-elevate-2);
+                --ds-shadow-lg: 0 0 0 1px var(--ds-border), 0 12px 32px oklch(0.02 0.01 264 / 0.5), inset 0 1px 0 oklch(1 0 0 / 0.06);
+                --ds-danger: oklch(0.72 0.18 25);
+                --ds-danger-bg: oklch(0.30 0.06 25 / 0.5);
+                --ds-success: oklch(0.78 0.14 162);
+                --ds-success-bg: oklch(0.32 0.05 162 / 0.45);
+                --ds-warning: oklch(0.80 0.14 75);
+                --ds-warning-bg: oklch(0.34 0.06 75 / 0.45);
+                --ds-info: oklch(0.75 0.13 250);
+                --ds-info-bg: oklch(0.32 0.05 250 / 0.45);
+                --ds-purple: oklch(0.74 0.14 300);
+                --ds-purple-bg: oklch(0.33 0.05 300 / 0.45);
+            }
+        }
+
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Noto Sans SC', 'Segoe UI', Roboto, sans-serif;
+            font-feature-settings: 'tnum' 1, 'cv11' 1;
+            font-variant-numeric: tabular-nums;
+            background: var(--ds-shell-bg);
+            color: var(--ds-text);
+            min-width: 320px;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
 
         * {
             box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Noto Sans SC', 'Segoe UI', Roboto, sans-serif;
-            background: var(--ds-shell-bg);
-            color: var(--ds-text);
-            min-height: 100vh;
-            -webkit-font-smoothing: antialiased;
         }
 
         ::-webkit-scrollbar {
-            width: 6px;
+            width: 4px;
+            height: 4px;
         }
 
         ::-webkit-scrollbar-track {
@@ -88,290 +166,11 @@
 
         ::-webkit-scrollbar-thumb {
             background: var(--ds-border-hover);
-            border-radius: 3px;
+            border-radius: 4px;
         }
 
         ::-webkit-scrollbar-thumb:hover {
             background: var(--ds-text-tertiary);
-        }
-
-        .app-container {
-            display: flex;
-            height: 100vh;
-            max-width: 1400px;
-            margin: 0 auto;
-            overflow: hidden;
-        }
-
-        .sidebar {
-            width: 280px;
-            background: var(--ds-card);
-            border-right: 1px solid var(--ds-border);
-            display: flex;
-            flex-direction: column;
-            flex-shrink: 0;
-        }
-
-        .sidebar-header {
-            padding: 16px;
-            border-bottom: 1px solid var(--ds-border);
-        }
-
-        .sidebar-header h1 {
-            font-size: 17px;
-            font-weight: 700;
-            color: var(--ds-text);
-            letter-spacing: -0.015em;
-        }
-
-        .sidebar-header p {
-            font-size: 12px;
-            color: var(--ds-text-secondary);
-            margin-top: 4px;
-        }
-
-        .sidebar-tabs {
-            display: flex;
-            flex-direction: column;
-            padding: 8px;
-            gap: 4px;
-        }
-
-        .sidebar-tab {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 10px 12px;
-            border-radius: var(--radius-ctrl);
-            background: transparent;
-            border: none;
-            cursor: pointer;
-            color: var(--ds-text-secondary);
-            font-size: 13px;
-            font-weight: 500;
-            transition: all 0.15s ease;
-        }
-
-        .sidebar-tab:hover {
-            background: var(--ds-surface);
-            color: var(--ds-text);
-        }
-
-        .sidebar-tab.active {
-            background: var(--ds-blue-light);
-            color: var(--ds-blue);
-        }
-
-        .sidebar-tab i {
-            width: 18px;
-            height: 18px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .sidebar-bottom {
-            margin-top: auto;
-            padding: 12px;
-            border-top: 1px solid var(--ds-border);
-        }
-
-        .theme-toggle {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 10px 12px;
-            background: var(--ds-surface);
-            border-radius: var(--radius-ctrl);
-            cursor: pointer;
-            transition: background 0.15s ease;
-        }
-
-        .theme-toggle:hover {
-            background: var(--ds-surface-hover);
-        }
-
-        .theme-toggle span {
-            font-size: 13px;
-            color: var(--ds-text-secondary);
-        }
-
-        .theme-toggle i {
-            color: var(--ds-text-tertiary);
-        }
-
-        .main-content {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            min-width: 0;
-            overflow: hidden;
-        }
-
-        .chat-page {
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-            background: var(--ds-bg);
-        }
-
-        .chat-header {
-            padding: 14px 16px;
-            border-bottom: 1px solid var(--ds-border);
-            background: var(--ds-card);
-        }
-
-        .chat-header-top {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 12px;
-        }
-
-        .chat-title-section {
-            min-width: 0;
-        }
-
-        .chat-title {
-            font-size: 16px;
-            font-weight: 600;
-            color: var(--ds-text);
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .chat-subtitle {
-            font-size: 12px;
-            color: var(--ds-text-secondary);
-            margin-top: 4px;
-            line-height: 1.45;
-        }
-
-        .chat-header-actions {
-            display: flex;
-            gap: 8px;
-        }
-
-        .chat-icon-button {
-            width: 32px;
-            height: 32px;
-            border: 1px solid var(--ds-border);
-            border-radius: var(--radius-ctrl);
-            background: var(--ds-surface);
-            color: var(--ds-text-secondary);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.15s ease;
-        }
-
-        .chat-icon-button:hover {
-            border-color: var(--ds-border-hover);
-            color: var(--ds-text);
-        }
-
-        .chat-icon-button svg {
-            width: 16px;
-            height: 16px;
-        }
-
-        .chat-provider-badge {
-            display: inline-flex;
-            align-items: center;
-            padding: 3px 8px;
-            border-radius: var(--radius-pill);
-            background: var(--ds-surface);
-            color: var(--ds-text-tertiary);
-            font-size: 11px;
-            font-weight: 500;
-            margin-left: 8px;
-        }
-
-        .chat-config-panel {
-            margin-top: 10px;
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-
-        .chat-control-group {
-            display: flex;
-            background: var(--ds-surface);
-            border-radius: 10px;
-            padding: 3px;
-        }
-
-        .chat-segment {
-            padding: 6px 12px;
-            border: none;
-            border-radius: 8px;
-            background: transparent;
-            color: var(--ds-text-secondary);
-            font-size: 12px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.15s ease;
-        }
-
-        .chat-segment:hover {
-            color: var(--ds-text);
-        }
-
-        .chat-segment.active {
-            background: var(--ds-card);
-            color: var(--ds-blue);
-            box-shadow: var(--ds-shadow-sm);
-        }
-
-        .chat-messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 16px;
-            min-height: 0;
-        }
-
-        .chat-empty {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 300px;
-            gap: 10px;
-            text-align: center;
-        }
-
-        .chat-empty-icon {
-            width: 48px;
-            height: 48px;
-            border: 1px solid var(--ds-border);
-            border-radius: var(--radius-ctrl);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--ds-text-tertiary);
-            font-size: 20px;
-        }
-
-        .chat-empty-title {
-            font-size: 15px;
-            font-weight: 600;
-            color: var(--ds-text);
-        }
-
-        .chat-empty-description {
-            font-size: 13px;
-            color: var(--ds-text-tertiary);
-            max-width: 300px;
-            line-height: 1.5;
-        }
-
-        .chat-message-row {
-            display: flex;
-            margin-bottom: 16px;
-            animation: fadeIn 0.2s ease-out;
         }
 
         @keyframes fadeIn {
@@ -379,132 +178,9 @@
             to { opacity: 1; transform: translateY(0); }
         }
 
-        .chat-message-row-user {
-            justify-content: flex-end;
-        }
-
-        .chat-message-row-assistant {
-            justify-content: flex-start;
-        }
-
-        .chat-message {
-            font-size: 14px;
-            line-height: 1.65;
-            word-break: break-word;
-        }
-
-        .chat-message-user {
-            max-width: 80%;
-            padding: 10px 14px;
-            background: var(--ds-surface);
-            color: var(--ds-text);
-            border-radius: 2px 16px 16px 16px;
-            box-shadow: var(--ds-shadow-sm);
-            border: 1px solid var(--ds-border);
-        }
-
-        .chat-message-assistant {
-            width: 100%;
-            max-width: 100%;
-        }
-
-        .chat-thinking {
-            margin-bottom: 10px;
-            border-left: 2px solid var(--ds-border);
-            padding-left: 12px;
-            color: var(--ds-text-tertiary);
-            font-size: 13px;
-            line-height: 1.6;
-        }
-
-        .chat-thinking summary {
-            cursor: pointer;
-            color: var(--ds-text-secondary);
-            font-size: 12px;
-            font-weight: 500;
-            list-style: none;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .chat-thinking summary::-webkit-details-marker {
-            display: none;
-        }
-
-        .chat-thinking summary::before {
-            content: '';
-            width: 5px;
-            height: 5px;
-            border-radius: 50%;
-            background: var(--ds-blue);
-            display: inline-block;
-        }
-
-        .chat-thinking[open] summary::before {
-            animation: pulse 1.5s infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 0.4; }
-            50% { opacity: 1; }
-        }
-
-        .chat-thinking div {
-            margin-top: 8px;
-        }
-
-        .chat-tool-call {
-            background: var(--ds-info-bg);
-            border: 1px solid var(--ds-info);
-            border-radius: var(--radius-ctrl);
-            padding: 10px 12px;
-            margin-bottom: 8px;
-            font-size: 13px;
-        }
-
-        .chat-tool-call .tool-name {
-            font-weight: 600;
-            color: var(--ds-info);
-            margin-bottom: 4px;
-        }
-
-        .chat-tool-call .tool-args {
-            font-family: monospace;
-            color: var(--ds-text-secondary);
-            font-size: 12px;
-        }
-
-        .chat-tool-result {
-            background: var(--ds-success-bg);
-            border: 1px solid var(--ds-success);
-            border-radius: var(--radius-ctrl);
-            padding: 10px 12px;
-            margin-bottom: 8px;
-            font-size: 13px;
-        }
-
-        .chat-tool-result .tool-name {
-            font-weight: 600;
-            color: var(--ds-success);
-            margin-bottom: 4px;
-        }
-
-        .chat-tool-result .tool-output {
-            color: var(--ds-text-secondary);
-            font-family: monospace;
-            font-size: 12px;
-            white-space: pre-wrap;
-        }
-
-        .chat-caret {
-            display: inline-block;
-            width: 2px;
-            height: 16px;
-            margin-left: 2px;
-            background: var(--ds-text);
-            vertical-align: -2px;
-            animation: caretPulse 0.9s ease-in-out infinite;
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         @keyframes caretPulse {
@@ -512,264 +188,933 @@
             50% { opacity: 1; }
         }
 
-        .chat-composer-wrap {
-            border-top: 1px solid var(--ds-border);
-            padding: 12px;
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        @keyframes ds-modal-fade {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes ds-modal-pop {
+            from { opacity: 0; transform: translateY(6px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        @keyframes ds-skeleton-shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        .animate-fade-in {
+            animation: fadeIn 0.2s ease-out;
+        }
+
+        .animate-slide-down {
+            animation: slideDown 0.25s ease-out;
+        }
+
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: var(--ds-blue) !important;
+            box-shadow: 0 0 0 3px var(--ds-blue-glow) !important;
+        }
+
+        input::placeholder, textarea::placeholder {
+            color: var(--ds-text-tertiary);
+        }
+
+        input, textarea, select {
+            color-scheme: inherit;
+        }
+
+        input[type='checkbox'], input[type='range'] {
+            accent-color: var(--ds-blue);
+        }
+
+        .ds-app-shell {
+            display: flex;
+            height: 100vh;
+            min-width: 320px;
+            flex-direction: column;
+            background: var(--ds-shell-bg);
+        }
+
+        .ds-app-main {
+            position: relative;
+            flex: 1 1 0;
+            min-height: 0;
+            overflow-y: auto;
+            background: var(--ds-bg);
+        }
+
+        .side-tabs {
+            display: flex;
+            flex: 0 0 44px;
+            align-items: flex-end;
+            gap: 4px;
+            min-height: 44px;
+            padding: 0 10px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            overscroll-behavior-x: contain;
+            scrollbar-width: none;
+            border-bottom: 1px solid var(--ds-border);
+            background: var(--ds-card);
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .side-tabs::-webkit-scrollbar {
+            display: none;
+        }
+
+        .side-tab {
+            position: relative;
+            display: flex;
+            flex: 0 0 auto;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            min-width: 52px;
+            height: 44px;
+            padding: 0 9px;
+            border: 0;
+            border-radius: 0;
+            background: transparent;
+            color: var(--ds-text-secondary);
+            cursor: pointer;
+            font: inherit;
+            font-size: 12px;
+            font-weight: 600;
+            line-height: 1;
+            white-space: nowrap;
+            transition: background-color 0.15s ease, color 0.15s ease;
+        }
+
+        .side-tab:hover {
+            background: color-mix(in srgb, var(--ds-surface) 62%, transparent);
+            color: var(--ds-text);
+        }
+
+        .side-tab-active, .side-tab-active:hover {
+            color: var(--ds-blue);
+        }
+
+        .side-tab-icon {
+            width: 16px;
+            height: 16px;
+            flex: 0 0 auto;
+        }
+
+        .side-tab-label {
+            white-space: nowrap;
+            word-break: keep-all;
+        }
+
+        .side-tab-indicator {
+            position: absolute;
+            right: 10px;
+            bottom: -1px;
+            left: 10px;
+            height: 2px;
+            border-radius: 0;
+            background: var(--ds-blue);
+        }
+
+        @media (min-width: 520px) {
+            .side-tabs {
+                justify-content: space-between;
+                padding-right: 14px;
+                padding-left: 14px;
+            }
+            .side-tab {
+                flex: 1 1 0;
+                min-width: 0;
+                padding-right: 8px;
+                padding-left: 8px;
+            }
+        }
+
+        .ds-card {
+            background: var(--ds-card);
+            border: 1px solid var(--ds-border);
+            border-radius: var(--radius-card);
+            box-shadow: none;
+            transition: border-color 0.15s ease, background-color 0.15s ease;
+        }
+
+        .ds-card:hover {
+            border-color: var(--ds-border-hover);
+            background: color-mix(in srgb, var(--ds-card) 94%, var(--ds-surface));
+        }
+
+        .ds-surface-panel {
+            background: color-mix(in srgb, var(--ds-card) 88%, var(--ds-bg));
+            border: 1px solid var(--ds-border);
+            border-radius: var(--radius-card);
+            box-shadow: none;
+        }
+
+        .ds-btn-primary {
+            background: var(--ds-blue);
+            color: var(--ds-text-on-primary);
+            box-shadow: var(--ds-shadow-sm);
+            border: 1px solid var(--ds-blue);
+            border-radius: var(--radius-ctrl);
+            padding: 8px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.15s ease;
+        }
+
+        .ds-btn-primary:hover {
+            background: var(--ds-blue-hover);
+            border-color: var(--ds-blue-hover);
+        }
+
+        .ds-btn-secondary {
+            background: color-mix(in srgb, var(--ds-card) 78%, var(--ds-surface));
+            color: var(--ds-text-secondary);
+            border: 1px solid var(--ds-border);
+            border-radius: var(--radius-ctrl);
+            padding: 8px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+        }
+
+        .ds-btn-secondary:hover {
+            border-color: var(--ds-border-hover);
+            color: var(--ds-text);
             background: var(--ds-card);
         }
 
-        .chat-composer {
+        .ds-btn-danger {
+            background: var(--ds-danger-bg);
+            color: var(--ds-danger);
+            border: 1px solid var(--ds-danger-border);
+            border-radius: var(--radius-ctrl);
+            padding: 8px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.15s ease, border-color 0.15s ease;
+        }
+
+        .ds-btn-danger:hover {
+            background: var(--ds-danger-bg-hover);
+            border-color: var(--ds-danger-border-hover);
+        }
+
+        .ds-page-intro {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 6px 14px 16px;
+            border-bottom: 1px solid var(--ds-border);
+            margin-bottom: 18px;
+        }
+
+        .ds-page-intro-title {
+            margin: 0;
+            color: var(--ds-text);
+            font-size: 17px;
+            font-weight: 700;
+            letter-spacing: -0.015em;
+            line-height: 1.2;
+        }
+
+        .ds-page-intro-description {
+            margin: 8px 0 0;
+            max-width: 34rem;
+            color: var(--ds-text-secondary);
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        .ds-page-intro-meta {
+            flex: 0 0 auto;
+            color: var(--ds-text-tertiary);
+            font-size: 12px;
+            line-height: 1.2;
+        }
+
+        .ds-page-intro-actions {
+            display: flex;
+            flex: 0 0 auto;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .ds-empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            min-height: 280px;
+            padding: 48px 24px;
+            text-align: center;
+        }
+
+        .ds-empty-state-icon {
+            display: flex;
+            width: auto;
+            min-width: 28px;
+            height: 28px;
+            padding: 0 8px;
+            align-items: center;
+            justify-content: center;
             border: 1px solid var(--ds-border);
             border-radius: var(--radius-ctrl);
-            background: var(--ds-bg);
-            box-shadow: var(--ds-shadow-sm);
-            padding: 8px;
+            background: transparent;
+            color: var(--ds-text-tertiary);
         }
 
-        .chat-input {
-            width: 100%;
-            min-height: 44px;
-            max-height: 180px;
-            resize: none;
-            border: none;
-            background: transparent;
+        .ds-empty-state-title {
             color: var(--ds-text);
             font-size: 14px;
-            line-height: 1.55;
-            padding: 4px;
-            outline: none;
-            font-family: inherit;
+            font-weight: 600;
+            line-height: 1.35;
         }
 
-        .chat-input::placeholder {
+        .ds-empty-state-description {
+            max-width: 290px;
             color: var(--ds-text-tertiary);
+            font-size: 12px;
+            line-height: 1.58;
         }
 
-        .chat-composer-actions {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 8px;
-            margin-top: 8px;
-            padding-top: 8px;
-            border-top: 1px solid var(--ds-border);
-        }
-
-        .chat-current-config {
-            font-size: 11px;
-            color: var(--ds-text-tertiary);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 200px;
-        }
-
-        .chat-composer-buttons {
-            display: flex;
-            gap: 8px;
-        }
-
-        .chat-send-button {
-            width: 34px;
-            height: 34px;
-            border: none;
-            border-radius: var(--radius-ctrl);
-            background: var(--ds-blue);
-            color: var(--ds-text-on-primary);
-            cursor: pointer;
+        .ds-modal-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 200;
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: var(--ds-shadow-sm);
-            transition: all 0.15s ease;
+            padding: 24px;
+            background: rgba(15, 20, 35, 0.42);
+            backdrop-filter: blur(2px);
+            -webkit-backdrop-filter: blur(2px);
+            animation: ds-modal-fade 0.14s ease-out;
         }
 
-        .chat-send-button:hover {
-            background: var(--ds-blue-hover);
+        .ds-modal-card {
+            width: 100%;
+            max-width: 360px;
+            padding: 18px 18px 14px;
+            border: 1px solid var(--ds-border);
+            border-radius: var(--radius-ctrl);
+            background: var(--ds-card);
+            box-shadow: var(--ds-shadow-lg);
+            animation: ds-modal-pop 0.16s ease-out;
         }
 
-        .chat-send-button:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
+        .ds-modal-title {
+            margin: 0;
+            color: var(--ds-text);
+            font-size: 14px;
+            font-weight: 700;
+            line-height: 1.3;
         }
 
-        .chat-send-button svg {
-            width: 18px;
-            height: 18px;
-        }
-
-        .chat-send-dots {
+        .ds-modal-message {
+            margin: 8px 0 16px;
+            color: var(--ds-text-secondary);
             font-size: 12px;
-            letter-spacing: 2px;
+            line-height: 1.55;
         }
 
-        .chat-attachment-button {
-            width: 34px;
-            height: 34px;
+        .ds-modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        .ds-chat-page {
+            display: flex;
+            height: 100%;
+            min-height: 0;
+            flex-direction: column;
+            background: var(--ds-bg);
+        }
+
+        .ds-chat-header {
+            flex: 0 0 auto;
+            padding: 12px 14px 10px;
+            border-bottom: 1px solid var(--ds-border);
+        }
+
+        .ds-chat-header-top {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .ds-chat-header-actions, .ds-chat-composer-buttons {
+            display: inline-flex;
+            flex: 0 0 auto;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .ds-chat-subtitle {
+            margin: 4px 0 0;
+            color: var(--ds-text-secondary);
+            font-size: 11px;
+            line-height: 1.45;
+        }
+
+        .ds-chat-provider-badge, .ds-chat-current-config {
+            display: inline-flex;
+            align-items: center;
+            min-width: 0;
+            border-radius: 999px;
+            background: var(--ds-surface);
+            color: var(--ds-text-tertiary);
+            font-size: 10px;
+            line-height: 1.2;
+        }
+
+        .ds-chat-provider-badge {
+            padding: 3px 7px;
+            margin-left: 8px;
+        }
+
+        .ds-chat-current-config {
+            max-width: 220px;
+            overflow: hidden;
+            padding: 3px 8px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .ds-chat-icon-button {
+            display: inline-flex;
+            width: 30px;
+            height: 30px;
+            flex: 0 0 auto;
+            align-items: center;
+            justify-content: center;
             border: 1px solid var(--ds-border);
             border-radius: var(--radius-ctrl);
             background: var(--ds-surface);
             color: var(--ds-text-secondary);
             cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.15s ease;
+            transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
         }
 
-        .chat-attachment-button:hover {
+        .ds-chat-icon-button:hover {
             border-color: var(--ds-border-hover);
             color: var(--ds-text);
         }
 
-        .chat-attachments {
-            display: flex;
-            gap: 6px;
-            margin-top: 8px;
-            flex-wrap: wrap;
-        }
-
-        .chat-attachment {
-            display: flex;
+        .ds-chat-text-button {
+            display: inline-flex;
+            height: 30px;
             align-items: center;
-            gap: 8px;
-            padding: 6px 8px;
-            background: var(--ds-surface);
             border: 1px solid var(--ds-border);
             border-radius: var(--radius-ctrl);
-        }
-
-        .chat-attachment img {
-            width: 32px;
-            height: 32px;
-            border-radius: 6px;
-            object-fit: cover;
-        }
-
-        .chat-attachment span {
-            font-size: 12px;
+            background: var(--ds-surface);
             color: var(--ds-text-secondary);
-            max-width: 150px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .chat-attachment-remove {
-            width: 22px;
-            height: 22px;
-            border: none;
-            background: transparent;
-            color: var(--ds-text-tertiary);
             cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 4px;
-            transition: all 0.15s ease;
+            font: inherit;
+            font-size: 11px;
+            font-weight: 500;
+            line-height: 1;
+            padding: 0 10px;
+            transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
         }
 
-        .chat-attachment-remove:hover {
-            background: var(--ds-card);
+        .ds-chat-text-button:hover {
+            border-color: var(--ds-border-hover);
             color: var(--ds-text);
         }
 
-        .chat-error {
-            background: var(--ds-danger-bg);
-            border: 1px solid var(--ds-danger);
-            border-radius: var(--radius-ctrl);
-            padding: 10px 12px;
+        .ds-chat-config-panel {
+            display: grid;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .ds-chat-control-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px;
+        }
+
+        .ds-chat-control-group {
+            display: grid;
+            grid-auto-columns: minmax(0, 1fr);
+            grid-auto-flow: column;
+            gap: 4px;
+            min-width: 0;
+            border-radius: 10px;
+            background: var(--ds-surface);
+            padding: 3px;
+        }
+
+        .ds-chat-segment {
+            min-width: 0;
+            height: 28px;
+            border: 0;
+            border-radius: 8px;
+            background: transparent;
+            color: var(--ds-text-secondary);
+            cursor: pointer;
+            font: inherit;
+            font-size: 11px;
+            font-weight: 500;
+            line-height: 1;
+            white-space: nowrap;
+            transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .ds-chat-segment:hover {
+            color: var(--ds-text);
+        }
+
+        .ds-chat-segment-active {
+            background: var(--ds-card);
+            color: var(--ds-blue);
+            box-shadow: var(--ds-shadow-sm);
+        }
+
+        .ds-chat-segment:disabled {
+            cursor: default;
+            opacity: 0.55;
+        }
+
+        .ds-chat-effort-select {
+            width: 92px;
+            height: 34px;
+            border: 1px solid var(--ds-border);
+            border-radius: 10px;
+            background: var(--ds-surface);
+            color: var(--ds-text-secondary);
+            font: inherit;
+            font-size: 11px;
+            outline: none;
+            padding: 0 8px;
+        }
+
+        .ds-chat-messages {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 16px 14px 18px;
+        }
+
+        .ds-chat-empty {
+            display: flex;
+            min-height: 100%;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 48px 20px;
+            text-align: center;
+        }
+
+        .ds-chat-message-row {
+            display: flex;
             margin-bottom: 16px;
+            animation: fadeIn 0.2s ease-out;
+        }
+
+        .ds-chat-message-row-user {
+            justify-content: flex-end;
+        }
+
+        .ds-chat-message-row-assistant {
+            justify-content: flex-start;
+        }
+
+        .ds-chat-message {
             font-size: 13px;
+            line-height: 1.72;
+        }
+
+        .ds-chat-message-user {
+            max-width: min(86%, 420px);
+            border-radius: 2px 14px 14px 14px;
+            background: var(--ds-surface);
+            color: var(--ds-text);
+            padding: 8px 12px;
+            box-shadow: var(--ds-shadow-sm);
+            border: 1px solid var(--ds-border);
+        }
+
+        .ds-chat-message-assistant {
+            width: 100%;
+            max-width: 100%;
+            color: var(--ds-text);
+        }
+
+        .ds-chat-thinking {
+            margin-bottom: 8px;
+            border-left: 2px solid var(--ds-border);
+            padding-left: 10px;
+            color: var(--ds-text-tertiary);
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        .ds-chat-thinking summary {
+            width: fit-content;
+            cursor: pointer;
+            color: var(--ds-text-secondary);
+            font-size: 11px;
+            font-weight: 500;
+            list-style: none;
+        }
+
+        .ds-chat-thinking summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .ds-chat-thinking summary::before {
+            content: '';
+            display: inline-block;
+            width: 5px;
+            height: 5px;
+            margin-right: 7px;
+            border-radius: 999px;
+            background: var(--ds-blue);
+            vertical-align: 1px;
+        }
+
+        .ds-chat-thinking div {
+            margin-top: 6px;
+        }
+
+        .ds-chat-caret {
+            display: inline-block;
+            width: 2px;
+            height: 15px;
+            margin-left: 2px;
+            background: var(--ds-text);
+            vertical-align: -2px;
+            animation: caretPulse 0.9s ease-in-out infinite;
+        }
+
+        .ds-chat-error {
+            margin: 10px auto 0;
+            border: 1px solid var(--ds-danger-border);
+            border-radius: var(--radius-ctrl);
+            background: var(--ds-danger-bg);
+            color: var(--ds-danger);
+            font-size: 11px;
+            line-height: 1.45;
+            padding: 8px 10px;
+        }
+
+        .ds-chat-composer-wrap {
+            flex: 0 0 auto;
+            border-top: 1px solid var(--ds-border);
+            padding: 10px 12px 12px;
+            background: color-mix(in srgb, var(--ds-bg) 94%, var(--ds-surface));
+        }
+
+        .ds-chat-composer {
+            border: 1px solid var(--ds-border);
+            border-radius: var(--radius-ctrl);
+            background: var(--ds-card);
+            box-shadow: var(--ds-shadow-sm);
+            padding: 8px;
+        }
+
+        .ds-chat-file-input {
+            display: none;
+        }
+
+        .ds-chat-input {
+            display: block;
+            width: 100%;
+            min-height: 42px;
+            max-height: 150px;
+            resize: none;
+            border: 0;
+            background: transparent;
+            color: var(--ds-text);
+            font: inherit;
+            font-size: 13px;
+            line-height: 1.55;
+            outline: none;
+            padding: 4px 4px 2px;
+        }
+
+        .ds-chat-composer-actions {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding-top: 4px;
+        }
+
+        .ds-chat-send-button {
+            display: inline-flex;
+            width: 32px;
+            height: 32px;
+            flex: 0 0 auto;
+            align-items: center;
+            justify-content: center;
+            border: 0;
+            border-radius: var(--radius-ctrl);
+            background: var(--ds-blue);
+            color: var(--ds-text-on-primary);
+            cursor: pointer;
+            box-shadow: var(--ds-shadow-sm);
+            transition: background-color 0.15s ease, opacity 0.15s ease;
+        }
+
+        .ds-chat-send-button:hover {
+            background: var(--ds-blue-hover);
+        }
+
+        .ds-chat-send-button:disabled {
+            cursor: default;
+            opacity: 0.38;
+        }
+
+        .ds-chat-send-button svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .ds-chat-attachment-button {
+            display: inline-flex;
+            width: 32px;
+            height: 32px;
+            flex: 0 0 auto;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--ds-border);
+            border-radius: var(--radius-ctrl);
+            background: var(--ds-surface);
+            color: var(--ds-text-secondary);
+            cursor: pointer;
+            transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease, opacity 0.15s ease;
+        }
+
+        .ds-chat-attachment-button:hover {
+            border-color: var(--ds-border-hover);
+            color: var(--ds-text);
+        }
+
+        .ds-chat-attachment-button:disabled {
+            cursor: default;
+            opacity: 0.42;
+        }
+
+        .ds-chat-mic-button {
+            display: inline-flex;
+            width: 32px;
+            height: 32px;
+            flex: 0 0 auto;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--ds-border);
+            border-radius: var(--radius-ctrl);
+            background: var(--ds-surface);
+            color: var(--ds-text-secondary);
+            cursor: pointer;
+            transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+        }
+
+        .ds-chat-mic-button:hover {
+            border-color: var(--ds-border-hover);
+            color: var(--ds-text);
+        }
+
+        .ds-chat-mic-button-active {
+            border-color: var(--ds-danger);
+            background: var(--ds-danger-bg);
             color: var(--ds-danger);
         }
 
-        .chat-error button {
-            background: none;
-            border: none;
-            color: inherit;
-            text-decoration: underline;
-            cursor: pointer;
-            font-size: inherit;
-            margin-left: 8px;
+        .ds-chat-send-dots {
+            font-size: 10px;
+            letter-spacing: 1px;
         }
 
         .markdown-body {
-            font-size: 14px;
-            line-height: 1.65;
+            font-size: 13px;
+            line-height: 1.72;
             color: var(--ds-text);
         }
 
-        .markdown-body h1 { font-size: 24px; font-weight: 700; margin: 20px 0 10px; }
-        .markdown-body h2 { font-size: 20px; font-weight: 600; margin: 18px 0 8px; }
-        .markdown-body h3 { font-size: 17px; font-weight: 600; margin: 16px 0 8px; }
-        .markdown-body h4 { font-size: 15px; font-weight: 600; margin: 14px 0 8px; }
-        .markdown-body p { margin: 10px 0; }
-        .markdown-body ul, .markdown-body ol { padding-left: 24px; margin: 10px 0; }
-        .markdown-body li { margin: 6px 0; }
-        .markdown-body code { background: var(--ds-blue-glow); color: var(--ds-blue); padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: monospace; }
-        .markdown-body pre { background: var(--ds-surface); padding: 12px; border-radius: var(--radius-ctrl); overflow-x: auto; margin: 10px 0; border: 1px solid var(--ds-border); }
-        .markdown-body pre code { background: transparent; padding: 0; font-size: 12px; }
-        .markdown-body blockquote { border-left: 3px solid var(--ds-blue); padding-left: 12px; margin: 10px 0; color: var(--ds-text-secondary); }
-        .markdown-body hr { border: none; border-top: 1px solid var(--ds-border); margin: 20px 0; }
-        .markdown-body a { color: var(--ds-blue); text-decoration: none; }
-        .markdown-body a:hover { text-decoration: underline; }
-        .markdown-body table { width: 100%; border-collapse: collapse; margin: 10px 0; }
-        .markdown-body th, .markdown-body td { border: 1px solid var(--ds-border); padding: 8px 12px; text-align: left; }
-        .markdown-body th { background: var(--ds-surface); font-weight: 600; }
-        .markdown-body tr:hover { background: var(--ds-surface-hover); }
+        .markdown-body h1 {
+            font-size: 20px;
+            font-weight: 700;
+            margin: 16px 0 8px;
+        }
 
-        .dashboard-page {
-            padding: 20px;
+        .markdown-body h2 {
+            font-size: 17px;
+            font-weight: 600;
+            margin: 14px 0 8px;
+        }
+
+        .markdown-body h3 {
+            font-size: 15px;
+            font-weight: 600;
+            margin: 12px 0 8px;
+        }
+
+        .markdown-body p {
+            margin: 8px 0;
+        }
+
+        .markdown-body ul, .markdown-body ol {
+            padding-left: 20px;
+            margin: 8px 0;
+        }
+
+        .markdown-body li {
+            margin: 4px 0;
+        }
+
+        .markdown-body code {
+            background: var(--ds-blue-glow);
+            color: var(--ds-blue);
+            padding: 2px 5px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: monospace;
+        }
+
+        .markdown-body pre {
+            background: var(--ds-bg);
+            padding: 10px;
+            border-radius: var(--radius-ctrl);
+            overflow-x: auto;
+            margin: 10px 0;
+            border: 1px solid var(--ds-border);
+        }
+
+        .markdown-body pre code {
+            background: transparent;
+            padding: 0;
+            font-size: 11px;
+        }
+
+        .markdown-body blockquote {
+            border-left: 3px solid var(--ds-blue);
+            padding-left: 10px;
+            margin: 10px 0;
+            color: var(--ds-text-secondary);
+        }
+
+        .markdown-body a {
+            color: var(--ds-blue);
+            text-decoration: none;
+        }
+
+        .markdown-body a:hover {
+            text-decoration: underline;
+        }
+
+        .markdown-body table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+            font-size: 12px;
+        }
+
+        .markdown-body th, .markdown-body td {
+            border: 1px solid var(--ds-border);
+            padding: 6px 8px;
+            text-align: left;
+        }
+
+        .markdown-body th {
+            background: var(--ds-surface);
+            font-weight: 600;
+        }
+
+        .markdown-body img {
+            max-width: 100%;
+            border-radius: var(--radius-ctrl);
+        }
+
+        .page-content {
+            padding: 14px;
             overflow-y: auto;
+            height: 100%;
+            min-height: 0;
         }
 
         .status-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 16px;
-            margin-bottom: 24px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+            margin-bottom: 18px;
         }
 
         .status-card {
-            background: var(--ds-card);
+            background: color-mix(in srgb, var(--ds-card) 88%, var(--ds-bg));
             border: 1px solid var(--ds-border);
-            border-radius: var(--radius-ctrl);
-            padding: 16px;
+            border-radius: var(--radius-card);
+            padding: 12px;
+            transition: border-color 0.15s ease;
+        }
+
+        .status-card:hover {
+            border-color: var(--ds-border-hover);
         }
 
         .status-card .label {
-            font-size: 12px;
             color: var(--ds-text-tertiary);
-            margin-bottom: 8px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            line-height: 1.2;
+            text-transform: uppercase;
         }
 
         .status-card .value {
-            font-size: 28px;
-            font-weight: 700;
+            margin-top: 8px;
             color: var(--ds-text);
+            font-size: 26px;
+            font-weight: 760;
+            letter-spacing: 0;
+            line-height: 1;
+        }
+
+        .status-card .detail {
+            margin-top: 6px;
+            color: var(--ds-text-tertiary);
+            font-size: 11px;
+            line-height: 1.35;
         }
 
         .quick-actions {
             display: flex;
-            gap: 12px;
+            gap: 6px;
             flex-wrap: wrap;
-            margin-bottom: 24px;
+            margin-bottom: 18px;
         }
 
         .quick-action-btn {
-            padding: 12px 20px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
             border: 1px solid var(--ds-border);
             border-radius: var(--radius-ctrl);
             background: var(--ds-card);
             color: var(--ds-text);
             cursor: pointer;
-            font-size: 14px;
+            font-size: 12px;
             font-weight: 500;
             transition: all 0.15s ease;
-            display: flex;
-            align-items: center;
-            gap: 8px;
         }
 
         .quick-action-btn:hover {
@@ -781,1523 +1126,1867 @@
         .section-card {
             background: var(--ds-card);
             border: 1px solid var(--ds-border);
-            border-radius: var(--radius-ctrl);
-            padding: 20px;
-            margin-bottom: 20px;
+            border-radius: var(--radius-card);
+            padding: 14px;
+            margin-bottom: 14px;
+            transition: border-color 0.15s ease;
+        }
+
+        .section-card:hover {
+            border-color: var(--ds-border-hover);
         }
 
         .section-card h2 {
-            font-size: 16px;
-            font-weight: 600;
+            font-size: 14px;
+            font-weight: 700;
             color: var(--ds-text);
-            margin-bottom: 16px;
+            letter-spacing: -0.015em;
+            margin-bottom: 12px;
+            line-height: 1.2;
         }
 
         .form-group {
-            margin-bottom: 16px;
+            margin-bottom: 12px;
         }
 
         .form-group label {
             display: block;
-            font-size: 13px;
-            font-weight: 500;
+            font-size: 11px;
+            font-weight: 700;
             color: var(--ds-text);
-            margin-bottom: 6px;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            line-height: 1.3;
+            margin-bottom: 4px;
         }
 
         .form-group input, .form-group textarea, .form-group select {
             width: 100%;
-            padding: 10px 12px;
+            padding: 8px 10px;
             border: 1px solid var(--ds-border);
             border-radius: var(--radius-ctrl);
             background: var(--ds-bg);
             color: var(--ds-text);
-            font-size: 14px;
+            font-size: 12px;
             font-family: inherit;
             transition: border-color 0.2s ease;
         }
 
-        .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
-            outline: none;
-            border-color: var(--ds-blue);
-            box-shadow: 0 0 0 3px var(--ds-blue-glow);
-        }
-
-        .btn-primary {
-            background: var(--ds-blue);
-            color: var(--ds-text-on-primary);
-            border: 1px solid var(--ds-blue);
-            padding: 10px 20px;
-            border-radius: var(--radius-ctrl);
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.15s ease;
-        }
-
-        .btn-primary:hover {
-            background: var(--ds-blue-hover);
-            border-color: var(--ds-blue-hover);
-        }
-
-        .btn-secondary {
-            background: var(--ds-surface);
-            color: var(--ds-text);
-            border: 1px solid var(--ds-border);
-            padding: 10px 20px;
-            border-radius: var(--radius-ctrl);
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.15s ease;
-        }
-
-        .btn-secondary:hover {
-            background: var(--ds-surface-hover);
-            border-color: var(--ds-border-hover);
-        }
-
-        .btn-danger {
-            background: var(--ds-danger-bg);
-            color: var(--ds-danger);
-            border: 1px solid var(--ds-danger);
-            padding: 10px 20px;
-            border-radius: var(--radius-ctrl);
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.15s ease;
-        }
-
-        .btn-danger:hover {
-            background: var(--ds-danger);
-            color: var(--ds-text-on-primary);
+        .form-group textarea {
+            min-height: 80px;
+            resize: vertical;
         }
 
         .toast {
             position: fixed;
             top: 20px;
             right: 20px;
-            padding: 12px 20px;
+            padding: 10px 14px;
             border-radius: var(--radius-ctrl);
             color: white;
-            z-index: 2000;
-            animation: slideIn 0.3s ease;
-            font-size: 13px;
+            z-index: 200;
+            animation: fadeIn 0.14s ease-out;
+            font-size: 12px;
             display: flex;
             align-items: center;
             gap: 8px;
+            backdrop-filter: blur(2px);
         }
 
-        .toast.success { background: var(--ds-success); }
-        .toast.error { background: var(--ds-danger); }
-        .toast.info { background: var(--ds-info); }
-
-        @keyframes slideIn {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
+        .toast.success {
+            background: var(--ds-success);
         }
 
-        .modal {
-            display: none;
+        .toast.error {
+            background: var(--ds-danger);
+        }
+
+        .toast.info {
+            background: var(--ds-info);
+        }
+
+        .toast-container {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 1000;
-            justify-content: center;
-            align-items: center;
-            backdrop-filter: blur(4px);
-        }
-
-        .modal.show {
+            top: 16px;
+            right: 16px;
+            z-index: 300;
             display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: none;
         }
 
-        .modal-content {
-            background: var(--ds-card);
-            border: 1px solid var(--ds-border);
-            border-radius: var(--radius-ctrl);
-            padding: 20px;
-            max-width: 500px;
-            width: 90%;
-            max-height: 80vh;
-            overflow-y: auto;
-            box-shadow: var(--ds-shadow-md);
+        .toast-container .toast {
+            pointer-events: auto;
         }
 
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 16px;
-        }
-
-        .modal-header h3 {
-            font-size: 16px;
-            font-weight: 600;
-            color: var(--ds-text);
-        }
-
-        .modal-close {
-            background: none;
-            border: none;
-            font-size: 20px;
-            cursor: pointer;
-            color: var(--ds-text-tertiary);
-            padding: 4px;
-            border-radius: 4px;
-            transition: all 0.15s ease;
-        }
-
-        .modal-close:hover {
-            background: var(--ds-surface);
-            color: var(--ds-text);
+        .side-tab-spacer {
+            flex: 1 1 0;
         }
 
         .provider-selector {
             display: flex;
-            gap: 8px;
+            gap: 4px;
             margin-bottom: 12px;
             flex-wrap: wrap;
         }
 
         .provider-option {
-            padding: 8px 14px;
-            border: 1px solid var(--ds-border);
-            border-radius: var(--radius-ctrl);
-            background: var(--ds-surface);
+            min-width: 0;
+            height: 28px;
+            border: 0;
+            border-radius: 8px;
+            background: transparent;
             color: var(--ds-text-secondary);
             cursor: pointer;
-            font-size: 13px;
+            font: inherit;
+            font-size: 11px;
             font-weight: 500;
-            transition: all 0.15s ease;
+            line-height: 1;
+            padding: 0 10px;
+            white-space: nowrap;
+            transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
         }
 
         .provider-option:hover {
-            border-color: var(--ds-border-hover);
             color: var(--ds-text);
         }
 
         .provider-option.active {
-            background: var(--ds-blue);
-            color: var(--ds-text-on-primary);
-            border-color: var(--ds-blue);
+            background: var(--ds-card);
+            color: var(--ds-blue);
+            box-shadow: var(--ds-shadow-sm);
         }
 
-        .file-input {
+        .chat-tool-call {
+            background: var(--ds-info-bg);
+            border: 1px solid var(--ds-info-border);
+            border-radius: var(--radius-ctrl);
+            padding: 8px 10px;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+
+        .chat-tool-call .tool-name {
+            font-weight: 600;
+            color: var(--ds-info);
+            margin-bottom: 4px;
+        }
+
+        .chat-tool-call .tool-args {
+            font-family: monospace;
+            color: var(--ds-text-secondary);
+            font-size: 11px;
+        }
+
+        .chat-tool-result {
+            background: var(--ds-success-bg);
+            border: 1px solid var(--ds-success-border);
+            border-radius: var(--radius-ctrl);
+            padding: 8px 10px;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+
+        .chat-tool-result .tool-name {
+            font-weight: 600;
+            color: var(--ds-success);
+            margin-bottom: 4px;
+        }
+
+        .chat-tool-result .tool-output {
+            color: var(--ds-text-secondary);
+            font-family: monospace;
+            font-size: 11px;
+            white-space: pre-wrap;
+        }
+
+        .mirror-container {
+            border: 1px solid var(--ds-border);
+            border-radius: var(--radius-ctrl);
+            overflow: hidden;
+            background: var(--ds-bg);
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 400px;
+            box-shadow: var(--ds-shadow-sm);
+        }
+
+        .mirror-status-overlay {
+            position: absolute;
+            bottom: 12px;
+            left: 12px;
+            background: rgba(0,0,0,0.65);
+            color: white;
+            padding: 6px 12px;
+            border-radius: var(--radius-ctrl);
+            font-size: 12px;
+            font-weight: 500;
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .mirror-recording-indicator {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: var(--ds-danger);
+            color: white;
+            padding: 6px 12px;
+            border-radius: var(--radius-ctrl);
+            font-size: 12px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .recording-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: white;
+            animation: blink 1s infinite;
+        }
+
+        .mirror-video, .mirror-canvas {
+            max-width: 100%;
+            max-height: 600px;
+            border-radius: 0;
+        }
+
+        .mirror-status {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.6);
+            color: white;
+            padding: 6px 12px;
+            border-radius: var(--radius-ctrl);
+            font-size: 12px;
+            font-weight: 500;
+            backdrop-filter: blur(4px);
+        }
+
+        .recording-indicator {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: var(--ds-danger);
+            color: white;
+            padding: 6px 12px;
+            border-radius: var(--radius-ctrl);
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .recording-indicator span {
+            animation: blink 1s infinite;
+        }
+
+        .log-viewer {
+            background: var(--ds-bg);
+            border: 1px solid var(--ds-border);
+            border-radius: var(--radius-ctrl);
+            padding: 10px;
+            font-family: monospace;
+            font-size: 11px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .log-line {
+            margin-bottom: 2px;
+        }
+
+        .log-time {
+            color: var(--ds-text-tertiary);
+        }
+
+        .log-level-info {
+            color: var(--ds-info);
+        }
+
+        .log-level-warning {
+            color: var(--ds-warning);
+        }
+
+        .log-level-error {
+            color: var(--ds-danger);
+        }
+
+        .task-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px;
+            border: 1px solid var(--ds-border);
+            border-radius: var(--radius-ctrl);
+            margin-bottom: 8px;
+            background: var(--ds-card);
+            transition: border-color 0.15s ease, background-color 0.15s ease;
+        }
+
+        .task-item:hover {
+            border-color: var(--ds-border-hover);
+            background: color-mix(in srgb, var(--ds-card) 94%, var(--ds-surface));
+        }
+
+        .task-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .task-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--ds-text);
+        }
+
+        .task-schedule {
+            font-size: 11px;
+            color: var(--ds-text-tertiary);
+            margin-top: 2px;
+        }
+
+        .task-status {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: var(--radius-pill);
+            margin-left: 8px;
+        }
+
+        .task-status.active {
+            background: var(--ds-success-bg);
+            color: var(--ds-success);
+        }
+
+        .task-status.inactive {
+            background: var(--ds-surface);
+            color: var(--ds-text-tertiary);
+        }
+
+        .script-item {
+            padding: 12px;
+            border: 1px solid var(--ds-border);
+            border-radius: var(--radius-ctrl);
+            margin-bottom: 8px;
+            background: var(--ds-card);
+            transition: border-color 0.15s ease, background-color 0.15s ease;
+        }
+
+        .script-item:hover {
+            border-color: var(--ds-border-hover);
+            background: color-mix(in srgb, var(--ds-card) 94%, var(--ds-surface));
+        }
+
+        .script-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+
+        .script-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--ds-text);
+        }
+
+        .script-meta {
+            font-size: 11px;
+            color: var(--ds-text-tertiary);
+        }
+
+        .script-description {
+            font-size: 12px;
+            color: var(--ds-text-secondary);
+        }
+
+        .tts-control-panel {
+            display: grid;
+            gap: 12px;
+        }
+
+        .tts-slider-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .tts-slider-group label {
+            flex: 0 0 40px;
+            font-size: 11px;
+            color: var(--ds-text-secondary);
+        }
+
+        .tts-slider-group input[type="range"] {
+            flex: 1;
+        }
+
+        .tts-slider-group span {
+            flex: 0 0 30px;
+            font-size: 11px;
+            color: var(--ds-text-tertiary);
+            text-align: right;
+        }
+
+        .config-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--ds-border);
+        }
+
+        .config-row:last-child {
+            border-bottom: none;
+        }
+
+        .config-label {
+            font-size: 13px;
+            color: var(--ds-text);
+        }
+
+        .config-value {
+            font-size: 12px;
+            color: var(--ds-text-secondary);
+        }
+
+        .tab-content {
             display: none;
+            height: 100%;
+            min-height: 0;
+            flex-direction: column;
         }
 
-        @media (max-width: 768px) {
-            .sidebar {
-                width: 60px;
+        .tab-content.active {
+            display: flex;
+        }
+
+        .ds-switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 22px;
+        }
+
+        .ds-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .ds-switch-thumb {
+            position: absolute;
+            cursor: pointer;
+            top: 3px;
+            left: 3px;
+            width: 16px;
+            height: 16px;
+            background: var(--ds-switch-thumb);
+            border-radius: 50%;
+            transition: transform 0.2s ease;
+            box-shadow: var(--ds-shadow-sm);
+        }
+
+        .ds-switch input:checked + .ds-switch-thumb {
+            transform: translateX(18px);
+        }
+
+        .ds-switch-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--ds-border);
+            border-radius: 999px;
+            transition: background-color 0.2s ease;
+        }
+
+        .ds-switch input:checked + .ds-switch-thumb + .ds-switch-bg {
+            background: var(--ds-blue);
+        }
+
+        .ds-chat-attachments {
+            display: grid;
+            gap: 6px;
+            margin-top: 6px;
+        }
+
+        .ds-chat-attachment {
+            display: grid;
+            grid-template-columns: 34px minmax(0, 1fr) 24px;
+            align-items: center;
+            gap: 8px;
+            min-height: 42px;
+            border: 1px solid var(--ds-border);
+            border-radius: var(--radius-ctrl);
+            background: var(--ds-surface);
+            padding: 4px 5px 4px 4px;
+        }
+
+        .ds-chat-attachment-ready {
+            border-color: color-mix(in srgb, var(--ds-blue) 32%, var(--ds-border));
+        }
+
+        .ds-chat-attachment-error {
+            border-color: var(--ds-danger-border);
+            background: var(--ds-danger-bg);
+        }
+
+        .ds-chat-attachment-thumb {
+            width: 34px;
+            height: 34px;
+            border-radius: 7px;
+            object-fit: cover;
+            background: var(--ds-card);
+        }
+
+        .ds-chat-attachment-body {
+            min-width: 0;
+        }
+
+        .ds-chat-attachment-name, .ds-chat-attachment-status {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .ds-chat-attachment-name {
+            color: var(--ds-text);
+            font-size: 11px;
+            font-weight: 500;
+            line-height: 1.25;
+        }
+
+        .ds-chat-attachment-status {
+            margin-top: 2px;
+            color: var(--ds-text-tertiary);
+            font-size: 10px;
+            line-height: 1.2;
+        }
+
+        .ds-chat-attachment-error .ds-chat-attachment-status {
+            color: var(--ds-danger);
+        }
+
+        .ds-chat-attachment-remove {
+            display: inline-flex;
+            width: 24px;
+            height: 24px;
+            align-items: center;
+            justify-content: center;
+            border: 0;
+            border-radius: 7px;
+            background: transparent;
+            color: var(--ds-text-tertiary);
+            cursor: pointer;
+            transition: background-color 0.15s ease, color 0.15s ease;
+        }
+
+        .ds-chat-attachment-remove:hover {
+            background: var(--ds-card);
+            color: var(--ds-text);
+        }
+
+        .ds-chat-attachment-remove svg {
+            width: 13px;
+            height: 13px;
+        }
+
+        .ds-badge-success {
+            color: var(--ds-success);
+            background: var(--ds-success-bg);
+            border: 1px solid var(--ds-success-border);
+            padding: 2px 6px;
+            border-radius: var(--radius-pill);
+            font-size: 10px;
+        }
+
+        .ds-badge-info {
+            color: var(--ds-info);
+            background: var(--ds-info-bg);
+            border: 1px solid var(--ds-info-border);
+            padding: 2px 6px;
+            border-radius: var(--radius-pill);
+            font-size: 10px;
+        }
+
+        .ds-badge-warning {
+            color: var(--ds-warning);
+            background: var(--ds-warning-bg);
+            border: 1px solid var(--ds-warning-border);
+            padding: 2px 6px;
+            border-radius: var(--radius-pill);
+            font-size: 10px;
+        }
+
+        .ds-info-panel {
+            background: color-mix(in srgb, var(--ds-blue-light) 58%, var(--ds-card));
+            border: 1px solid var(--ds-selected-border);
+            padding: 10px;
+            border-radius: var(--radius-ctrl);
+            margin-bottom: 12px;
+        }
+
+        @media (max-width: 420px) {
+            .status-grid {
+                grid-template-columns: 1fr;
             }
-            .sidebar-header, .sidebar-tab span, .theme-toggle span {
-                display: none;
+            .ds-page-intro {
+                flex-direction: column;
+                gap: 10px;
             }
-            .sidebar-tab {
-                justify-content: center;
+            .ds-page-intro-actions {
+                width: 100%;
+                justify-content: flex-start;
+            }
+            .ds-chat-control-row {
+                grid-template-columns: 1fr;
+            }
+            .ds-chat-effort-select {
+                width: 100%;
+            }
+            .ds-chat-current-config {
+                max-width: 180px;
             }
         }
     </style>
 </head>
 <body>
-    <div class="app-container">
-        <div class="sidebar">
-            <div class="sidebar-header">
-                <h1>TaskMod</h1>
-                <p>AI Assistant</p>
-            </div>
-            <div class="sidebar-tabs">
-                <button class="sidebar-tab active" onclick="showTab('dashboard')">
-                    <i class="fas fa-home"></i><span>仪表盘</span>
-                </button>
-                <button class="sidebar-tab" onclick="showTab('chat')">
-                    <i class="fas fa-comments"></i><span>AI对话</span>
-                </button>
-                <button class="sidebar-tab" onclick="showTab('mirror')">
-                    <i class="fas fa-desktop"></i><span>投屏控制</span>
-                </button>
-                <button class="sidebar-tab" onclick="showTab('tasks')">
-                    <i class="fas fa-tasks"></i><span>任务管理</span>
-                </button>
-                <button class="sidebar-tab" onclick="showTab('scripts')">
-                    <i class="fas fa-code"></i><span>脚本管理</span>
-                </button>
-                <button class="sidebar-tab" onclick="showTab('tts')">
-                    <i class="fas fa-volume-up"></i><span>文本转语音</span>
-                </button>
-                <button class="sidebar-tab" onclick="showTab('config')">
-                    <i class="fas fa-cog"></i><span>配置</span>
-                </button>
-                <button class="sidebar-tab" onclick="showTab('logs')">
-                    <i class="fas fa-file-alt"></i><span>日志</span>
-                </button>
-            </div>
-            <div class="sidebar-bottom">
-                <div class="theme-toggle" onclick="toggleTheme()">
-                    <span id="theme-label">深色模式</span>
-                    <i id="theme-icon" class="fas fa-moon"></i>
-                </div>
-            </div>
-        </div>
+    <div class="ds-app-shell">
+        <nav class="side-tabs" aria-label="导航">
+            <button class="side-tab side-tab-active" onclick="showTab('dashboard')">
+                <svg class="side-tab-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                </svg>
+                <span class="side-tab-label">仪表盘</span>
+                <span class="side-tab-indicator"></span>
+            </button>
+            <button class="side-tab" onclick="showTab('chat')">
+                <svg class="side-tab-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                <span class="side-tab-label">AI助手</span>
+                <span class="side-tab-indicator"></span>
+            </button>
+            <button class="side-tab" onclick="showTab('mirror')">
+                <svg class="side-tab-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                <span class="side-tab-label">投屏</span>
+                <span class="side-tab-indicator"></span>
+            </button>
+            <button class="side-tab" onclick="showTab('tasks')">
+                <svg class="side-tab-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                </svg>
+                <span class="side-tab-label">任务</span>
+                <span class="side-tab-indicator"></span>
+            </button>
+            <button class="side-tab" onclick="showTab('scripts')">
+                <svg class="side-tab-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                </svg>
+                <span class="side-tab-label">脚本</span>
+                <span class="side-tab-indicator"></span>
+            </button>
+            <button class="side-tab" onclick="showTab('tts')">
+                <svg class="side-tab-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072M12 6l-4 4H4v4h4l4 4V6z" />
+                </svg>
+                <span class="side-tab-label">TTS</span>
+                <span class="side-tab-indicator"></span>
+            </button>
+            <button class="side-tab" onclick="showTab('config')">
+                <svg class="side-tab-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span class="side-tab-label">配置</span>
+                <span class="side-tab-indicator"></span>
+            </button>
+            <button class="side-tab" onclick="showTab('logs')">
+                <svg class="side-tab-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span class="side-tab-label">日志</span>
+                <span class="side-tab-indicator"></span>
+            </button>
+            <div class="side-tab-spacer"></div>
+            <button class="side-tab" onclick="toggleTheme()" title="切换主题">
+                <svg class="side-tab-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                </svg>
+                <span class="side-tab-label">主题</span>
+            </button>
+        </nav>
 
-        <div class="main-content">
-            <div id="dashboard" class="tab-content dashboard-page">
+        <main class="ds-app-main">
+            <!-- ========== Dashboard ========== -->
+            <section id="tab-dashboard" class="page-content tab-content active">
+                <div class="ds-page-intro">
+                    <div>
+                        <h1 class="ds-page-intro-title">仪表盘</h1>
+                        <p class="ds-page-intro-description">系统状态概览与快捷操作</p>
+                    </div>
+                </div>
                 <div class="status-grid">
                     <div class="status-card">
-                        <div class="label">设备状态</div>
-                        <div class="value" id="device-status">加载中...</div>
+                        <div class="label"><i class="fas fa-battery-three-quarters"></i> 电池</div>
+                        <div class="value" id="status-battery">--%</div>
+                        <div class="detail">电量状态</div>
                     </div>
                     <div class="status-card">
-                        <div class="label">电池电量</div>
-                        <div class="value" id="battery-status">加载中...</div>
+                        <div class="label"><i class="fas fa-microchip"></i> CPU</div>
+                        <div class="value" id="status-cpu">--%</div>
+                        <div class="detail">使用率</div>
                     </div>
                     <div class="status-card">
-                        <div class="label">可用脚本</div>
-                        <div class="value" id="script-count">加载中...</div>
+                        <div class="label"><i class="fas fa-memory"></i> 内存</div>
+                        <div class="value" id="status-memory">--</div>
+                        <div class="detail">MB 使用中</div>
                     </div>
                     <div class="status-card">
-                        <div class="label">定时任务</div>
-                        <div class="value" id="task-count">加载中...</div>
+                        <div class="label"><i class="fas fa-clock"></i> 运行</div>
+                        <div class="value" id="status-uptime">--</div>
+                        <div class="detail">运行时间</div>
                     </div>
                 </div>
                 <div class="quick-actions">
-                    <button class="quick-action-btn" onclick="takeScreenshot()">
-                        <i class="fas fa-camera"></i>拍摄截图
-                    </button>
-                    <button class="quick-action-btn" onclick="showTab('tasks'); showModal('addTaskModal')">
-                        <i class="fas fa-plus"></i>添加任务
-                    </button>
-                    <button class="quick-action-btn" onclick="refreshStatus()">
-                        <i class="fas fa-sync-alt"></i>刷新状态
-                    </button>
-                    <button class="quick-action-btn" onclick="getClipboard()">
-                        <i class="fas fa-clipboard"></i>获取剪贴板
-                    </button>
+                    <button class="quick-action-btn" onclick="refreshStatus()"><i class="fas fa-sync-alt"></i> 刷新状态</button>
+                    <button class="quick-action-btn" onclick="screenshot()"><i class="fas fa-camera"></i> 截屏</button>
+                    <button class="quick-action-btn" onclick="rebootDevice()"><i class="fas fa-power-off"></i> 重启设备</button>
+                    <button class="quick-action-btn" onclick="clearLogs()"><i class="fas fa-broom"></i> 清除日志</button>
                 </div>
-                <div class="section-card">
-                    <h2>快捷命令</h2>
-                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                        <button class="btn-secondary" onclick="quickCmd('input keyevent 26')">唤醒屏幕</button>
-                        <button class="btn-secondary" onclick="quickCmd('input keyevent 3')">Home</button>
-                        <button class="btn-secondary" onclick="quickCmd('input keyevent 4')">返回</button>
-                        <button class="btn-secondary" onclick="quickCmd('getprop ro.product.model')">设备型号</button>
-                        <button class="btn-secondary" onclick="quickCmd('cat /proc/uptime')">运行时间</button>
-                        <button class="btn-secondary" onclick="quickCmd('df -h /sdcard')">存储信息</button>
-                    </div>
-                </div>
-            </div>
+            </section>
 
-            <div id="chat" class="tab-content chat-page" style="display: none;">
-                <div class="chat-header">
-                    <div class="chat-header-top">
-                        <div class="chat-title-section">
-                            <div class="chat-title">
-                                AI 助手
-                                <span class="chat-provider-badge" id="chat-provider-badge">选择供应商</span>
-                            </div>
-                            <div class="chat-subtitle">智能对话与设备控制</div>
-                        </div>
-                        <div class="chat-header-actions">
-                            <button class="chat-icon-button" onclick="aiNewSession()" title="新对话">
-                                <i class="fas fa-plus"></i>
-                            </button>
-                            <button class="chat-icon-button" onclick="aiScreenshotAnalyze()" title="截图分析">
-                                <i class="fas fa-camera"></i>
-                            </button>
-                        </div>
+            <!-- ========== AI Chat ========== -->
+            <section id="tab-chat" class="tab-content" style="display:none;">
+                <div class="ds-chat-page">
+                <div class="ds-chat-header">
+                    <div class="ds-page-intro" style="flex:1;">
+                        <h1 style="font-size:1.25rem;font-weight:700;">AI 助手</h1>
                     </div>
-                    <div class="chat-config-panel">
-                        <div class="provider-selector" id="provider-selector"></div>
+                    <div class="provider-selector" id="provider-selector">
+                        <div class="ds-chat-current-config">
+                            <span id="current-provider-name">未选择</span>
+                            <span id="current-model-name" class="ds-badge-success">--</span>
+                        </div>
+                        <button class="ds-btn-secondary" style="font-size:0.75rem;padding:4px 10px;" onclick="openProviderModal()">管理</button>
                     </div>
                 </div>
+                <div class="ds-chat-messages" id="chat-messages">
+                    <div class="ds-empty-state">
+                        <i class="fas fa-robot" style="font-size:2.5rem;opacity:0.3;"></i>
+                        <p>开始与 AI 对话吧</p>
+                        <p style="font-size:0.8rem;opacity:0.5;">选择一个提供商并输入消息</p>
+                    </div>
+                </div>
+                <div class="ds-chat-composer-wrap">
+                    <div class="ds-chat-composer">
+                        <textarea class="ds-chat-input" id="chat-input" placeholder="输入消息..." rows="1"></textarea>
+                        <button class="ds-chat-send-button" id="chat-send-btn" onclick="sendChatMessage()">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m0 0l-7 7m7-7l7 7"/></svg>
+                        </button>
+                    </div>
+                </div>
+                </div>
+            </section>
 
-                <div id="chat-messages" class="chat-messages">
-                    <div class="chat-empty">
-                        <div class="chat-empty-icon"><i class="fas fa-comments"></i></div>
-                        <div class="chat-empty-title">开始对话</div>
-                        <div class="chat-empty-description">选择AI供应商后，输入消息开始与AI助手对话</div>
+            <!-- ========== Mirror ========== -->
+            <section id="tab-mirror" class="tab-content page-content" style="display:none;">
+                <div class="ds-page-intro">
+                    <div>
+                        <h1 class="ds-page-intro-title">屏幕投屏</h1>
+                        <p class="ds-page-intro-description">实时查看和控制设备屏幕</p>
+                    </div>
+                    <div class="ds-page-intro-actions">
+                        <button class="ds-btn-primary" id="mirror-start-btn" onclick="startMirror()"><i class="fas fa-play"></i> 开始投屏</button>
+                        <button class="ds-btn-danger" id="mirror-stop-btn" onclick="stopMirror()" style="display:none;"><i class="fas fa-stop"></i> 停止投屏</button>
                     </div>
                 </div>
+                <div class="mirror-container" id="mirror-container">
+                    <div class="ds-empty-state" id="mirror-placeholder">
+                        <i class="fas fa-desktop" style="font-size:2.5rem;opacity:0.3;"></i>
+                        <p>点击"开始投屏"连接设备</p>
+                    </div>
+                    <canvas id="mirror-canvas" style="display:none;width:100%;height:100%;object-fit:contain;"></canvas>
+                    <div class="mirror-status-overlay" id="mirror-status" style="display:none;">
+                        <span id="mirror-status-text">连接中...</span>
+                    </div>
+                    <div class="mirror-recording-indicator" id="mirror-recording" style="display:none;">
+                        <span class="recording-dot"></span> 录制中
+                    </div>
+                </div>
+            </section>
 
-                <div class="chat-composer-wrap">
-                    <div class="chat-composer">
-                        <textarea id="chat-input" class="chat-input" placeholder="输入消息..." rows="1"
-                            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();aiChatSend();}"
-                            oninput="adjustTextareaHeight(this)"></textarea>
-                        <div id="chat-attachments" class="chat-attachments"></div>
-                        <div class="chat-composer-actions">
-                            <div class="chat-current-config" id="chat-current-config">选择供应商开始</div>
-                            <div class="chat-composer-buttons">
-                                <label class="chat-attachment-button" for="chat-file-input">
-                                    <i class="fas fa-image"></i>
-                                </label>
-                                <input type="file" id="chat-file-input" accept="image/*" class="file-input" onchange="uploadChatImage(this)">
-                                <button class="chat-send-button" id="chat-send-btn" onclick="aiChatSend()" disabled>
-                                    <i class="fas fa-paper-plane"></i>
-                                </button>
-                            </div>
-                        </div>
+            <!-- ========== Tasks ========== -->
+            <section id="tab-tasks" class="tab-content page-content" style="display:none;">
+                <div class="ds-page-intro">
+                    <div>
+                        <h1 class="ds-page-intro-title">任务管理</h1>
+                        <p class="ds-page-intro-description">管理定时任务与命令</p>
+                    </div>
+                    <div class="ds-page-intro-actions">
+                        <button class="ds-btn-primary" onclick="openTaskModal()"><i class="fas fa-plus"></i> 添加任务</button>
                     </div>
                 </div>
-            </div>
+                <div id="task-list">
+                    <div class="ds-empty-state">
+                        <div class="ds-empty-state-icon"><i class="fas fa-clipboard-list"></i></div>
+                        <div class="ds-empty-state-title">暂无任务</div>
+                        <div class="ds-empty-state-description">点击"添加任务"创建定时任务</div>
+                    </div>
+                </div>
+            </section>
 
-            <div id="mirror" class="tab-content" style="display: none; padding: 20px; overflow-y: auto;">
-                <div class="section-card">
-                    <h2>屏幕投屏</h2>
-                    <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
-                        <button class="btn-primary" onclick="startMirror()" id="mirror-start-btn">开始投屏</button>
-                        <button class="btn-danger" onclick="stopMirror()" id="mirror-stop-btn" style="display: none;">停止投屏</button>
-                        <button class="btn-secondary" onclick="startRecording()" id="record-start-btn" style="display: none;">开始录屏</button>
-                        <button class="btn-danger" onclick="stopRecording()" id="record-stop-btn" style="display: none;">停止录屏</button>
-                    </div>
-                    <div style="border: 2px solid var(--ds-border); border-radius: var(--radius-ctrl); overflow: hidden; background: var(--ds-bg); position: relative; display: flex; align-items: center; justify-content: center; min-height: 400px;">
-                        <video id="mirror-video" style="max-width: 100%; max-height: 600px; border-radius: 6px; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.1);" autoplay playsinline muted></video>
-                        <canvas id="mirror-canvas" style="max-width: 100%; max-height: 600px; display: none; border-radius: 6px; background: #1a1a1a;"></canvas>
-                        <div id="mirror-placeholder" style="text-align: center; color: var(--ds-text-tertiary);">
-                            <div style="width: 64px; height: 64px; border: 2px dashed var(--ds-border); border-radius: 50%; margin: 0 auto 15px; display: flex; align-items: center; justify-content: center;">
-                                <i class="fas fa-desktop" style="font-size: 24px;"></i>
-                            </div>
-                            <div style="font-size: 15px; font-weight: 500; margin-bottom: 5px;">点击"开始投屏"连接设备</div>
-                            <div style="font-size: 13px;">确保手机已安装TaskMod服务</div>
-                        </div>
-                        <div id="mirror-status" style="position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.6); color: white; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; backdrop-filter: blur(4px); display: none;">等待连接...</div>
-                        <div id="recording-indicator" style="position: absolute; top: 10px; right: 10px; background: var(--ds-danger); color: white; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; display: none;">
-                            <span style="animation: blink 1s infinite;">●</span> 录屏中
-                        </div>
-                    </div>
-                    <div style="margin-top: 10px; display: flex; gap: 15px; font-size: 12px; color: var(--ds-text-tertiary);">
-                        <span id="mirror-res">分辨率: -</span>
-                        <span id="mirror-fps">帧率: -</span>
-                        <span id="mirror-bitrate">码率: -</span>
+            <!-- ========== Scripts ========== -->
+            <section id="tab-scripts" class="tab-content page-content" style="display:none;">
+                <div class="ds-page-intro">
+                    <div>
+                        <h1 class="ds-page-intro-title">脚本管理</h1>
+                        <p class="ds-page-intro-description">管理与运行自定义脚本</p>
                     </div>
                 </div>
-                <div class="section-card">
-                    <h2>基础控制</h2>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px;">
-                        <button class="btn-secondary" onclick="sendControl('back')">返回</button>
-                        <button class="btn-secondary" onclick="sendControl('home')">Home</button>
-                        <button class="btn-secondary" onclick="sendControl('recents')">多任务</button>
-                        <button class="btn-secondary" onclick="sendControl('power')">电源</button>
-                        <button class="btn-secondary" onclick="sendControl('volume_up')">音量+</button>
-                        <button class="btn-secondary" onclick="sendControl('volume_down')">音量-</button>
+                <div id="script-list">
+                    <div class="ds-empty-state">
+                        <div class="ds-empty-state-icon"><i class="fas fa-code"></i></div>
+                        <div class="ds-empty-state-title">暂无脚本</div>
+                        <div class="ds-empty-state-description">通过配置页面或文件管理添加脚本</div>
                     </div>
                 </div>
-                <div class="section-card">
-                    <h2>剪贴板同步</h2>
-                    <div style="display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;">
-                        <button class="btn-secondary" onclick="getDeviceClipboard()">获取设备剪贴板</button>
-                        <button class="btn-primary" onclick="setDeviceClipboard()">设置设备剪贴板</button>
-                    </div>
-                    <textarea id="clipboard-text" rows="3" placeholder="剪贴板内容..." style="width: 100%; resize: vertical;"></textarea>
-                </div>
-            </div>
+            </section>
 
-            <div id="tts" class="tab-content" style="display: none; padding: 20px; overflow-y: auto;">
-                <div class="section-card">
-                    <h2>文本转语音 (TTS)</h2>
+            <!-- ========== TTS ========== -->
+            <section id="tab-tts" class="tab-content page-content" style="display:none;">
+                <div class="ds-page-intro">
+                    <div>
+                        <h1 class="ds-page-intro-title">TTS 语音合成</h1>
+                        <p class="ds-page-intro-description">文本转语音控制面板</p>
+                    </div>
+                </div>
+                <div class="tts-control-panel">
                     <div class="form-group">
                         <label>语音引擎</label>
-                        <select id="tts-engine" onchange="loadTtsLanguages()"></select>
-                    </div>
-                    <div class="form-group">
-                        <label>语言</label>
-                        <select id="tts-language"></select>
-                    </div>
-                    <div class="form-group">
-                        <label>语速 (0.5-2.0)</label>
-                        <input type="range" id="tts-rate" min="0.5" max="2.0" step="0.1" value="1.0" style="width: 100%;">
-                        <span id="tts-rate-value" style="font-size: 12px; color: var(--ds-text-tertiary);">1.0</span>
-                    </div>
-                    <div class="form-group">
-                        <label>音调 (-10 to 10)</label>
-                        <input type="range" id="tts-pitch" min="-10" max="10" step="1" value="0" style="width: 100%;">
-                        <span id="tts-pitch-value" style="font-size: 12px; color: var(--ds-text-tertiary);">0</span>
-                    </div>
-                    <div class="form-group">
-                        <label>音量 (0.0-1.0)</label>
-                        <input type="range" id="tts-volume" min="0" max="1" step="0.1" value="1.0" style="width: 100%;">
-                        <span id="tts-volume-value" style="font-size: 12px; color: var(--ds-text-tertiary);">1.0</span>
+                        <select id="tts-engine" class="ds-chat-input">
+                            <option value="">加载中...</option>
+                        </select>
                     </div>
                     <div class="form-group">
                         <label>文本内容</label>
-                        <textarea id="tts-text" rows="4" placeholder="输入要朗读的文本..." style="width: 100%; resize: vertical;"></textarea>
+                        <textarea id="tts-text" class="ds-chat-input" rows="4" placeholder="输入要朗读的文本..."></textarea>
                     </div>
-                    <button class="btn-primary" onclick="speakText()">开始朗读</button>
-                    <button class="btn-secondary" onclick="stopTts()">停止朗读</button>
-                    <div id="tts-status" style="margin-top: 15px; font-size: 12px; color: var(--ds-text-secondary);"></div>
-                </div>
-                <div class="section-card">
-                    <h2>常用短语</h2>
-                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                        <button class="btn-secondary" onclick="quickSpeak('你好，欢迎使用TaskMod')">你好</button>
-                        <button class="btn-secondary" onclick="quickSpeak('今天天气怎么样')">天气</button>
-                        <button class="btn-secondary" onclick="quickSpeak('现在时间是')">时间</button>
-                        <button class="btn-secondary" onclick="quickSpeak('提醒我')">提醒</button>
-                        <button class="btn-secondary" onclick="quickSpeak('打开应用')">打开应用</button>
+                    <div class="form-group">
+                        <label>语速 <span id="tts-speed-val">1.0</span></label>
+                        <input type="range" id="tts-speed" min="0.5" max="2.0" step="0.1" value="1.0" oninput="document.getElementById('tts-speed-val').textContent=this.value">
+                    </div>
+                    <div class="form-group">
+                        <label>音调 <span id="tts-pitch-val">1.0</span></label>
+                        <input type="range" id="tts-pitch" min="0.5" max="2.0" step="0.1" value="1.0" oninput="document.getElementById('tts-pitch-val').textContent=this.value">
+                    </div>
+                    <div class="form-group">
+                        <label>音量 <span id="tts-volume-val">1.0</span></label>
+                        <input type="range" id="tts-volume" min="0.0" max="1.0" step="0.1" value="1.0" oninput="document.getElementById('tts-volume-val').textContent=this.value">
+                    </div>
+                    <div style="display:flex;gap:12px;">
+                        <button class="ds-btn-primary" onclick="speakTTS()"><i class="fas fa-play"></i> 朗读</button>
+                        <button class="ds-btn-danger" onclick="stopTTS()"><i class="fas fa-stop"></i> 停止</button>
                     </div>
                 </div>
-            </div>
+            </section>
 
-            <div id="tasks" class="tab-content" style="display: none; padding: 20px; overflow-y: auto;">
-                <div class="section-card">
-                    <h2>定时任务列表</h2>
-                    <button class="btn-primary" onclick="showModal('addTaskModal')" style="margin-bottom: 15px;">+ 添加任务</button>
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <thead>
-                            <tr>
-                                <th style="border-bottom: 1px solid var(--ds-border); padding: 10px; text-align: left; background: var(--ds-surface);">ID</th>
-                                <th style="border-bottom: 1px solid var(--ds-border); padding: 10px; text-align: left; background: var(--ds-surface);">时间</th>
-                                <th style="border-bottom: 1px solid var(--ds-border); padding: 10px; text-align: left; background: var(--ds-surface);">脚本</th>
-                                <th style="border-bottom: 1px solid var(--ds-border); padding: 10px; text-align: left; background: var(--ds-surface);">操作</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tasks-table"></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div id="scripts" class="tab-content" style="display: none; padding: 20px; overflow-y: auto;">
-                <div class="section-card">
-                    <h2>脚本列表</h2>
-                    <button class="btn-primary" onclick="showModal('newScriptModal')" style="margin-bottom: 15px;">+ 新建脚本</button>
-                    <div id="scripts-list"></div>
-                </div>
-            </div>
-
-            <div id="config" class="tab-content" style="display: none; padding: 20px; overflow-y: auto;">
-                <div class="section-card">
-                    <h2>配置编辑</h2>
-                    <textarea id="config-content" rows="20" style="font-family: monospace; width: 100%;"></textarea>
-                    <button class="btn-primary" onclick="saveConfig()" style="margin-top: 15px;">保存配置</button>
-                </div>
-            </div>
-
-            <div id="logs" class="tab-content" style="display: none; padding: 20px; overflow-y: auto;">
-                <div class="section-card">
-                    <h2>执行日志</h2>
-                    <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                        <button class="btn-primary" onclick="loadLogs()">刷新日志</button>
-                        <button class="btn-danger" onclick="clearLogs()">清空日志</button>
+            <!-- ========== Config ========== -->
+            <section id="tab-config" class="tab-content page-content" style="display:none;">
+                <div class="ds-page-intro">
+                    <div>
+                        <h1 class="ds-page-intro-title">配置</h1>
+                        <p class="ds-page-intro-description">系统与服务配置</p>
                     </div>
-                    <div id="log-viewer" style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: var(--radius-ctrl); font-family: monospace; font-size: 13px; max-height: 500px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;">加载中...</div>
                 </div>
+                <div style="display:flex;flex-direction:column;gap:16px;">
+                    <!-- Email Config -->
+                    <div class="ds-card" style="padding:20px;">
+                        <h3 style="font-weight:600;margin-bottom:16px;"><i class="fas fa-envelope"></i> 邮件配置 (SMTP)</h3>
+                        <div class="form-group">
+                            <label>SMTP 服务器</label>
+                            <input type="text" id="cfg-smtp-host" class="ds-chat-input" placeholder="smtp.example.com">
+                        </div>
+                        <div class="form-group">
+                            <label>端口</label>
+                            <input type="number" id="cfg-smtp-port" class="ds-chat-input" placeholder="587">
+                        </div>
+                        <div class="form-group">
+                            <label>用户名</label>
+                            <input type="text" id="cfg-smtp-user" class="ds-chat-input" placeholder="user@example.com">
+                        </div>
+                        <div class="form-group">
+                            <label>密码</label>
+                            <input type="password" id="cfg-smtp-pass" class="ds-chat-input" placeholder="••••••••">
+                        </div>
+                        <div class="form-group">
+                            <label>收件人</label>
+                            <input type="text" id="cfg-smtp-to" class="ds-chat-input" placeholder="recipient@example.com">
+                        </div>
+                        <div class="config-row" style="margin-top:8px;">
+                            <button class="ds-btn-primary" onclick="saveEmailConfig()"><i class="fas fa-save"></i> 保存邮件配置</button>
+                            <button class="ds-btn-secondary" onclick="testSendEmail()"><i class="fas fa-paper-plane"></i> 发送测试邮件</button>
+                        </div>
+                    </div>
+
+                    <!-- MQTT Config -->
+                    <div class="ds-card" style="padding:20px;">
+                        <h3 style="font-weight:600;margin-bottom:16px;"><i class="fas fa-broadcast-tower"></i> MQTT 配置</h3>
+                        <div class="form-group">
+                            <label>Broker 地址</label>
+                            <input type="text" id="cfg-mqtt-broker" class="ds-chat-input" placeholder="mqtt://broker.example.com:1883">
+                        </div>
+                        <div class="form-group">
+                            <label>主题 (Topic)</label>
+                            <input type="text" id="cfg-mqtt-topic" class="ds-chat-input" placeholder="taskmod/commands">
+                        </div>
+                        <div class="form-group">
+                            <label>客户端 ID</label>
+                            <input type="text" id="cfg-mqtt-clientid" class="ds-chat-input" placeholder="taskmod-client">
+                        </div>
+                        <div class="form-group">
+                            <label>用户名 (可选)</label>
+                            <input type="text" id="cfg-mqtt-user" class="ds-chat-input" placeholder="">
+                        </div>
+                        <div class="form-group">
+                            <label>密码 (可选)</label>
+                            <input type="password" id="cfg-mqtt-pass" class="ds-chat-input" placeholder="••••••••">
+                        </div>
+                        <button class="ds-btn-primary" onclick="saveMqttConfig()" style="margin-top:8px;"><i class="fas fa-save"></i> 保存 MQTT 配置</button>
+                    </div>
+
+                    <!-- System Command -->
+                    <div class="ds-card" style="padding:20px;">
+                        <h3 style="font-weight:600;margin-bottom:16px;"><i class="fas fa-terminal"></i> 系统命令</h3>
+                        <div class="form-group">
+                            <label>执行命令</label>
+                            <input type="text" id="cfg-command" class="ds-chat-input" placeholder="输入要执行的 shell 命令...">
+                        </div>
+                        <div class="form-group">
+                            <label>命令输出</label>
+                            <pre id="cfg-command-output" class="ds-info-panel" style="min-height:60px;max-height:200px;overflow-y:auto;font-size:0.8rem;">等待执行...</pre>
+                        </div>
+                        <button class="ds-btn-primary" onclick="execCommand()"><i class="fas fa-play"></i> 执行</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ========== Logs ========== -->
+            <section id="tab-logs" class="tab-content page-content" style="display:none;">
+                <div class="ds-page-intro">
+                    <div>
+                        <h1 class="ds-page-intro-title">日志</h1>
+                        <p class="ds-page-intro-description">查看系统运行日志</p>
+                    </div>
+                    <div class="ds-page-intro-actions">
+                        <label class="ds-chat-text-button" style="cursor:pointer;font-size:11px;">
+                            <input type="checkbox" id="log-autorefresh-cb" style="margin-right:4px;"> 自动刷新
+                        </label>
+                        <button class="ds-btn-danger" onclick="clearLogs()"><i class="fas fa-trash"></i> 清除</button>
+                    </div>
+                </div>
+                <div class="log-viewer" id="log-viewer">
+                    <div class="ds-empty-state">
+                        <div class="ds-empty-state-icon"><i class="fas fa-scroll"></i></div>
+                        <div class="ds-empty-state-title">暂无日志</div>
+                        <div class="ds-empty-state-description">系统日志将在此显示</div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Task Modal -->
+    <div class="ds-modal-overlay" id="task-modal" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+        <div class="ds-modal-card">
+            <h3 style="font-weight:700;font-size:1.1rem;margin-bottom:16px;" id="task-modal-title">添加任务</h3>
+            <div class="form-group">
+                <label>任务名称</label>
+                <input type="text" id="task-name" class="ds-chat-input" placeholder="任务名称">
+            </div>
+            <div class="form-group">
+                <label>执行命令</label>
+                <input type="text" id="task-command" class="ds-chat-input" placeholder="shell 命令">
+            </div>
+            <div class="form-group">
+                <label>调度 (cron 表达式)</label>
+                <input type="text" id="task-schedule" class="ds-chat-input" placeholder="0 */6 * * *">
+            </div>
+            <input type="hidden" id="task-edit-id">
+            <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:16px;">
+                <button class="ds-btn-secondary" onclick="document.getElementById('task-modal').style.display='none'">取消</button>
+                <button class="ds-btn-primary" onclick="saveTask()">保存</button>
             </div>
         </div>
     </div>
 
-    <div class="modal" id="addTaskModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>添加任务</h3>
-                <button class="modal-close" onclick="hideModal('addTaskModal')">&times;</button>
+    <!-- Script Editor Modal -->
+    <div class="ds-modal-overlay" id="script-modal" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+        <div class="ds-modal-card" style="width:90vw;max-width:800px;height:80vh;">
+            <h3 style="font-weight:700;font-size:1.1rem;margin-bottom:16px;" id="script-modal-title">编辑脚本</h3>
+            <div class="form-group" style="flex:1;display:flex;flex-direction:column;">
+                <label>脚本内容</label>
+                <textarea id="script-editor" class="ds-chat-input" style="flex:1;font-family:monospace;font-size:0.85rem;resize:none;" placeholder="# 在此编写脚本..."></textarea>
             </div>
-            <div class="form-group">
-                <label>时间 (HH:MM)</label>
-                <input type="text" id="task-time" placeholder="08:00">
+            <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:12px;">
+                <button class="ds-btn-secondary" onclick="document.getElementById('script-modal').style.display='none'">取消</button>
+                <button class="ds-btn-primary" onclick="saveScript()">保存</button>
             </div>
-            <div class="form-group">
-                <label>脚本</label>
-                <select id="task-script"></select>
-            </div>
-            <button class="btn-primary" onclick="addTask()">添加</button>
         </div>
     </div>
 
-    <div class="modal" id="newScriptModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>新建脚本</h3>
-                <button class="modal-close" onclick="hideModal('newScriptModal')">&times;</button>
-            </div>
+    <!-- Provider Modal -->
+    <div class="ds-modal-overlay" id="provider-modal" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+        <div class="ds-modal-card" style="max-width:600px;">
+            <h3 style="font-weight:700;font-size:1.1rem;margin-bottom:16px;">AI 提供商管理</h3>
+            <div id="provider-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;max-height:300px;overflow-y:auto;"></div>
             <div class="form-group">
                 <label>名称</label>
-                <input type="text" id="script-name" placeholder="脚本名称">
+                <input type="text" id="prov-name" class="ds-chat-input" placeholder="My Provider">
             </div>
             <div class="form-group">
-                <label>内容</label>
-                <textarea id="script-content" rows="10" placeholder="脚本内容..."></textarea>
+                <label>API 地址</label>
+                <input type="text" id="prov-url" class="ds-chat-input" placeholder="https://api.openai.com/v1">
             </div>
-            <button class="btn-primary" onclick="saveScript()">保存</button>
+            <div class="form-group">
+                <label>API Key</label>
+                <input type="password" id="prov-key" class="ds-chat-input" placeholder="sk-...">
+            </div>
+            <div class="form-group">
+                <label>模型</label>
+                <input type="text" id="prov-model" class="ds-chat-input" placeholder="gpt-4o">
+            </div>
+            <input type="hidden" id="prov-edit-id">
+            <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:12px;">
+                <button class="ds-btn-secondary" onclick="document.getElementById('provider-modal').style.display='none'">关闭</button>
+                <button class="ds-btn-primary" onclick="saveProvider()"><i class="fas fa-plus"></i> 添加/更新</button>
+            </div>
         </div>
     </div>
 
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
     <script>
-        function showTab(tabId) {
-            document.querySelectorAll('.tab-content').forEach(el => {
-                el.style.display = 'none';
-            });
-            document.querySelectorAll('.sidebar-tab').forEach(el => {
-                el.classList.remove('active');
-            });
-            document.getElementById(tabId).style.display = tabId === 'chat' ? 'flex' : 'block';
-            event.target.classList.add('active');
-            
-            if (tabId === 'dashboard') refreshStatus();
-            if (tabId === 'tasks') loadTasks();
-            if (tabId === 'scripts') loadScripts();
-            if (tabId === 'logs') loadLogs();
-            if (tabId === 'chat') loadProviders();
+    /* ===== Global State ===== */
+    let currentTab = 'dashboard';
+    let chatWs = null;
+    let mirrorWs = null;
+    let mirrorDecoder = null;
+    let logAutoRefreshInterval = null;
+    let currentProviderId = '';
+    let currentModel = '';
+    let isChatStreaming = false;
+
+    /* ===== Tab Switching ===== */
+    function showTab(name) {
+        document.querySelectorAll('.side-tab').forEach((t, i) => {
+            const tabs = ['dashboard','chat','mirror','tasks','scripts','tts','config','logs'];
+            t.classList.toggle('side-tab-active', tabs[i] === name);
+        });
+        ['dashboard','chat','mirror','tasks','scripts','tts','config','logs'].forEach(id => {
+            const el = document.getElementById('tab-' + id);
+            if (el) el.style.display = id === name ? 'flex' : 'none';
+        });
+        currentTab = name;
+        if (name === 'dashboard') refreshStatus();
+        if (name === 'tasks') loadTasks();
+        if (name === 'scripts') loadScripts();
+        if (name === 'tts') loadTtsEngines();
+        if (name === 'config') { loadEmailConfig(); loadMqttConfig(); }
+        if (name === 'logs') loadLogs();
+        if (name === 'chat') loadProviders();
+    }
+
+    /* ===== Theme Toggle ===== */
+    function toggleTheme() {
+        const root = document.documentElement;
+        const isDark = root.classList.toggle('dark');
+        root.style.colorScheme = isDark ? 'dark' : 'light';
+    }
+
+    /* ===== API Helpers ===== */
+    async function apiGet(url) {
+        try {
+            const res = await fetch(url);
+            const json = await res.json();
+            return json;
+        } catch (e) {
+            showToast('请求失败: ' + e.message, 'error');
+            return { ok: false, message: e.message };
         }
+    }
 
-        function toggleTheme() {
-            const body = document.body;
-            const label = document.getElementById('theme-label');
-            const icon = document.getElementById('theme-icon');
-            if (body.getAttribute('data-theme') === 'dark') {
-                body.removeAttribute('data-theme');
-                label.textContent = '深色模式';
-                icon.className = 'fas fa-moon';
-            } else {
-                body.setAttribute('data-theme', 'dark');
-                label.textContent = '浅色模式';
-                icon.className = 'fas fa-sun';
-            }
-        }
-
-        function showModal(id) {
-            document.getElementById(id).classList.add('show');
-        }
-
-        function hideModal(id) {
-            document.getElementById(id).classList.remove('show');
-        }
-
-        function showToast(message, type = 'success') {
-            const toast = document.createElement('div');
-            toast.className = `toast ${type}`;
-            toast.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'times-circle' : 'info-circle'}"></i>${message}`;
-            document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 3000);
-        }
-
-        async function api(url, options = {}) {
-            const response = await fetch(url, {
-                headers: { 'Content-Type': 'application/json' },
-                ...options
-            });
-            return await response.json();
-        }
-
-        function adjustTextareaHeight(el) {
-            el.style.height = 'auto';
-            el.style.height = Math.min(el.scrollHeight, 180) + 'px';
-        }
-
-        async function refreshStatus() {
-            const status = await api('/api/status');
-            if (status.success) {
-                document.getElementById('device-status').textContent = status.data.device || '未知';
-                document.getElementById('battery-status').textContent = status.data.battery || '未知';
-                document.getElementById('script-count').textContent = status.data.scripts || 0;
-                document.getElementById('task-count').textContent = status.data.tasks || 0;
-            }
-        }
-
-        async function loadTasks() {
-            const data = await api('/api/tasks');
-            const tbody = document.getElementById('tasks-table');
-            if (!data.success || !data.data.length) {
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--ds-text-tertiary);padding:20px;">暂无任务</td></tr>';
-                return;
-            }
-            tbody.innerHTML = data.data.map(t => `
-                <tr style="border-bottom: 1px solid var(--ds-border);">
-                    <td style="padding: 10px;">${t.id}</td>
-                    <td style="padding: 10px;">${t.time}</td>
-                    <td style="padding: 10px;">${t.script}</td>
-                    <td style="padding: 10px;">
-                        <button class="btn-secondary" style="padding: 4px 10px; font-size: 12px;" onclick="triggerScript('${t.script}')">执行</button>
-                        <button class="btn-danger" style="padding: 4px 10px; font-size: 12px;" onclick="deleteTask(${t.id})">删除</button>
-                    </td>
-                </tr>
-            `).join('');
-        }
-
-        async function addTask() {
-            const time = document.getElementById('task-time').value;
-            const script = document.getElementById('task-script').value;
-            if (!time || !script) {
-                showToast('请填写完整信息', 'error');
-                return;
-            }
-            const data = await api('/api/tasks', { method: 'POST', body: JSON.stringify({ time, script, day: '*' }) });
-            if (data.success) {
-                showToast('添加成功');
-                hideModal('addTaskModal');
-                loadTasks();
-            } else {
-                showToast('添加失败', 'error');
-            }
-        }
-
-        async function deleteTask(id) {
-            if (!confirm('确定删除此任务？')) return;
-            const data = await api(`/api/tasks/${id}`, { method: 'DELETE' });
-            if (data.success) {
-                showToast('删除成功');
-                loadTasks();
-            }
-        }
-
-        async function loadScripts() {
-            const data = await api('/api/scripts');
-            const list = document.getElementById('scripts-list');
-            if (!data.success || !data.data.length) {
-                list.innerHTML = '<p style="color:var(--ds-text-tertiary);text-align:center;padding:20px;">暂无脚本</p>';
-                return;
-            }
-            list.innerHTML = data.data.map(s => `
-                <div style="border-bottom: 1px solid var(--ds-border); padding: 12px; display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <div style="font-weight: 500;">${s.name}</div>
-                        <div style="font-size: 12px; color: var(--ds-text-tertiary);">${s.size} bytes</div>
-                    </div>
-                    <div style="display: flex; gap: 8px;">
-                        <button class="btn-secondary" style="padding: 4px 10px; font-size: 12px;" onclick="editScript('${s.name}')">编辑</button>
-                        <button class="btn-primary" style="padding: 4px 10px; font-size: 12px;" onclick="triggerScript('${s.name}')">执行</button>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        async function saveScript() {
-            const name = document.getElementById('script-name').value;
-            const content = document.getElementById('script-content').value;
-            if (!name) {
-                showToast('请输入脚本名称', 'error');
-                return;
-            }
-            const data = await api(`/api/scripts/${name}`, { method: 'PUT', body: JSON.stringify({ content }) });
-            if (data.success) {
-                showToast('保存成功');
-                hideModal('newScriptModal');
-                loadScripts();
-            } else {
-                showToast('保存失败', 'error');
-            }
-        }
-
-        async function editScript(name) {
-            const data = await api(`/api/scripts/${name}`);
-            if (data.success) {
-                document.getElementById('script-name').value = name;
-                document.getElementById('script-content').value = data.data.content;
-                showModal('newScriptModal');
-            }
-        }
-
-        async function triggerScript(name) {
-            const data = await api('/api/trigger', { method: 'POST', body: JSON.stringify({ script: name }) });
-            if (data.success) {
-                showToast(`脚本 ${name} 已触发`);
-            } else {
-                showToast('触发失败', 'error');
-            }
-        }
-
-        async function loadLogs() {
-            const data = await api('/api/logs');
-            document.getElementById('log-viewer').textContent = data.success ? data.data : '加载失败';
-        }
-
-        async function clearLogs() {
-            if (!confirm('确定清空日志？')) return;
-            await api('/api/logs/clear', { method: 'POST' });
-            loadLogs();
-        }
-
-        async function saveConfig() {
-            const content = document.getElementById('config-content').value;
-            const data = await api('/api/config', { method: 'PUT', body: JSON.stringify({ content }) });
-            if (data.success) {
-                showToast('保存成功');
-            } else {
-                showToast('保存失败', 'error');
-            }
-        }
-
-        async function takeScreenshot() {
-            showToast('正在截图...');
-            const data = await api('/api/screenshots/take', { method: 'POST' });
-            if (data.success) {
-                showToast('截图成功');
-            } else {
-                showToast('截图失败', 'error');
-            }
-        }
-
-        async function quickCmd(cmd) {
-            const data = await api('/api/command', { method: 'POST', body: JSON.stringify({ command: cmd }) });
-            if (data.success) {
-                showToast('命令已执行');
-            } else {
-                showToast('执行失败', 'error');
-            }
-        }
-
-        async function getClipboard() {
-            const data = await api('/api/device/clipboard');
-            if (data.success) {
-                showToast('已获取剪贴板');
-            } else {
-                showToast('获取失败', 'error');
-            }
-        }
-
-        let aiWs = null;
-        let aiSessionId = null;
-        let aiCurrentMessages = [];
-        let aiStreamBuf = '';
-        let aiThinkingBuf = '';
-        let aiCurrentProvider = null;
-        let pendingImages = [];
-
-        async function loadProviders() {
-            const data = await api('/api/ai/providers');
-            const selector = document.getElementById('provider-selector');
-            const badge = document.getElementById('chat-provider-badge');
-            if (!data.success || !data.data.length) {
-                selector.innerHTML = '<span style="color: var(--ds-text-tertiary);">请先添加AI供应商</span>';
-                badge.textContent = '未配置';
-                return;
-            }
-            const enabledProviders = data.data.filter(p => p.enabled);
-            selector.innerHTML = enabledProviders.map(p => `
-                <button class="provider-option ${aiCurrentProvider === p.id ? 'active' : ''}" onclick="selectProvider('${p.id}', '${p.name}', '${p.model}')">
-                    ${p.name}
-                </button>
-            `).join('');
-            if (!aiCurrentProvider && enabledProviders.length > 0) {
-                selectProvider(enabledProviders[0].id, enabledProviders[0].name, enabledProviders[0].model);
-            }
-        }
-
-        function selectProvider(id, name, model) {
-            aiCurrentProvider = id;
-            document.querySelectorAll('.provider-option').forEach(el => el.classList.remove('active'));
-            event.target.classList.add('active');
-            document.getElementById('chat-provider-badge').textContent = name;
-            document.getElementById('chat-current-config').textContent = `${name} · ${model}`;
-            document.getElementById('chat-send-btn').disabled = false;
-        }
-
-        async function aiNewSession() {
-            if (!aiCurrentProvider) {
-                showToast('请先选择AI供应商', 'error');
-                return;
-            }
-            const data = await api('/api/ai/sessions', { method: 'POST', body: JSON.stringify({ provider_id: aiCurrentProvider }) });
-            if (data.success) {
-                aiSessionId = data.data.id;
-                aiCurrentMessages = [];
-                aiStreamBuf = '';
-                aiThinkingBuf = '';
-                renderChat();
-                showToast('新对话已创建');
-            }
-        }
-
-        function renderChat() {
-            const el = document.getElementById('chat-messages');
-            if (!aiCurrentMessages.length) {
-                el.innerHTML = `
-                    <div class="chat-empty">
-                        <div class="chat-empty-icon"><i class="fas fa-comments"></i></div>
-                        <div class="chat-empty-title">开始对话</div>
-                        <div class="chat-empty-description">输入消息开始与AI助手对话</div>
-                    </div>
-                `;
-                return;
-            }
-            el.innerHTML = aiCurrentMessages.map((m, idx) => {
-                if (m.role === 'user') {
-                    return `
-                        <div class="chat-message-row chat-message-row-user">
-                            <div class="chat-message chat-message-user">${escapeHtml(m.content)}</div>
-                        </div>
-                    `;
-                } else if (m.role === 'assistant') {
-                    const thinkingHtml = m.reasoning ? `
-                        <details class="chat-thinking" open>
-                            <summary>思考过程</summary>
-                            <div>${escapeHtml(m.reasoning)}</div>
-                        </details>
-                    ` : '';
-                    return `
-                        <div class="chat-message-row chat-message-row-assistant">
-                            <div class="chat-message chat-message-assistant">
-                                ${thinkingHtml}
-                                <div class="markdown-body">${parseMarkdown(m.content)}</div>
-                            </div>
-                        </div>
-                    `;
-                } else if (m.role === 'tool') {
-                    return `
-                        <div class="chat-message-row chat-message-row-assistant">
-                            <div class="chat-message chat-message-assistant">
-                                <div class="chat-tool-result">
-                                    <div class="tool-name">工具执行结果</div>
-                                    <div class="tool-output">${escapeHtml(m.content)}</div>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                } else if (m.role === 'system') {
-                    return `
-                        <div class="chat-message-row chat-message-row-assistant">
-                            <div class="chat-message chat-message-assistant">
-                                <div style="background: var(--ds-warning-bg); border: 1px solid var(--ds-warning); padding: 8px 12px; border-radius: var(--radius-ctrl); font-size: 12px; color: var(--ds-text-secondary);">
-                                    ${escapeHtml(m.content)}
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                }
-                return '';
-            }).join('');
-            el.scrollTop = el.scrollHeight;
-        }
-
-        function escapeHtml(text) {
-            if (!text) return '';
-            return text
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#039;');
-        }
-
-        function parseMarkdown(text) {
-            if (!text) return '';
-            let html = escapeHtml(text);
-            html = html.replace(/^(#{1,6})\s+(.+)$/gm, (_, level, content) => `<h${level.length}>${content}</h${level.length}>`);
-            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-            html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-            html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (_, lang, code) => `<pre><code>${code.trim()}</code></pre>`);
-            html = html.replace(/^>\s+(.+)$/gm, '<blockquote>$1</blockquote>');
-            html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
-            html = html.replace(/(<li>.+<\/li>)/g, '<ul>$1</ul>');
-            html = html.replace(/\n\n/g, '</p><p>');
-            html = html.replace(/\n/g, '<br>');
-            html = `<p>${html}</p>`;
-            return html;
-        }
-
-        function uploadChatImage(input) {
-            const file = input.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                const base64 = e.target.result.split(',')[1];
-                pendingImages.push({ name: file.name, data: base64 });
-                const attachments = document.getElementById('chat-attachments');
-                attachments.innerHTML += `
-                    <div class="chat-attachment">
-                        <img src="${e.target.result}">
-                        <span>${file.name}</span>
-                        <button class="chat-attachment-remove" onclick="removeAttachment(this)">×</button>
-                    </div>
-                `;
-            };
-            reader.readAsDataURL(file);
-        }
-
-        function removeAttachment(btn) {
-            btn.parentElement.remove();
-            const index = Array.from(btn.parentElement.parentElement.children).indexOf(btn.parentElement);
-            pendingImages.splice(index, 1);
-        }
-
-        async function aiChatSend() {
-            const input = document.getElementById('chat-input');
-            const content = input.value.trim();
-            if (!content && !pendingImages.length) return;
-            
-            const sendBtn = document.getElementById('chat-send-btn');
-            sendBtn.disabled = true;
-            
-            if (!aiSessionId) {
-                await aiNewSession();
-            }
-            
-            if (!aiSessionId) {
-                sendBtn.disabled = false;
-                return;
-            }
-            
-            const userMsg = { role: 'user', content };
-            aiCurrentMessages.push(userMsg);
-            
-            if (pendingImages.length > 0) {
-                userMsg.content += '\n\n[图片已上传]';
-                pendingImages = [];
-                document.getElementById('chat-attachments').innerHTML = '';
-            }
-            
-            renderChat();
-            input.value = '';
-            adjustTextareaHeight(input);
-            
-            await connectAiWs(content);
-        }
-
-        async function connectAiWs(content) {
-            if (aiWs) {
-                aiWs.close();
-            }
-            
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/api/ai/chat/${aiSessionId}`;
-            
-            aiWs = new WebSocket(wsUrl);
-            aiStreamBuf = '';
-            aiThinkingBuf = '';
-            
-            aiWs.onopen = () => {
-                aiWs.send(JSON.stringify({ content }));
-            };
-            
-            aiWs.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    handleAiMessage(data);
-                } catch (e) {
-                    console.error('解析消息失败:', e);
-                }
-            };
-            
-            aiWs.onerror = () => {
-                document.getElementById('chat-send-btn').disabled = false;
-                showToast('WebSocket连接失败', 'error');
-            };
-            
-            aiWs.onclose = () => {
-                document.getElementById('chat-send-btn').disabled = false;
-            };
-        }
-
-        function handleAiMessage(data) {
-            switch (data.type) {
-                case 'chunk':
-                    aiStreamBuf += data.content;
-                    updateStreamingResponse();
-                    break;
-                case 'thinking':
-                    aiThinkingBuf += data.content;
-                    updateStreamingResponse();
-                    break;
-                case 'tool_call':
-                    aiCurrentMessages.push({
-                        role: 'system',
-                        content: `工具调用: ${data.name}(${data.arguments})`
-                    });
-                    renderChat();
-                    break;
-                case 'tool_result':
-                    aiCurrentMessages.push({
-                        role: 'tool',
-                        content: `工具 ${data.name} 执行结果:\n${data.result}`
-                    });
-                    renderChat();
-                    break;
-                case 'stream_end':
-                    if (aiStreamBuf || aiThinkingBuf) {
-                        aiCurrentMessages.push({
-                            role: 'assistant',
-                            content: aiStreamBuf,
-                            reasoning: aiThinkingBuf
-                        });
-                        aiStreamBuf = '';
-                        aiThinkingBuf = '';
-                        renderChat();
-                    }
-                    break;
-                case 'error':
-                    showToast(data.message || 'AI对话失败', 'error');
-                    break;
-            }
-        }
-
-        function updateStreamingResponse() {
-            const el = document.getElementById('chat-messages');
-            const thinkingHtml = aiThinkingBuf ? `
-                <details class="chat-thinking" open>
-                    <summary>思考过程</summary>
-                    <div>${escapeHtml(aiThinkingBuf)}</div>
-                </details>
-            ` : '';
-            const contentHtml = aiStreamBuf ? `<div class="markdown-body">${parseMarkdown(aiStreamBuf)}<span class="chat-caret"></span></div>` : '';
-            
-            let html = aiCurrentMessages.map((m, idx) => {
-                if (m.role === 'user') {
-                    return `
-                        <div class="chat-message-row chat-message-row-user">
-                            <div class="chat-message chat-message-user">${escapeHtml(m.content)}</div>
-                        </div>
-                    `;
-                } else if (m.role === 'assistant') {
-                    const tHtml = m.reasoning ? `
-                        <details class="chat-thinking" open>
-                            <summary>思考过程</summary>
-                            <div>${escapeHtml(m.reasoning)}</div>
-                        </details>
-                    ` : '';
-                    return `
-                        <div class="chat-message-row chat-message-row-assistant">
-                            <div class="chat-message chat-message-assistant">
-                                ${tHtml}
-                                <div class="markdown-body">${parseMarkdown(m.content)}</div>
-                            </div>
-                        </div>
-                    `;
-                } else if (m.role === 'tool') {
-                    return `
-                        <div class="chat-message-row chat-message-row-assistant">
-                            <div class="chat-message chat-message-assistant">
-                                <div class="chat-tool-result">
-                                    <div class="tool-name">工具执行结果</div>
-                                    <div class="tool-output">${escapeHtml(m.content)}</div>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                } else if (m.role === 'system') {
-                    return `
-                        <div class="chat-message-row chat-message-row-assistant">
-                            <div class="chat-message chat-message-assistant">
-                                <div style="background: var(--ds-warning-bg); border: 1px solid var(--ds-warning); padding: 8px 12px; border-radius: var(--radius-ctrl); font-size: 12px; color: var(--ds-text-secondary);">
-                                    ${escapeHtml(m.content)}
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                }
-                return '';
-            }).join('');
-            
-            html += `
-                <div class="chat-message-row chat-message-row-assistant">
-                    <div class="chat-message chat-message-assistant">
-                        ${thinkingHtml}
-                        ${contentHtml}
-                    </div>
-                </div>
-            `;
-            
-            el.innerHTML = html;
-            el.scrollTop = el.scrollHeight;
-        }
-
-        async function aiScreenshotAnalyze() {
-            showToast('正在分析截图...');
-            const data = await api('/api/screenshots/take', { method: 'POST' });
-            if (!data.success) {
-                showToast('截图失败', 'error');
-                return;
-            }
-            showToast('截图已发送给AI分析');
-            if (!aiSessionId) await aiNewSession();
-            if (aiSessionId) {
-                await connectAiWs('请分析这张截图，告诉我屏幕上显示的内容');
-            }
-        }
-
-        async function getDeviceClipboard() {
-            const data = await api('/api/device/clipboard');
-            if (data.success) {
-                document.getElementById('clipboard-text').value = data.data;
-                showToast('已获取设备剪贴板');
-            } else {
-                showToast('获取失败', 'error');
-            }
-        }
-
-        async function setDeviceClipboard() {
-            const text = document.getElementById('clipboard-text').value;
-            const data = await api('/api/device/clipboard', { 
-                method: 'POST', 
-                body: JSON.stringify({ text }) 
-            });
-            if (data.success) {
-                showToast('已设置设备剪贴板');
-            } else {
-                showToast('设置失败', 'error');
-            }
-        }
-
-        let mirrorWs = null;
-        let mirrorVideo = null;
-        let mirrorCanvas = null;
-        let mirrorCtx = null;
-        let mediaRecorder = null;
-        let recordedChunks = [];
-        let videoDecoder = null;
-        let videoFrameQueue = [];
-        let isRecording = false;
-
-        async function startMirror() {
-            mirrorVideo = document.getElementById('mirror-video');
-            mirrorCanvas = document.getElementById('mirror-canvas');
-            mirrorCtx = mirrorCanvas.getContext('2d');
-            
-            const startBtn = document.getElementById('mirror-start-btn');
-            startBtn.disabled = true;
-            
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            
-            try {
-                const startRes = await api('/api/mirror/start', { 
-                    method: 'POST', 
-                    body: JSON.stringify({ bit_rate: 3000000, fps: 30 }) 
-                });
-                
-                if (!startRes.success) {
-                    showToast('启动投屏失败', 'error');
-                    startBtn.disabled = false;
-                    return;
-                }
-                
-                document.getElementById('mirror-placeholder').style.display = 'none';
-                document.getElementById('mirror-status').style.display = 'block';
-                document.getElementById('mirror-status').textContent = '连接中...';
-                
-                const wsUrl = `${protocol}//${window.location.host}/ws/mirror`;
-                mirrorWs = new WebSocket(wsUrl);
-                
-                mirrorWs.binaryType = 'arraybuffer';
-                
-                mirrorWs.onopen = () => {
-                    document.getElementById('mirror-status').textContent = '已连接';
-                    document.getElementById('mirror-stop-btn').style.display = 'inline-block';
-                    document.getElementById('record-start-btn').style.display = 'inline-block';
-                    startBtn.style.display = 'none';
-                    initVideoDecoder();
-                };
-                
-                mirrorWs.onmessage = (event) => {
-                    if (event.data instanceof ArrayBuffer) {
-                        handleNaluData(new Uint8Array(event.data));
-                    }
-                };
-                
-                mirrorWs.onerror = () => {
-                    document.getElementById('mirror-status').textContent = '连接失败';
-                    startBtn.disabled = false;
-                    startBtn.style.display = 'inline-block';
-                };
-                
-                mirrorWs.onclose = () => {
-                    stopMirror();
-                };
-                
-            } catch (e) {
-                showToast('启动失败: ' + e.message, 'error');
-                startBtn.disabled = false;
-            }
-        }
-
-        function initVideoDecoder() {
-            if (!window.VideoDecoder) {
-                mirrorVideo.style.display = 'none';
-                mirrorCanvas.style.display = 'block';
-                return;
-            }
-            
-            mirrorVideo.style.display = 'block';
-            mirrorCanvas.style.display = 'none';
-            
-            videoDecoder = new VideoDecoder({
-                output: (frame) => {
-                    if (!mirrorVideo.srcObject) {
-                        const stream = mirrorCanvas.captureStream();
-                        mirrorVideo.srcObject = stream;
-                    }
-                    mirrorCtx.drawImage(frame, 0, 0);
-                    frame.close();
-                },
-                error: (e) => {
-                    console.error('VideoDecoder error:', e);
-                    mirrorVideo.style.display = 'none';
-                    mirrorCanvas.style.display = 'block';
-                }
-            });
-            
-            videoDecoder.configure({
-                codec: 'avc1.42E01E',
-                codedWidth: 1920,
-                codedHeight: 1080
-            });
-        }
-
-        let spsData = null;
-        let ppsData = null;
-
-        function handleNaluData(data) {
-            if (data.length < 5) return;
-            
-            const tag = String.fromCharCode(data[0], data[1], data[2], data[3]);
-            const naluData = data.slice(4);
-            
-            if (naluData.length < 1) return;
-            
-            const naluType = (naluData[0] >> 1) & 0x1F;
-            
-            switch (naluType) {
-                case 7:
-                    spsData = naluData;
-                    break;
-                case 8:
-                    ppsData = naluData;
-                    break;
-                case 1:
-                case 5:
-                    if (spsData && ppsData && videoDecoder && videoDecoder.state === 'configured') {
-                        const encodedFrame = new EncodedVideoChunk({
-                            type: naluType === 5 ? 'key' : 'delta',
-                            data: new Uint8Array([...spsData, ...ppsData, ...naluData]),
-                            timestamp: performance.now() * 1000
-                        });
-                        videoDecoder.decode(encodedFrame);
-                    } else {
-                        drawNaluToCanvas(naluData);
-                    }
-                    break;
-            }
-        }
-
-        function drawNaluToCanvas(naluData) {
-            try {
-                const blob = new Blob([naluData], { type: 'video/mp4' });
-                const url = URL.createObjectURL(blob);
-                const img = new Image();
-                img.onload = () => {
-                    mirrorCanvas.width = img.width;
-                    mirrorCanvas.height = img.height;
-                    mirrorCtx.drawImage(img, 0, 0);
-                    URL.revokeObjectURL(url);
-                };
-                img.onerror = () => {
-                    URL.revokeObjectURL(url);
-                };
-                img.src = url;
-            } catch (e) {
-                console.error('Draw error:', e);
-            }
-        }
-
-        async function stopMirror() {
-            if (mirrorWs) {
-                mirrorWs.close();
-                mirrorWs = null;
-            }
-            
-            if (videoDecoder) {
-                videoDecoder.close();
-                videoDecoder = null;
-            }
-            
-            if (mirrorVideo && mirrorVideo.srcObject) {
-                mirrorVideo.srcObject.getTracks().forEach(track => track.stop());
-                mirrorVideo.srcObject = null;
-            }
-            
-            stopRecording();
-            
-            document.getElementById('mirror-status').style.display = 'none';
-            document.getElementById('mirror-stop-btn').style.display = 'none';
-            document.getElementById('record-start-btn').style.display = 'none';
-            document.getElementById('record-stop-btn').style.display = 'none';
-            document.getElementById('mirror-start-btn').style.display = 'inline-block';
-            document.getElementById('mirror-start-btn').disabled = false;
-            document.getElementById('mirror-video').style.display = 'none';
-            document.getElementById('mirror-canvas').style.display = 'none';
-            document.getElementById('mirror-placeholder').style.display = 'block';
-            document.getElementById('recording-indicator').style.display = 'none';
-            
-            await api('/api/mirror/stop', { method: 'POST' });
-        }
-
-        function startRecording() {
-            if (!mirrorVideo || !mirrorVideo.srcObject) {
-                showToast('请先启动投屏', 'error');
-                return;
-            }
-            
-            isRecording = true;
-            recordedChunks = [];
-            
-            const options = { mimeType: 'video/webm;codecs=vp9' };
-            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                options.mimeType = 'video/webm;codecs=vp8';
-            }
-            
-            mediaRecorder = new MediaRecorder(mirrorVideo.srcObject, options);
-            
-            mediaRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0) {
-                    recordedChunks.push(event.data);
-                }
-            };
-            
-            mediaRecorder.onstop = () => {
-                const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
-                const url = URL.createObjectURL(blob);
-                
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `screen-recording-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.webm`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-            };
-            
-            mediaRecorder.start(1000);
-            
-            document.getElementById('record-start-btn').style.display = 'none';
-            document.getElementById('record-stop-btn').style.display = 'inline-block';
-            document.getElementById('recording-indicator').style.display = 'block';
-            
-            showToast('开始录屏');
-        }
-
-        function stopRecording() {
-            if (mediaRecorder && isRecording) {
-                mediaRecorder.stop();
-                isRecording = false;
-                
-                document.getElementById('record-start-btn').style.display = 'inline-block';
-                document.getElementById('record-stop-btn').style.display = 'none';
-                document.getElementById('recording-indicator').style.display = 'none';
-                
-                showToast('录屏结束，正在保存...');
-            }
-        }
-
-        async function sendControl(action) {
-            const data = await api('/api/mirror/control', { 
-                method: 'POST', 
-                body: JSON.stringify({ action }) 
-            });
-            if (!data.success) {
-                showToast('控制失败', 'error');
-            }
-        }
-
-        async function loadTtsEngines() {
-            const data = await api('/api/tts/engines');
-            const select = document.getElementById('tts-engine');
-            select.innerHTML = '';
-            if (data.success && data.data.length > 0) {
-                data.data.forEach(e => {
-                    const option = document.createElement('option');
-                    option.value = e.package_name;
-                    option.textContent = e.label;
-                    select.appendChild(option);
-                });
-                loadTtsLanguages();
-            } else {
-                select.innerHTML = '<option value="">无法加载引擎</option>';
-                document.getElementById('tts-status').textContent = '无法加载TTS引擎，请检查设备配置';
-            }
-        }
-
-        function loadTtsLanguages() {
-            const engine = document.getElementById('tts-engine').value;
-            const select = document.getElementById('tts-language');
-            select.innerHTML = '';
-            const langs = [
-                { code: 'zh-CN', name: '中文(普通话)' },
-                { code: 'zh-TW', name: '中文(台湾)' },
-                { code: 'en-US', name: 'English (US)' },
-                { code: 'en-GB', name: 'English (UK)' },
-                { code: 'ja-JP', name: '日本語' },
-                { code: 'ko-KR', name: '한국어' },
-                { code: 'fr-FR', name: 'Français' },
-                { code: 'de-DE', name: 'Deutsch' },
-                { code: 'es-ES', name: 'Español' },
-                { code: 'ru-RU', name: 'Русский' }
-            ];
-            langs.forEach(l => {
-                const option = document.createElement('option');
-                option.value = l.code;
-                option.textContent = l.name;
-                select.appendChild(option);
-            });
-        }
-
-        async function speakText() {
-            const text = document.getElementById('tts-text').value.trim();
-            if (!text) {
-                showToast('请输入文本', 'error');
-                return;
-            }
-            
-            const engine = document.getElementById('tts-engine').value;
-            const language = document.getElementById('tts-language').value;
-            const rate = parseFloat(document.getElementById('tts-rate').value);
-            const pitch = parseFloat(document.getElementById('tts-pitch').value);
-            const volume = parseFloat(document.getElementById('tts-volume').value);
-            
-            const data = await api('/api/tts/speak', {
+    async function apiPost(url, body) {
+        try {
+            const res = await fetch(url, {
                 method: 'POST',
-                body: JSON.stringify({ text, engine, language, rate, pitch, volume })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
             });
-            
-            if (data.success) {
-                document.getElementById('tts-status').textContent = '正在朗读...';
-                setTimeout(() => {
-                    document.getElementById('tts-status').textContent = '';
-                }, 3000);
+            return await res.json();
+        } catch (e) {
+            showToast('请求失败: ' + e.message, 'error');
+            return { ok: false, message: e.message };
+        }
+    }
+
+    async function apiPut(url, body) {
+        try {
+            const res = await fetch(url, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            return await res.json();
+        } catch (e) {
+            showToast('请求失败: ' + e.message, 'error');
+            return { ok: false, message: e.message };
+        }
+    }
+
+    async function apiDelete(url) {
+        try {
+            const res = await fetch(url, { method: 'DELETE' });
+            return await res.json();
+        } catch (e) {
+            showToast('请求失败: ' + e.message, 'error');
+            return { ok: false, message: e.message };
+        }
+    }
+
+    /* ===== Toast Notifications ===== */
+    function showToast(message, type = 'info') {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = 'toast toast-' + type;
+        const icon = type === 'error' ? 'fa-exclamation-circle' : type === 'success' ? 'fa-check-circle' : 'fa-info-circle';
+        toast.innerHTML = '<i class="fas ' + icon + '"></i> ' + escapeHtml(message);
+        container.appendChild(toast);
+        setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 3000);
+    }
+
+    function escapeHtml(text) {
+        const d = document.createElement('div');
+        d.textContent = text;
+        return d.innerHTML;
+    }
+
+    /* ===== Dashboard ===== */
+    async function refreshStatus() {
+        const res = await apiGet('/api/status');
+        if (res.ok && res.data) {
+            const d = res.data;
+            document.getElementById('status-battery').textContent = (d.battery ?? '--') + '%';
+            document.getElementById('status-cpu').textContent = (d.cpu ?? '--') + '%';
+            document.getElementById('status-memory').textContent = d.memory ? (d.memory + ' MB') : '-- MB';
+            document.getElementById('status-uptime').textContent = d.uptime || '--';
+        }
+    }
+
+    async function screenshot() {
+        const res = await apiPost('/api/command', { command: 'screencap -p /sdcard/screenshot.png' });
+        if (res.ok) showToast('截屏完成', 'success');
+        else showToast(res.message || '截屏失败', 'error');
+    }
+
+    async function rebootDevice() {
+        if (!confirm('确定要重启设备吗？')) return;
+        const res = await apiPost('/api/command', { command: 'reboot' });
+        if (res.ok) showToast('重启命令已发送', 'success');
+        else showToast(res.message || '重启失败', 'error');
+    }
+
+    /* ===== AI Chat ===== */
+    async function loadProviders() {
+        const res = await apiGet('/api/ai/providers');
+        if (res.ok && res.data) {
+            updateProviderSelector(res.data);
+        }
+    }
+
+    function updateProviderSelector(providers) {
+        const sel = document.getElementById('provider-selector');
+        if (!providers || providers.length === 0) {
+            document.getElementById('current-provider-name').textContent = '未配置';
+            document.getElementById('current-model-name').textContent = '--';
+            return;
+        }
+        if (!currentProviderId && providers.length > 0) {
+            currentProviderId = providers[0].id;
+            currentModel = providers[0].model || '';
+        }
+        const p = providers.find(x => x.id === currentProviderId) || providers[0];
+        currentProviderId = p.id;
+        currentModel = p.model || '';
+        document.getElementById('current-provider-name').textContent = p.name || '未知';
+        document.getElementById('current-model-name').textContent = currentModel || '--';
+    }
+
+    function openProviderModal() {
+        document.getElementById('provider-modal').style.display = 'flex';
+        loadProviderList();
+    }
+
+    async function loadProviderList() {
+        const res = await apiGet('/api/ai/providers');
+        const container = document.getElementById('provider-list');
+        if (!res.ok || !res.data || res.data.length === 0) {
+            container.innerHTML = '<div class="ds-empty-state"><p>暂无提供商，添加一个吧</p></div>';
+            return;
+        }
+        container.innerHTML = res.data.map(p => {
+            const isActive = p.id === currentProviderId;
+            return '<div class="provider-option' + (isActive ? ' provider-option-active' : '') + '" style="display:flex;justify-content:space-between;align-items:center;padding:10px;border:1px solid var(--ds-border);border-radius:8px;cursor:pointer;" onclick="selectProvider(\'' + p.id + '\',\'' + escapeHtml(p.model || '') + '\')">' +
+                '<div><strong>' + escapeHtml(p.name) + '</strong> <span class="ds-badge-success">' + escapeHtml(p.model || '--') + '</span></div>' +
+                '<div style="display:flex;gap:6px;">' +
+                '<button class="ds-btn-secondary" style="font-size:0.7rem;padding:2px 8px;" onclick="event.stopPropagation();editProvider(\'' + p.id + '\')"><i class="fas fa-edit"></i></button>' +
+                '<button class="ds-btn-danger" style="font-size:0.7rem;padding:2px 8px;" onclick="event.stopPropagation();deleteProvider(\'' + p.id + '\')"><i class="fas fa-trash"></i></button>' +
+                '</div></div>';
+        }).join('');
+    }
+
+    function selectProvider(id, model) {
+        currentProviderId = id;
+        currentModel = model;
+        document.getElementById('current-provider-name').textContent = '已选择';
+        document.getElementById('current-model-name').textContent = model || '--';
+        loadProviders();
+        showToast('已切换提供商', 'success');
+    }
+
+    async function editProvider(id) {
+        const res = await apiGet('/api/ai/providers');
+        if (!res.ok) return;
+        const p = (res.data || []).find(x => x.id === id);
+        if (!p) return;
+        document.getElementById('prov-name').value = p.name || '';
+        document.getElementById('prov-url').value = p.api_url || '';
+        document.getElementById('prov-key').value = p.api_key || '';
+        document.getElementById('prov-model').value = p.model || '';
+        document.getElementById('prov-edit-id').value = id;
+    }
+
+    async function saveProvider() {
+        const body = {
+            name: document.getElementById('prov-name').value.trim(),
+            api_url: document.getElementById('prov-url').value.trim(),
+            api_key: document.getElementById('prov-key').value.trim(),
+            model: document.getElementById('prov-model').value.trim()
+        };
+        if (!body.name || !body.api_url) return showToast('名称和 API 地址为必填', 'error');
+        const editId = document.getElementById('prov-edit-id').value;
+        let res;
+        if (editId) {
+            res = await apiPut('/api/ai/providers/' + editId, body);
+        } else {
+            res = await apiPost('/api/ai/providers', body);
+        }
+        if (res.ok) {
+            showToast('提供商已保存', 'success');
+            document.getElementById('prov-edit-id').value = '';
+            ['prov-name','prov-url','prov-key','prov-model'].forEach(id => document.getElementById(id).value = '');
+            loadProviderList();
+            loadProviders();
+        } else {
+            showToast(res.message || '保存失败', 'error');
+        }
+    }
+
+    async function deleteProvider(id) {
+        if (!confirm('确定删除此提供商？')) return;
+        const res = await apiDelete('/api/ai/providers/' + id);
+        if (res.ok) {
+            showToast('已删除', 'success');
+            if (currentProviderId === id) { currentProviderId = ''; currentModel = ''; }
+            loadProviderList();
+            loadProviders();
+        } else {
+            showToast(res.message || '删除失败', 'error');
+        }
+    }
+
+    function connectChatWs() {
+        if (chatWs && chatWs.readyState <= 1) return;
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        chatWs = new WebSocket(proto + '//' + location.host + '/ws/ai-chat');
+        chatWs.onopen = () => { /* ready */ };
+        chatWs.onmessage = (evt) => {
+            try {
+                const msg = JSON.parse(evt.data);
+                handleChatMessage(msg);
+            } catch (e) { /* ignore non-JSON */ }
+        };
+        chatWs.onclose = () => { isChatStreaming = false; };
+        chatWs.onerror = () => { showToast('AI 连接错误', 'error'); isChatStreaming = false; };
+    }
+
+    let currentAssistantEl = null;
+
+    function handleChatMessage(msg) {
+        const container = document.getElementById('chat-messages');
+        const empty = container.querySelector('.ds-empty-state');
+        if (empty) empty.remove();
+
+        if (msg.type === 'chunk') {
+            if (!currentAssistantEl) {
+                currentAssistantEl = createMessageRow('assistant', '');
+                container.appendChild(currentAssistantEl);
+            }
+            const body = currentAssistantEl.querySelector('.ds-chat-message-content') || currentAssistantEl.querySelector('.markdown-body');
+            if (body) body.innerHTML += escapeHtml(msg.content);
+            scrollChatToBottom();
+        } else if (msg.type === 'tool_call') {
+            const row = createMessageRow('assistant', '');
+            const body = row.querySelector('.ds-chat-message-content') || row.querySelector('.markdown-body');
+            if (body) {
+                body.innerHTML = '<div class="ds-chat-thinking"><i class="fas fa-cog fa-spin"></i> <strong>工具调用:</strong> ' + escapeHtml(msg.name) + '<br><code>' + escapeHtml(JSON.stringify(msg.args || {})) + '</code></div>';
+            }
+            container.appendChild(row);
+            scrollChatToBottom();
+        } else if (msg.type === 'tool_result') {
+            const row = createMessageRow('assistant', '');
+            const body = row.querySelector('.ds-chat-message-content') || row.querySelector('.markdown-body');
+            if (body) {
+                body.innerHTML = '<div class="ds-chat-thinking"><i class="fas fa-check-circle"></i> <strong>工具结果 [' + escapeHtml(msg.name) + ']:</strong><br><code>' + escapeHtml(typeof msg.result === 'string' ? msg.result : JSON.stringify(msg.result)) + '</code></div>';
+            }
+            container.appendChild(row);
+            scrollChatToBottom();
+        } else if (msg.type === 'done') {
+            if (currentAssistantEl) {
+                const body = currentAssistantEl.querySelector('.ds-chat-message-content') || currentAssistantEl.querySelector('.markdown-body');
+                if (body && typeof marked !== 'undefined') {
+                    try { body.innerHTML = marked.parse(body.textContent); } catch (e) { /* keep raw */ }
+                }
+            }
+            currentAssistantEl = null;
+            isChatStreaming = false;
+        } else if (msg.type === 'error') {
+            const row = document.createElement('div');
+            row.className = 'ds-chat-message-row';
+            row.innerHTML = '<div class="ds-chat-error"><i class="fas fa-exclamation-triangle"></i> ' + escapeHtml(msg.message || '未知错误') + '</div>';
+            container.appendChild(row);
+            currentAssistantEl = null;
+            isChatStreaming = false;
+            scrollChatToBottom();
+        }
+    }
+
+    function createMessageRow(role, content) {
+        const row = document.createElement('div');
+        row.className = 'ds-chat-message-row ds-chat-message-' + role;
+        const bubble = document.createElement('div');
+        bubble.className = 'markdown-body';
+        bubble.textContent = content;
+        row.appendChild(bubble);
+        return row;
+    }
+
+    function scrollChatToBottom() {
+        const c = document.getElementById('chat-messages');
+        c.scrollTop = c.scrollHeight;
+    }
+
+    function sendChatMessage() {
+        const input = document.getElementById('chat-input');
+        const text = input.value.trim();
+        if (!text || isChatStreaming) return;
+
+        if (!chatWs || chatWs.readyState !== WebSocket.OPEN) connectChatWs();
+
+        const container = document.getElementById('chat-messages');
+        const empty = container.querySelector('.ds-empty-state');
+        if (empty) empty.remove();
+
+        const userRow = createMessageRow('user', '');
+        const body = userRow.querySelector('.markdown-body');
+        if (body) body.innerHTML = escapeHtml(text);
+        container.appendChild(userRow);
+        scrollChatToBottom();
+
+        input.value = '';
+        input.style.height = 'auto';
+        isChatStreaming = true;
+        currentAssistantEl = null;
+
+        setTimeout(() => {
+            if (chatWs && chatWs.readyState === WebSocket.OPEN) {
+                chatWs.send(JSON.stringify({
+                    type: 'chat',
+                    content: text,
+                    provider_id: currentProviderId,
+                    model: currentModel
+                }));
+            }
+        }, 100);
+    }
+
+    /* Chat input auto-resize & enter key */
+    document.addEventListener('DOMContentLoaded', () => {
+        const chatInput = document.getElementById('chat-input');
+        chatInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 150) + 'px';
+        });
+        chatInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendChatMessage();
+            }
+        });
+    });
+
+    /* ===== Mirror ===== */
+    async function startMirror() {
+        document.getElementById('mirror-status').style.display = 'flex';
+        document.getElementById('mirror-status-text').textContent = '正在启动...';
+
+        const res = await apiPost('/api/mirror/start', {});
+        if (!res.ok) {
+            showToast(res.message || '启动投屏失败', 'error');
+            document.getElementById('mirror-status').style.display = 'none';
+            return;
+        }
+
+        document.getElementById('mirror-start-btn').style.display = 'none';
+        document.getElementById('mirror-stop-btn').style.display = '';
+        document.getElementById('mirror-placeholder').style.display = 'none';
+        document.getElementById('mirror-canvas').style.display = 'block';
+        document.getElementById('mirror-status-text').textContent = '连接中...';
+
+        connectMirrorWs();
+    }
+
+    async function stopMirror() {
+        if (mirrorWs) { mirrorWs.close(); mirrorWs = null; }
+        if (mirrorDecoder) { try { mirrorDecoder.close(); } catch(e) {} mirrorDecoder = null; }
+        await apiPost('/api/mirror/stop', {});
+        document.getElementById('mirror-start-btn').style.display = '';
+        document.getElementById('mirror-stop-btn').style.display = 'none';
+        document.getElementById('mirror-placeholder').style.display = '';
+        document.getElementById('mirror-canvas').style.display = 'none';
+        document.getElementById('mirror-status').style.display = 'none';
+        document.getElementById('mirror-recording').style.display = 'none';
+        showToast('投屏已停止', 'info');
+    }
+
+    function connectMirrorWs() {
+        if (mirrorWs && mirrorWs.readyState <= 1) return;
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        mirrorWs = new WebSocket(proto + '//' + location.host + '/ws/mirror');
+        mirrorWs.binaryType = 'arraybuffer';
+
+        mirrorWs.onopen = () => {
+            document.getElementById('mirror-status-text').textContent = '已连接';
+            document.getElementById('mirror-status').style.display = 'none';
+            initMirrorCanvas();
+        };
+
+        mirrorWs.onmessage = (evt) => {
+            if (evt.data instanceof ArrayBuffer) {
+                handleMirrorFrame(evt.data);
             } else {
-                showToast(data.message || '朗读失败', 'error');
+                try {
+                    const msg = JSON.parse(evt.data);
+                    if (msg.type === 'status') {
+                        document.getElementById('mirror-status-text').textContent = msg.message || '';
+                    }
+                } catch (e) {}
+            }
+        };
+
+        mirrorWs.onclose = () => {
+            document.getElementById('mirror-status').style.display = 'flex';
+            document.getElementById('mirror-status-text').textContent = '已断开';
+        };
+
+        mirrorWs.onerror = () => {
+            showToast('投屏连接错误', 'error');
+        };
+    }
+
+    let mirrorCanvasCtx = null;
+
+    function initMirrorCanvas() {
+        const canvas = document.getElementById('mirror-canvas');
+        canvas.width = 1080;
+        canvas.height = 1920;
+        mirrorCanvasCtx = canvas.getContext('2d');
+
+        if (typeof VideoDecoder !== 'undefined') {
+            try {
+                mirrorDecoder = new VideoDecoder({
+                    output: (frame) => {
+                        mirrorCanvasCtx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+                        frame.close();
+                    },
+                    error: (e) => { console.error('VideoDecoder error:', e); }
+                });
+                mirrorDecoder.configure({
+                    codec: 'avc1.42001E',
+                    codedWidth: 1080,
+                    codedHeight: 1920
+                });
+            } catch (e) {
+                console.warn('VideoDecoder not available, falling back');
+                mirrorDecoder = null;
             }
         }
+    }
 
-        async function stopTts() {
-            await api('/api/tts/stop', { method: 'POST' });
-            document.getElementById('tts-status').textContent = '已停止';
-            setTimeout(() => {
-                document.getElementById('tts-status').textContent = '';
-            }, 2000);
+    function handleMirrorFrame(data) {
+        if (!mirrorDecoder) {
+            handleMirrorFrameFallback(data);
+            return;
         }
-
-        function quickSpeak(text) {
-            document.getElementById('tts-text').value = text;
-            speakText();
-        }
-
-        document.getElementById('tts-rate').addEventListener('input', (e) => {
-            document.getElementById('tts-rate-value').textContent = e.target.value;
-        });
-        document.getElementById('tts-pitch').addEventListener('input', (e) => {
-            document.getElementById('tts-pitch-value').textContent = e.target.value;
-        });
-        document.getElementById('tts-volume').addEventListener('input', (e) => {
-            document.getElementById('tts-volume-value').textContent = e.target.value;
-        });
-
-        document.addEventListener('DOMContentLoaded', () => {
-            refreshStatus();
-            loadScripts();
-            loadTtsEngines();
-            
-            const taskScriptSelect = document.getElementById('task-script');
-            api('/api/scripts').then(data => {
-                if (data.success) {
-                    data.data.forEach(s => {
-                        const option = document.createElement('option');
-                        option.value = s.name;
-                        option.textContent = s.name;
-                        taskScriptSelect.appendChild(option);
-                    });
-                }
+        try {
+            const chunk = new EncodedVideoChunk({
+                type: 'key',
+                timestamp: performance.now() * 1000,
+                data: new Uint8Array(data)
             });
+            mirrorDecoder.decode(chunk);
+        } catch (e) {
+            handleMirrorFrameFallback(data);
+        }
+    }
+
+    function handleMirrorFrameFallback(data) {
+        const canvas = document.getElementById('mirror-canvas');
+        const ctx = canvas.getContext('2d');
+        const blob = new Blob([data], { type: 'image/jpeg' });
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            URL.revokeObjectURL(url);
+        };
+        img.src = url;
+    }
+
+    /* Mirror touch/click control */
+    document.addEventListener('DOMContentLoaded', () => {
+        const canvas = document.getElementById('mirror-canvas');
+        let touchStart = null;
+
+        canvas.addEventListener('pointerdown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            touchStart = {
+                x: Math.round((e.clientX - rect.left) / rect.width * 1080),
+                y: Math.round((e.clientY - rect.top) / rect.height * 1920),
+                time: Date.now()
+            };
         });
+
+        canvas.addEventListener('pointerup', (e) => {
+            if (!touchStart) return;
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.round((e.clientX - rect.left) / rect.width * 1080);
+            const y = Math.round((e.clientY - rect.top) / rect.height * 1920);
+            const dx = x - touchStart.x;
+            const dy = y - touchStart.y;
+            const dt = Date.now() - touchStart.time;
+
+            if (Math.abs(dx) < 20 && Math.abs(dy) < 20 && dt < 300) {
+                apiPost('/api/mirror/control', { type: 'click', x: touchStart.x, y: touchStart.y });
+            } else {
+                apiPost('/api/mirror/control', { type: 'swipe', x1: touchStart.x, y1: touchStart.y, x2: x, y2: y, duration: dt });
+            }
+            touchStart = null;
+        });
+    });
+
+    /* ===== Tasks ===== */
+    async function loadTasks() {
+        const res = await apiGet('/api/tasks');
+        const list = document.getElementById('task-list');
+        if (!res.ok || !res.data || res.data.length === 0) {
+            list.innerHTML = '<div class="ds-empty-state"><i class="fas fa-clipboard-list" style="font-size:2rem;opacity:0.3;"></i><p>暂无任务</p></div>';
+            return;
+        }
+        list.innerHTML = res.data.map(t => {
+            return '<div class="task-item">' +
+                '<div style="flex:1;"><strong>' + escapeHtml(t.name || '未命名') + '</strong><br>' +
+                '<code style="font-size:0.75rem;opacity:0.6;">' + escapeHtml(t.command || '') + '</code><br>' +
+                '<span style="font-size:0.7rem;opacity:0.5;">' + escapeHtml(t.schedule || '手动') + '</span></div>' +
+                '<div style="display:flex;gap:6px;">' +
+                '<button class="ds-btn-primary" style="font-size:0.7rem;padding:4px 8px;" onclick="triggerTask(\'' + t.id + '\')"><i class="fas fa-play"></i></button>' +
+                '<button class="ds-btn-secondary" style="font-size:0.7rem;padding:4px 8px;" onclick="editTask(\'' + t.id + '\',\'' + escapeHtml(t.name || '') + '\',\'' + escapeHtml(t.command || '') + '\',\'' + escapeHtml(t.schedule || '') + '\')"><i class="fas fa-edit"></i></button>' +
+                '<button class="ds-btn-danger" style="font-size:0.7rem;padding:4px 8px;" onclick="deleteTask(\'' + t.id + '\')"><i class="fas fa-trash"></i></button>' +
+                '</div></div>';
+        }).join('');
+    }
+
+    function openTaskModal() {
+        document.getElementById('task-modal-title').textContent = '添加任务';
+        document.getElementById('task-name').value = '';
+        document.getElementById('task-command').value = '';
+        document.getElementById('task-schedule').value = '';
+        document.getElementById('task-edit-id').value = '';
+        document.getElementById('task-modal').style.display = 'flex';
+    }
+
+    function editTask(id, name, command, schedule) {
+        document.getElementById('task-modal-title').textContent = '编辑任务';
+        document.getElementById('task-name').value = name;
+        document.getElementById('task-command').value = command;
+        document.getElementById('task-schedule').value = schedule;
+        document.getElementById('task-edit-id').value = id;
+        document.getElementById('task-modal').style.display = 'flex';
+    }
+
+    async function saveTask() {
+        const name = document.getElementById('task-name').value.trim();
+        const command = document.getElementById('task-command').value.trim();
+        const schedule = document.getElementById('task-schedule').value.trim();
+        if (!name || !command) return showToast('名称和命令为必填', 'error');
+
+        const editId = document.getElementById('task-edit-id').value;
+        if (editId) {
+            await apiDelete('/api/tasks/' + editId);
+        }
+        const res = await apiPost('/api/tasks', { name, command, schedule });
+        if (res.ok) {
+            showToast('任务已保存', 'success');
+            document.getElementById('task-modal').style.display = 'none';
+            loadTasks();
+        } else {
+            showToast(res.message || '保存失败', 'error');
+        }
+    }
+
+    async function deleteTask(id) {
+        if (!confirm('确定删除此任务？')) return;
+        const res = await apiDelete('/api/tasks/' + id);
+        if (res.ok) { showToast('已删除', 'success'); loadTasks(); }
+        else showToast(res.message || '删除失败', 'error');
+    }
+
+    async function triggerTask(id) {
+        const res = await apiPost('/api/trigger', { task_id: id });
+        if (res.ok) showToast('任务已触发', 'success');
+        else showToast(res.message || '触发失败', 'error');
+    }
+
+    /* ===== Scripts ===== */
+    async function loadScripts() {
+        const res = await apiGet('/api/scripts');
+        const list = document.getElementById('script-list');
+        if (!res.ok || !res.data || res.data.length === 0) {
+            list.innerHTML = '<div class="ds-empty-state"><i class="fas fa-code" style="font-size:2rem;opacity:0.3;"></i><p>暂无脚本</p></div>';
+            return;
+        }
+        list.innerHTML = res.data.map(s => {
+            const name = typeof s === 'string' ? s : s.name;
+            return '<div class="script-item">' +
+                '<div style="flex:1;"><i class="fas fa-file-code" style="margin-right:8px;opacity:0.5;"></i><strong>' + escapeHtml(name) + '</strong></div>' +
+                '<div style="display:flex;gap:6px;">' +
+                '<button class="ds-btn-primary" style="font-size:0.7rem;padding:4px 8px;" onclick="runScript(\'' + escapeHtml(name) + '\')"><i class="fas fa-play"></i> 运行</button>' +
+                '<button class="ds-btn-secondary" style="font-size:0.7rem;padding:4px 8px;" onclick="openScriptEditor(\'' + escapeHtml(name) + '\')"><i class="fas fa-edit"></i> 编辑</button>' +
+                '<button class="ds-btn-danger" style="font-size:0.7rem;padding:4px 8px;" onclick="deleteScript(\'' + escapeHtml(name) + '\')"><i class="fas fa-trash"></i></button>' +
+                '</div></div>';
+        }).join('');
+    }
+
+    async function runScript(name) {
+        const res = await apiPost('/api/trigger', { script: name });
+        if (res.ok) showToast('脚本已触发: ' + name, 'success');
+        else showToast(res.message || '运行失败', 'error');
+    }
+
+    async function openScriptEditor(name) {
+        document.getElementById('script-modal-title').textContent = '编辑脚本: ' + name;
+        document.getElementById('script-editor').value = '加载中...';
+        document.getElementById('script-modal').style.display = 'flex';
+        const res = await apiGet('/api/scripts/' + encodeURIComponent(name));
+        if (res.ok) {
+            document.getElementById('script-editor').value = typeof res.data === 'string' ? res.data : (res.data?.content || JSON.stringify(res.data, null, 2));
+        } else {
+            document.getElementById('script-editor').value = '# 新脚本';
+        }
+        document.getElementById('script-modal').dataset.name = name;
+    }
+
+    async function saveScript() {
+        const name = document.getElementById('script-modal').dataset.name;
+        if (!name) return showToast('未知脚本名', 'error');
+        const content = document.getElementById('script-editor').value;
+        const res = await apiPut('/api/scripts/' + encodeURIComponent(name), { content });
+        if (res.ok) { showToast('脚本已保存', 'success'); document.getElementById('script-modal').style.display = 'none'; }
+        else showToast(res.message || '保存失败', 'error');
+    }
+
+    async function deleteScript(name) {
+        if (!confirm('确定删除脚本 "' + name + '"？')) return;
+        const res = await apiDelete('/api/scripts/' + encodeURIComponent(name));
+        if (res.ok) { showToast('已删除', 'success'); loadScripts(); }
+        else showToast(res.message || '删除失败', 'error');
+    }
+
+    /* ===== TTS ===== */
+    async function loadTtsEngines() {
+        const res = await apiGet('/api/tts/engines');
+        const sel = document.getElementById('tts-engine');
+        if (res.ok && res.data && res.data.length > 0) {
+            sel.innerHTML = res.data.map(e => {
+                const val = typeof e === 'string' ? e : (e.id || e.name);
+                const label = typeof e === 'string' ? e : (e.name || e.id);
+                return '<option value="' + escapeHtml(val) + '">' + escapeHtml(label) + '</option>';
+            }).join('');
+        } else {
+            sel.innerHTML = '<option value="">无可用引擎</option>';
+        }
+    }
+
+    async function speakTTS() {
+        const text = document.getElementById('tts-text').value.trim();
+        if (!text) return showToast('请输入文本', 'error');
+        const engine = document.getElementById('tts-engine').value;
+        const res = await apiPost('/api/tts/speak', {
+            text,
+            engine,
+            speed: parseFloat(document.getElementById('tts-speed').value),
+            pitch: parseFloat(document.getElementById('tts-pitch').value),
+            volume: parseFloat(document.getElementById('tts-volume').value)
+        });
+        if (res.ok) showToast('朗读中...', 'success');
+        else showToast(res.message || '朗读失败', 'error');
+    }
+
+    async function stopTTS() {
+        const res = await apiPost('/api/tts/stop', {});
+        if (res.ok) showToast('已停止', 'info');
+        else showToast(res.message || '停止失败', 'error');
+    }
+
+    /* ===== Config ===== */
+    async function loadEmailConfig() {
+        const res = await apiGet('/api/email/config');
+        if (res.ok && res.data) {
+            const d = res.data;
+            document.getElementById('cfg-smtp-host').value = d.host || '';
+            document.getElementById('cfg-smtp-port').value = d.port || '';
+            document.getElementById('cfg-smtp-user').value = d.user || '';
+            document.getElementById('cfg-smtp-to').value = d.to || '';
+        }
+    }
+
+    async function saveEmailConfig() {
+        const body = {
+            host: document.getElementById('cfg-smtp-host').value.trim(),
+            port: parseInt(document.getElementById('cfg-smtp-port').value) || 587,
+            user: document.getElementById('cfg-smtp-user').value.trim(),
+            password: document.getElementById('cfg-smtp-pass').value.trim(),
+            to: document.getElementById('cfg-smtp-to').value.trim()
+        };
+        const res = await apiPut('/api/email/config', body);
+        if (res.ok) showToast('邮件配置已保存', 'success');
+        else showToast(res.message || '保存失败', 'error');
+    }
+
+    async function testSendEmail() {
+        const res = await apiPost('/api/send-email', {
+            subject: 'TaskMod 测试邮件',
+            body: '这是一封来自 TaskMod 的测试邮件。'
+        });
+        if (res.ok) showToast('测试邮件已发送', 'success');
+        else showToast(res.message || '发送失败', 'error');
+    }
+
+    async function loadMqttConfig() {
+        const res = await apiGet('/api/mqtt/config');
+        if (res.ok && res.data) {
+            const d = res.data;
+            document.getElementById('cfg-mqtt-broker').value = d.broker || '';
+            document.getElementById('cfg-mqtt-topic').value = d.topic || '';
+            document.getElementById('cfg-mqtt-clientid').value = d.client_id || '';
+            document.getElementById('cfg-mqtt-user').value = d.user || '';
+        }
+    }
+
+    async function saveMqttConfig() {
+        const body = {
+            broker: document.getElementById('cfg-mqtt-broker').value.trim(),
+            topic: document.getElementById('cfg-mqtt-topic').value.trim(),
+            client_id: document.getElementById('cfg-mqtt-clientid').value.trim(),
+            user: document.getElementById('cfg-mqtt-user').value.trim(),
+            password: document.getElementById('cfg-mqtt-pass').value.trim()
+        };
+        const res = await apiPut('/api/mqtt/config', body);
+        if (res.ok) showToast('MQTT 配置已保存', 'success');
+        else showToast(res.message || '保存失败', 'error');
+    }
+
+    async function execCommand() {
+        const cmd = document.getElementById('cfg-command').value.trim();
+        if (!cmd) return showToast('请输入命令', 'error');
+        const output = document.getElementById('cfg-command-output');
+        output.textContent = '执行中...';
+        const res = await apiPost('/api/command', { command: cmd });
+        if (res.ok) {
+            output.textContent = res.data?.output || res.data?.stdout || JSON.stringify(res.data, null, 2) || '(无输出)';
+        } else {
+            output.textContent = '错误: ' + (res.message || '执行失败');
+        }
+    }
+
+    /* ===== Logs ===== */
+    async function loadLogs() {
+        const res = await apiGet('/api/logs');
+        const viewer = document.getElementById('log-viewer');
+        if (!res.ok || !res.data || (Array.isArray(res.data) && res.data.length === 0)) {
+            viewer.innerHTML = '<div class="ds-empty-state"><i class="fas fa-scroll" style="font-size:2rem;opacity:0.3;"></i><p>暂无日志</p></div>';
+            return;
+        }
+        const logs = Array.isArray(res.data) ? res.data : [res.data];
+        viewer.innerHTML = logs.map(l => {
+            const text = typeof l === 'string' ? l : (l.message || l.text || JSON.stringify(l));
+            const time = l.timestamp || l.time || '';
+            return '<div class="log-line">' + (time ? '<span class="log-time">' + escapeHtml(time) + '</span> ' : '') + escapeHtml(text) + '</div>';
+        }).join('');
+        viewer.scrollTop = viewer.scrollHeight;
+    }
+
+    async function clearLogs() {
+        if (!confirm('确定清除所有日志？')) return;
+        const res = await apiPost('/api/logs/clear', {});
+        if (res.ok) { showToast('日志已清除', 'success'); loadLogs(); }
+        else showToast(res.message || '清除失败', 'error');
+    }
+
+    function toggleLogAutoRefresh() {
+        const cb = document.getElementById('log-autorefresh-cb');
+        cb.checked = !cb.checked;
+        if (cb.checked) {
+            logAutoRefreshInterval = setInterval(loadLogs, 3000);
+            showToast('自动刷新已开启', 'info');
+        } else {
+            if (logAutoRefreshInterval) clearInterval(logAutoRefreshInterval);
+            logAutoRefreshInterval = null;
+            showToast('自动刷新已关闭', 'info');
+        }
+    }
+
+    /* ===== Init ===== */
+    document.addEventListener('DOMContentLoaded', () => {
+        refreshStatus();
+    });
+    </script>
+</body>
+</html>
