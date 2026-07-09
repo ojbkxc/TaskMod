@@ -1,4 +1,5 @@
-use axum::{routing::{delete, get, post, put}, Router, Json};
+use axum::{routing::{delete, get, post, put}, Router, Json, body::BodyExt};
+use http::Request;
 use serde_json;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -147,8 +148,8 @@ fn handle_event(event: utils::event_monitor::SystemEvent) {
     }
 }
 
-async fn save_mqtt_config_handler(req: axum::extract::Request) -> Json<crate::data::response::ApiResponse<String>> {
-    let bytes = match axum::body::to_bytes(req.into_body()).await {
+async fn save_mqtt_config_handler(req: Request<axum::body::Body>) -> Json<crate::data::response::ApiResponse<String>> {
+    let bytes = match req.into_body().to_bytes().await {
         Ok(b) => b,
         Err(e) => return Json(crate::data::response::ApiResponse::err(&format!("读取请求体失败: {}", e))),
     };
