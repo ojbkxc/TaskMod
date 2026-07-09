@@ -51,12 +51,19 @@ pub async fn execute_command(cmd_parts: &[String]) -> Result<std::process::Outpu
 pub async fn get_screen_size() -> String {
     match Command::new("wm").arg("size").output().await {
         Ok(o) => {
-            let output = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if output.starts_with("Physical size: ") {
-                output.replace("Physical size: ", "")
-            } else {
-                output
+            let output = String::from_utf8_lossy(&o.stdout);
+            // 优先取 Override size（用户自定义分辨率），否则取 Physical size
+            for line in output.lines() {
+                if line.contains("Override size:") {
+                    return line.replace("Override size:", "").trim().to_string();
+                }
             }
+            for line in output.lines() {
+                if line.contains("Physical size:") {
+                    return line.replace("Physical size:", "").trim().to_string();
+                }
+            }
+            output.trim().to_string()
         }
         Err(_) => "unknown".to_string(),
     }
@@ -127,28 +134,34 @@ pub async fn get_running_apps() -> String {
 }
 
 pub async fn start_app(package_name: &str) -> String {
-    // 先尝试用 am start 通过包名启动（不硬编码Activity名）
-    match Command::new("am")
-        .arg("start")
-        .arg("-a")
-        .arg("android.intent.action.MAIN")
+    // 先用 cmd package resolve-activity 解析出主Activity名
+    if let Ok(o) = Command::new("sh")
         .arg("-c")
-        .arg("android.intent.category.LAUNCHER")
-        .arg(package_name)
+        .arg(format!("cmd package resolve-activity --brief {} | tail -1", package_name))
         .output()
         .await
     {
-        Ok(o) => {
-            let stdout = String::from_utf8_lossy(&o.stdout);
-            let stderr = String::from_utf8_lossy(&o.stderr);
-            if !stderr.contains("Error") && !stderr.contains("error") {
-                return format!("应用启动成功:\n{}", stdout);
+        let activity = String::from_utf8_lossy(&o.stdout).trim().to_string();
+        if !activity.is_empty() && !activity.contains("Error") && activity.contains('/') {
+            // 成功解析到Activity，用 am start -n 启动
+            match Command::new("am")
+                .arg("start")
+                .arg("-n")
+                .arg(&activity)
+                .output()
+                .await
+            {
+                Ok(o) => {
+                    let stderr = String::from_utf8_lossy(&o.stderr);
+                    if !stderr.contains("Error") && !stderr.contains("error") {
+                        return format!("应用启动成功: {}", activity);
+                    }
+                }
+                Err(_) => {}
             }
-            // am start 失败，用 monkey 重试
         }
-        Err(_) => {}
     }
-    
+
     // fallback: 用 monkey 启动
     match Command::new("monkey")
         .arg("-p")
@@ -229,6 +242,16 @@ pub async fn keyevent(key: &str) -> String {
         "volume_up" => "24",
         "volume_down" => "25",
         "recents" => "187",
+        "menu" => "82",
+        "enter" => "66",
+        "delete" => "67",
+        "tab" => "61",
+        "space" => "62",
+        "camera" => "27",
+        "search" => "84",
+        "page_up" => "92",
+        "page_down" => "93",
+        "escape" => "111",
         _ => key,
     };
 
@@ -336,14 +359,22 @@ pub async fn tts(text: &str) -> String {
         Err(_) => {}
     }
     
-    // 方法3: 使用 toybox/media 调用系统 TTS
+    // 方法3: 使用 service call 方式（兼容更多设备）
     match Command::new("sh")
         .arg("-c")
-        .arg(format!("echo '{}' | toybox speak", text.replace('\'', "'\\''")))
+        .arg(format!(
+            "service call isms 7 i32 0 s16 {} s16 null s16 null s16 null",
+            text.replace('\'', "'\\''")
+        ))
         .output()
         .await
     {
-        Ok(_) => return format!("TTS语音播放成功: {}", text),
+        Ok(o) => {
+            let output = String::from_utf8_lossy(&o.stdout);
+            if !output.contains("error") && !output.contains("Error") {
+                return format!("TTS语音播放成功: {}", text);
+            }
+        }
         Err(_) => {}
     }
     

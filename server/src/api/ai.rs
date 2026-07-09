@@ -110,6 +110,7 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
 
                     if conversation_messages.is_empty() {
                         let screen_size = adb::get_screen_size().await;
+                        let device_model = adb::get_device_info().await;
                         let scripts_list = match fs::read_dir(SCRIPTS_DIR) {
                             Ok(dir) => {
                                 let files: Vec<String> = dir
@@ -117,16 +118,32 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                                     .filter(|e| e.path().is_file())
                                     .filter_map(|e| e.file_name().to_str().map(|s| s.to_string()))
                                     .collect();
-                                files.join(", ")
+                                if files.is_empty() { "无".to_string() } else { files.join(", ") }
                             }
-                            Err(_) => "".to_string(),
+                            Err(_) => "无".to_string(),
                         };
 
                         conversation_messages.push(json!({
                             "role": "system",
-                            "content": format!("你是一个Android设备控制助手，可以通过ADB命令操作手机。\n\n设备信息:\n- 屏幕分辨率: {}\n\n可用脚本: {}\n\n脚本目录: {}\n\n请根据用户的请求，调用适当的工具来完成任务。", 
-                                screen_size, 
-                                if scripts_list.is_empty() { "无" } else { &scripts_list },
+                            "content": format!(
+                                "你是TaskMod Android设备控制助手，可以通过ADB命令操作手机。\n\n\
+                                设备信息:\n{}\n屏幕分辨率: {}\n\n\
+                                可用脚本: {}\n脚本目录: {}\n\n\
+                                你可以:\n\
+                                1. 用adb_command执行任意shell命令\n\
+                                2. 用adb_tap/adb_swipe操作屏幕\n\
+                                3. 用adb_input_text输入文本\n\
+                                4. 用adb_keyevent模拟按键\n\
+                                5. 用adb_screencap截图\n\
+                                6. 用adb_start_app/adb_stop_app管理应用\n\
+                                7. 用adb_tts语音播报\n\
+                                8. 用get_device_info/get_battery_info/get_wifi_info查看设备状态\n\
+                                9. 用run_script/list_scripts/read_script/write_script管理脚本\n\
+                                10. 用view_logs查看系统日志\n\n\
+                                请根据用户请求调用工具完成任务。操作前先确认意图，危险操作需提醒用户。",
+                                device_model.trim(),
+                                screen_size,
+                                scripts_list,
                                 SCRIPTS_DIR
                             )
                         }));

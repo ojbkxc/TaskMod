@@ -46,7 +46,7 @@ pub async fn add_task(Json(req): Json<AddTaskRequest>) -> Json<ApiResponse<Strin
 
     match fs::write(SCHEDULE_FILE, &content) {
         Ok(_) => Json(ApiResponse::ok_msg("ok".to_string(), "任务已添加，30秒内自动生效")),
-        Err(e) => {
+        Err(_) => {
             // Try creating directory and retry
             if let Some(parent) = Path::new(SCHEDULE_FILE).parent() {
                 let _ = fs::create_dir_all(parent);

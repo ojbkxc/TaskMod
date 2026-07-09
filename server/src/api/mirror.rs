@@ -292,14 +292,11 @@ pub async fn send_control(
         "touch" => {
             let x = req.x.unwrap_or(0.0) as i32;
             let y = req.y.unwrap_or(0.0) as i32;
-            // Use swipe to same point for more reliable tap
+            // 使用tap更可靠，duration设为10ms避免太快被忽略
             Command::new("input")
-                .arg("swipe")
+                .arg("tap")
                 .arg(x.to_string())
                 .arg(y.to_string())
-                .arg(x.to_string())
-                .arg(y.to_string())
-                .arg("1")
                 .status()
                 .await
         }
@@ -409,10 +406,14 @@ pub async fn send_control(
         "collapse_panels" => Command::new("cmd").arg("statusbar").arg("collapse").status().await,
         "set_clipboard" => {
             let text = req.text.unwrap_or_default();
-            Command::new("cmd")
-                .arg("clipboard")
-                .arg("set")
-                .arg(text)
+            // 使用 am broadcast 方式设置剪贴板（兼容性更好）
+            Command::new("am")
+                .arg("broadcast")
+                .arg("-a")
+                .arg("clipper.set")
+                .arg("--es")
+                .arg("text")
+                .arg(&text)
                 .status()
                 .await
         }
@@ -434,31 +435,75 @@ pub async fn send_control(
         "screen_off" => Command::new("input").arg("keyevent").arg("223").status().await,
         "start_app" => {
             let pkg = req.text.unwrap_or_default();
-            // 先尝试用am start启动，失败再用monkey
-            let am_result = Command::new("am")
-                .arg("start")
-                .arg("-a")
-                .arg("android.intent.action.MAIN")
+            // 先用 cmd package resolve-activity 解析出主Activity名
+            let resolve_output = Command::new("sh")
                 .arg("-c")
-                .arg("android.intent.category.LAUNCHER")
-                .arg(pkg)
-                .status()
+                .arg(format!("cmd package resolve-activity --brief {} | tail -1", &pkg))
+                .output()
                 .await;
-            match am_result {
-                Ok(s) if s.success() => return Json(ApiResponse::ok(format!("应用已启动: {}", pkg))),
-                _ => {
-                    Command::new("monkey")
-                        .arg("-p")
-                        .arg(pkg)
-                        .arg("-c")
-                        .arg("android.intent.category.LAUNCHER")
-                        .arg("1")
+            if let Ok(o) = resolve_output {
+                let activity = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                if !activity.is_empty() && !activity.contains("Error") && activity.contains('/') {
+                    let am_result = Command::new("am")
+                        .arg("start")
+                        .arg("-n")
+                        .arg(&activity)
                         .status()
-                        .await
+                        .await;
+                    if let Ok(s) = am_result {
+                        if s.success() {
+                            return Json(ApiResponse::ok(format!("应用已启动: {}", activity)));
+                        }
+                    }
                 }
             }
+            // fallback: 用 monkey 启动
+            Command::new("monkey")
+                .arg("-p")
+                .arg(pkg)
+                .arg("-c")
+                .arg("android.intent.category.LAUNCHER")
+                .arg("1")
+                .status()
+                .await
         }
-        "rotate" => Command::new("input").arg("keyevent").arg("186").status().await,
+        "rotate" => {
+            // 切换自动旋转：先关闭自动旋转，再切换方向
+            let _ = Command::new("settings")
+                .arg("put")
+                .arg("system")
+                .arg("accelerometer_rotation")
+                .arg("0")
+                .status()
+                .await;
+            // 获取当前旋转方向并切换
+            let current = Command::new("settings")
+                .arg("get")
+                .arg("system")
+                .arg("user_rotation")
+                .output()
+                .await
+                .ok()
+                .and_then(|o| String::from_utf8(o.stdout).ok())
+                .and_then(|s| s.trim().parse::<i32>().ok())
+                .unwrap_or(0);
+            let next = (current + 1) % 4;
+            Command::new("settings")
+                .arg("put")
+                .arg("system")
+                .arg("user_rotation")
+                .arg(next.to_string())
+                .status()
+                .await
+        }
+        "stop_app" => {
+            let pkg = req.text.unwrap_or_default();
+            Command::new("am")
+                .arg("force-stop")
+                .arg(pkg)
+                .status()
+                .await
+        }
         _ => return Json(ApiResponse::err("未知指令")),
     };
 

@@ -1,4 +1,3 @@
-use serde_json::json;
 use std::fs;
 
 use crate::config::{LOG_FILE, MQTT_CONF};
@@ -96,12 +95,10 @@ fn log_to_file(msg: &str) {
 mod mqtt_impl {
     use rumqttc::{AsyncClient, Event, MqttOptions, QoS};
     use serde_json::json;
-    use std::fs;
     use std::sync::{Arc, Mutex};
     use tokio::process::Command;
 
-    use crate::config::{LOG_FILE, MQTT_CONF};
-    use super::{MqttConfig, parse_mqtt_conf, log_to_file};
+    use super::{parse_mqtt_conf, log_to_file};
 
     async fn get_device_status() -> serde_json::Value {
         let mut status = json!({});
