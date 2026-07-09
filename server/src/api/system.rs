@@ -1,6 +1,5 @@
 use axum::{extract::Query, Json, response::Html};
 use chrono::{DateTime, Local};
-use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
@@ -13,21 +12,7 @@ use crate::utils::adb;
 use crate::utils::email;
 use crate::utils::mqtt;
 
-#[derive(Debug, Deserialize)]
-struct MqttConfigRequest {
-    #[serde(default)]
-    enabled: bool,
-    #[serde(default)]
-    broker: String,
-    #[serde(default)]
-    topic_prefix: String,
-    #[serde(default)]
-    username: String,
-    #[serde(default)]
-    password: String,
-    #[serde(default)]
-    client_id: String,
-}
+
 
 pub async fn index() -> Html<&'static str> {
     Html(include_str!("../../static/index.html"))
@@ -244,22 +229,7 @@ pub async fn get_mqtt_config() -> Json<serde_json::Value> {
     }
 }
 
-pub async fn save_mqtt_config(Json(req): Json<MqttConfigRequest>) -> Json<ApiResponse<String>> {
-    let mqtt_config = mqtt::MqttConfig {
-        enabled: req.enabled,
-        broker: if req.broker.is_empty() { "tcp://localhost:1883".to_string() } else { req.broker },
-        topic_prefix: if req.topic_prefix.is_empty() { "taskmod".to_string() } else { req.topic_prefix },
-        username: req.username,
-        password: req.password,
-        client_id: if req.client_id.is_empty() { "taskmod-device".to_string() } else { req.client_id },
-    };
-    if let Err(e) = mqtt::save_mqtt_config(&mqtt_config) {
-        return Json(ApiResponse::err(&format!("保存失败: {}", e)));
-    }
-    mqtt::stop_mqtt().await;
-    tokio::spawn(async { mqtt::start_mqtt().await; });
-    Json(ApiResponse::ok_msg("ok".to_string(), "MQTT配置已保存，服务已重启"))
-}
+
 
 pub async fn system_status() -> Json<serde_json::Value> {
     let uptime = Command::new("/system/bin/uptime")

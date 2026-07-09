@@ -1,4 +1,5 @@
-use axum::{routing::{delete, get, post, put}, Router};
+use axum::{routing::{delete, get, post, put}, Router, Json};
+use serde_json;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -146,6 +147,36 @@ fn handle_event(event: utils::event_monitor::SystemEvent) {
     }
 }
 
+async fn save_mqtt_config_handler(req: axum::extract::Request) -> Json<crate::data::response::ApiResponse<String>> {
+    let bytes = match axum::body::to_bytes(req.into_body()).await {
+        Ok(b) => b,
+        Err(e) => return Json(crate::data::response::ApiResponse::err(&format!("读取请求体失败: {}", e))),
+    };
+    
+    let req_value: serde_json::Value = match serde_json::from_slice(&bytes) {
+        Ok(v) => v,
+        Err(e) => return Json(crate::data::response::ApiResponse::err(&format!("JSON解析失败: {}", e))),
+    };
+    
+    let enabled = req_value.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+    let broker = req_value.get("broker").and_then(|v| v.as_str()).unwrap_or("tcp://localhost:1883").to_string();
+    let topic_prefix = req_value.get("topic_prefix").and_then(|v| v.as_str()).unwrap_or("taskmod").to_string();
+    let username = req_value.get("username").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let password = req_value.get("password").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let client_id = req_value.get("client_id").and_then(|v| v.as_str()).unwrap_or("taskmod-device").to_string();
+    
+    let mqtt_config = utils::mqtt::MqttConfig { enabled, broker, topic_prefix, username, password, client_id };
+    
+    if let Err(e) = utils::mqtt::save_mqtt_config(&mqtt_config) {
+        return Json(crate::data::response::ApiResponse::err(&format!("保存失败: {}", e)));
+    }
+    
+    utils::mqtt::stop_mqtt().await;
+    tokio::spawn(async { utils::mqtt::start_mqtt().await; });
+    
+    Json(crate::data::response::ApiResponse::ok_msg("ok".to_string(), "MQTT配置已保存，服务已重启"))
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
@@ -232,7 +263,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/email/config", get(api::system::get_email_config).put(api::system::save_email_config))
         .route("/api/send-email", post(api::system::send_email))
         .route("/api/mqtt/config", get(api::system::get_mqtt_config))
-        .route("/api/mqtt/config", put(api::system::save_mqtt_config))
+        .route("/api/mqtt/config", put(save_mqtt_config_handler))
         .route("/api/workflows", get(api::system::list_workflows_api).post(api::system::save_workflow_api))
         .route("/api/workflows/:id", get(api::system::get_workflow).delete(api::system::delete_workflow_api))
         .route("/api/workflows/run", post(api::system::run_workflow))
