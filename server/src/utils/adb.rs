@@ -1,40 +1,40 @@
 use tokio::process::Command;
 
+/// 执行shell命令（通过sh -c，支持管道、引号等复杂语法）
 pub async fn run_command(cmd: &str) -> Result<String, String> {
-    let parts: Vec<&str> = cmd.split_whitespace().collect();
-    if parts.is_empty() {
+    if cmd.trim().is_empty() {
         return Err("命令为空".to_string());
     }
 
-    let mut command = Command::new(parts[0]);
-    for part in parts.iter().skip(1) {
-        command.arg(part);
-    }
-
-    match command.output().await {
-        Ok(o) => Ok(format!(
-            "stdout: {}\nstderr: {}",
-            String::from_utf8_lossy(&o.stdout),
-            String::from_utf8_lossy(&o.stderr)
-        )),
+    match Command::new("sh").arg("-c").arg(cmd).output().await {
+        Ok(o) => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            if stderr.is_empty() {
+                Ok(stdout.to_string())
+            } else {
+                Ok(format!("{}\nstderr: {}", stdout, stderr))
+            }
+        }
         Err(e) => Err(format!("命令执行失败: {}", e)),
     }
 }
 
+/// 执行命令并返回原始Output
 pub async fn run_command_raw(cmd: &str) -> Result<std::process::Output, String> {
-    let parts: Vec<&str> = cmd.split_whitespace().collect();
-    if parts.is_empty() {
+    if cmd.trim().is_empty() {
         return Err("命令为空".to_string());
     }
 
-    let mut command = Command::new(parts[0]);
-    for part in parts.iter().skip(1) {
-        command.arg(part);
-    }
-
-    command.output().await.map_err(|e| format!("命令执行失败: {}", e))
+    Command::new("sh")
+        .arg("-c")
+        .arg(cmd)
+        .output()
+        .await
+        .map_err(|e| format!("命令执行失败: {}", e))
 }
 
+/// 执行命令（参数列表方式，适合精确控制参数）
 pub async fn execute_command(cmd_parts: &[String]) -> Result<std::process::Output, String> {
     if cmd_parts.is_empty() {
         return Err("命令为空".to_string());
@@ -127,32 +127,39 @@ pub async fn get_running_apps() -> String {
 }
 
 pub async fn start_app(package_name: &str) -> String {
+    // 先尝试用 am start 通过包名启动（不硬编码Activity名）
     match Command::new("am")
         .arg("start")
-        .arg("-n")
-        .arg(format!("{}/.MainActivity", package_name))
+        .arg("-a")
+        .arg("android.intent.action.MAIN")
+        .arg("-c")
+        .arg("android.intent.category.LAUNCHER")
+        .arg(package_name)
         .output()
         .await
     {
         Ok(o) => {
             let stdout = String::from_utf8_lossy(&o.stdout);
-            if stdout.contains("Error") || stdout.contains("error") {
-                match Command::new("monkey")
-                    .arg("-p")
-                    .arg(package_name)
-                    .arg("-c")
-                    .arg("android.intent.category.LAUNCHER")
-                    .arg("1")
-                    .output()
-                    .await
-                {
-                    Ok(o2) => format!("应用启动成功:\n{}", String::from_utf8_lossy(&o2.stdout)),
-                    Err(e) => format!("应用启动失败: {}", e),
-                }
-            } else {
-                format!("应用启动成功:\n{}", stdout)
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            if !stderr.contains("Error") && !stderr.contains("error") {
+                return format!("应用启动成功:\n{}", stdout);
             }
+            // am start 失败，用 monkey 重试
         }
+        Err(_) => {}
+    }
+    
+    // fallback: 用 monkey 启动
+    match Command::new("monkey")
+        .arg("-p")
+        .arg(package_name)
+        .arg("-c")
+        .arg("android.intent.category.LAUNCHER")
+        .arg("1")
+        .output()
+        .await
+    {
+        Ok(o) => format!("应用启动成功:\n{}", String::from_utf8_lossy(&o.stdout)),
         Err(e) => format!("应用启动失败: {}", e),
     }
 }
@@ -237,9 +244,23 @@ pub async fn keyevent(key: &str) -> String {
 }
 
 pub async fn input_text(text: &str) -> String {
+    // 对特殊字符进行转义（Android input text 要求）
+    let escaped = text
+        .replace("\\", "\\\\")
+        .replace(" ", "%s")
+        .replace("&", "\\&")
+        .replace("<", "\\<")
+        .replace(">", "\\>")
+        .replace("|", "\\|")
+        .replace(";", "\\;")
+        .replace("(", "\\(")
+        .replace(")", "\\)")
+        .replace("'", "\\'")
+        .replace("\"", "\\\"");
+    
     match Command::new("input")
         .arg("text")
-        .arg(text)
+        .arg(escaped)
         .output()
         .await
     {
@@ -275,29 +296,58 @@ pub async fn shutdown() -> String {
 }
 
 pub async fn tts(text: &str) -> String {
+    // 方法1: 使用 Android TTS Engine 的标准广播
     match Command::new("am")
         .arg("broadcast")
         .arg("-a")
-        .arg("com.android.tts.speak")
+        .arg("com.android.tts.SPEAK")
         .arg("--es")
-        .arg("utterance")
+        .arg("text")
+        .arg(text)
+        .arg("--ei")
+        .arg("stream")
+        .arg("3")
+        .output()
+        .await
+    {
+        Ok(o) => {
+            let output = String::from_utf8_lossy(&o.stdout);
+            if !output.contains("Error") {
+                return format!("TTS语音播放成功: {}", text);
+            }
+        }
+        Err(_) => {}
+    }
+    
+    // 方法2: 使用 settings 命令触发 TTS（部分设备支持）
+    match Command::new("cmd")
+        .arg("speech")
+        .arg("speak")
         .arg(text)
         .output()
         .await
     {
-        Ok(_) => format!("TTS语音播放成功: {}", text),
-        Err(_) => {
-            match Command::new("tts")
-                .arg("speak")
-                .arg(text)
-                .output()
-                .await
-            {
-                Ok(_) => format!("TTS语音播放成功: {}", text),
-                Err(e) => format!("TTS语音播放失败: {}", e),
+        Ok(o) => {
+            let output = String::from_utf8_lossy(&o.stdout);
+            if !output.contains("Error") && !output.contains("Unknown") {
+                return format!("TTS语音播放成功: {}", text);
             }
         }
+        Err(_) => {}
     }
+    
+    // 方法3: 使用 toybox/media 调用系统 TTS
+    match Command::new("sh")
+        .arg("-c")
+        .arg(format!("echo '{}' | toybox speak", text.replace('\'', "'\\''")))
+        .output()
+        .await
+    {
+        Ok(_) => return format!("TTS语音播放成功: {}", text),
+        Err(_) => {}
+    }
+    
+    format!("TTS语音播放失败: 设备不支持TTS命令，请安装TTS引擎")
 }
 
 pub async fn tts_speak(text: &str, engine: Option<String>) -> String {

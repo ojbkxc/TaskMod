@@ -230,8 +230,13 @@ pub async fn start_mirror(
                     Ok(n) => {
                         if !wav_header_skipped {
                             header_buf.extend_from_slice(&buf[..n]);
-                            if header_buf.len() >= 44 {
-                                let _ = audio_tx_clone.send(header_buf[44..].to_vec());
+                            // WAV头长度不固定，查找"data"标记来确定头部结束位置
+                            if let Some(pos) = find_wav_data_offset(&header_buf) {
+                                let _ = audio_tx_clone.send(header_buf[pos..].to_vec());
+                                wav_header_skipped = true;
+                            } else if header_buf.len() > 4096 {
+                                // 头部过大，可能不是WAV格式，直接发送原始数据
+                                let _ = audio_tx_clone.send(header_buf.clone());
                                 wav_header_skipped = true;
                             }
                         } else {
@@ -302,14 +307,14 @@ pub async fn send_control(
             let x = req.x.unwrap_or(0.0) as i32;
             let y = req.y.unwrap_or(0.0) as i32;
             state.set_last_touch(Some((x, y)));
-            // Start a long swipe at the touch point to simulate hold
+            // 使用短swipe模拟按下，不阻塞input系统
             Command::new("input")
                 .arg("swipe")
                 .arg(x.to_string())
                 .arg(y.to_string())
                 .arg(x.to_string())
                 .arg(y.to_string())
-                .arg("100000")
+                .arg("200")
                 .status()
                 .await
         }
@@ -317,8 +322,8 @@ pub async fn send_control(
             let x = req.x.unwrap_or(0.0) as i32;
             let y = req.y.unwrap_or(0.0) as i32;
             if let Some((prev_x, prev_y)) = state.get_last_touch() {
-                // Swipe from previous position to current
-                let _ = Command::new("input")
+                // 从上一个位置滑动到当前位置
+                Command::new("input")
                     .arg("swipe")
                     .arg(prev_x.to_string())
                     .arg(prev_y.to_string())
@@ -326,10 +331,12 @@ pub async fn send_control(
                     .arg(y.to_string())
                     .arg("50")
                     .status()
-                    .await;
+                    .await
+            } else {
+                // 没有之前的位置，直接记录
+                state.set_last_touch(Some((x, y)));
+                return Json(ApiResponse::ok("移动完成".to_string()));
             }
-            state.set_last_touch(Some((x, y)));
-            return Json(ApiResponse::ok("移动完成".to_string()));
         }
         "touch_up" => {
             state.set_last_touch(None);
@@ -343,7 +350,20 @@ pub async fn send_control(
         "volume_down" => Command::new("input").arg("keyevent").arg("25").status().await,
         "text" => {
             let text = req.text.unwrap_or_default();
-            Command::new("input").arg("text").arg(text).status().await
+            // 对特殊字符进行转义，使用base64方式输入支持中文和空格
+            let escaped = text
+                .replace("\\", "\\\\")
+                .replace(" ", "%s")
+                .replace("&", "\\&")
+                .replace("<", "\\<")
+                .replace(">", "\\>")
+                .replace("|", "\\|")
+                .replace(";", "\\;")
+                .replace("(", "\\(")
+                .replace(")", "\\)")
+                .replace("'", "\\'")
+                .replace("\"", "\\\"");
+            Command::new("input").arg("text").arg(escaped).status().await
         }
         "swipe" => {
             let x1 = req.x.unwrap_or(0.0) as i32;
@@ -414,14 +434,29 @@ pub async fn send_control(
         "screen_off" => Command::new("input").arg("keyevent").arg("223").status().await,
         "start_app" => {
             let pkg = req.text.unwrap_or_default();
-            Command::new("monkey")
-                .arg("-p")
-                .arg(pkg)
+            // 先尝试用am start启动，失败再用monkey
+            let am_result = Command::new("am")
+                .arg("start")
+                .arg("-a")
+                .arg("android.intent.action.MAIN")
                 .arg("-c")
                 .arg("android.intent.category.LAUNCHER")
-                .arg("1")
+                .arg(pkg)
                 .status()
-                .await
+                .await;
+            match am_result {
+                Ok(s) if s.success() => return Json(ApiResponse::ok(format!("应用已启动: {}", pkg))),
+                _ => {
+                    Command::new("monkey")
+                        .arg("-p")
+                        .arg(pkg)
+                        .arg("-c")
+                        .arg("android.intent.category.LAUNCHER")
+                        .arg("1")
+                        .status()
+                        .await
+                }
+            }
         }
         "rotate" => Command::new("input").arg("keyevent").arg("186").status().await,
         _ => return Json(ApiResponse::err("未知指令")),
@@ -448,6 +483,21 @@ pub async fn mirror_ws(
             }
         }
     })
+}
+
+/// 查找WAV文件中"data"标记的位置，返回音频数据的起始偏移量
+fn find_wav_data_offset(data: &[u8]) -> Option<usize> {
+    // WAV格式: RIFF header + fmt chunk + data chunk
+    // 查找 "data" 标记 (0x64617461)
+    for i in 0..data.len().saturating_sub(4) {
+        if data[i] == b'd' && data[i+1] == b'a' && data[i+2] == b't' && data[i+3] == b'a' {
+            // "data" 后面跟着4字节的数据大小，然后是实际音频数据
+            if i + 8 <= data.len() {
+                return Some(i + 8);
+            }
+        }
+    }
+    None
 }
 
 pub async fn audio_ws(
