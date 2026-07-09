@@ -227,8 +227,8 @@ pub async fn get_mqtt_config() -> Json<serde_json::Value> {
     }
 }
 
-pub async fn save_mqtt_config(Json(config): Json<MqttConfig>) -> Json<ApiResponse<String>> {
-    let mqtt_config = mqtt::MqttConfig {
+pub async fn save_mqtt_config(Json(config): Json<crate::data::models::MqttConfig>) -> Json<ApiResponse<String>> {
+    let mqtt_config = crate::utils::mqtt::MqttConfig {
         enabled: config.enabled,
         broker: config.broker,
         topic_prefix: config.topic_prefix,
