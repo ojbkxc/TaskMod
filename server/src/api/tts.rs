@@ -17,36 +17,71 @@ pub struct TtsRequest {
 }
 
 pub async fn get_tts_engines() -> Json<ApiResponse<Vec<TtsEngineInfo>>> {
-    let output = match Command::new("/system/bin/pm")
-        .arg("list")
-        .arg("packages")
-        .arg("-f")
-        .output()
-        .await
-    {
-        Ok(o) => o,
-        Err(e) => return Json(ApiResponse::err(&format!("执行命令失败: {}", e))),
-    };
-    
-    let stdout = String::from_utf8_lossy(&output.stdout);
     let mut engines = Vec::new();
     
-    for line in stdout.lines() {
-        let lower = line.to_lowercase();
-        if lower.contains("tts") || lower.contains("speech") || lower.contains("voice")
-            || lower.contains("speak") || lower.contains("pico")
-            || lower.contains("svox") || lower.contains("ivona")
-            || lower.contains("xiaomi") && lower.contains("ai")
-            || lower.contains("miui.tts") || lower.contains("google.tts")
-        {
-            let parts: Vec<&str> = line.split('=').collect();
-            if parts.len() >= 2 {
-                let package_name = parts[1].trim();
-                let label = package_name.replace(".", " ").replace("tts", "TTS");
+    let cmd_result = Command::new("/system/bin/cmd")
+        .arg("tts")
+        .arg("list")
+        .arg("engines")
+        .output()
+        .await;
+    
+    match cmd_result {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                
+                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                if parts.is_empty() {
+                    continue;
+                }
+                
+                let package_name = parts[0];
+                let label = if parts.len() > 1 {
+                    parts[1..].join(" ").to_string()
+                } else {
+                    format!("TTS Engine ({})", package_name)
+                };
+                
                 engines.push(TtsEngineInfo {
                     package_name: package_name.to_string(),
-                    label: format!("{} ({})", label, package_name),
+                    label,
                 });
+            }
+        }
+        Err(e) => {
+            log::warn!("cmd tts list engines failed: {}", e);
+        }
+    }
+    
+    if engines.is_empty() {
+        let pm_result = Command::new("/system/bin/pm")
+            .arg("list")
+            .arg("packages")
+            .output()
+            .await;
+        
+        if let Ok(output) = pm_result {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let tts_keywords = ["tts", "speech", "voice", "pico", "svox", "google.android.tts", "com.google.android.tts", "miui.tts"];
+            
+            for line in stdout.lines() {
+                let lower = line.to_lowercase();
+                if tts_keywords.iter().any(|kw| lower.contains(kw)) {
+                    let parts: Vec<&str> = line.split('=').collect();
+                    if parts.len() >= 2 {
+                        let package_name = parts[1].trim();
+                        let label = format!("{}-TTS", package_name.split('.').last().unwrap_or(package_name));
+                        engines.push(TtsEngineInfo {
+                            package_name: package_name.to_string(),
+                            label,
+                        });
+                    }
+                }
             }
         }
     }
@@ -54,9 +89,15 @@ pub async fn get_tts_engines() -> Json<ApiResponse<Vec<TtsEngineInfo>>> {
     if engines.is_empty() {
         engines.push(TtsEngineInfo {
             package_name: "com.android.tts".to_string(),
-            label: "默认TTS引擎".to_string(),
+            label: "默认系统TTS".to_string(),
+        });
+        engines.push(TtsEngineInfo {
+            package_name: "com.google.android.tts".to_string(),
+            label: "Google TTS (Google Text-to-Speech)".to_string(),
         });
     }
+    
+    engines.sort_by(|a, b| a.label.cmp(&b.label));
     
     Json(ApiResponse::ok(engines))
 }
@@ -67,7 +108,6 @@ pub async fn speak(Json(req): Json<TtsRequest>) -> Json<ApiResponse<String>> {
         return Json(ApiResponse::err("文本内容不能为空"));
     }
 
-    // Try cmd tts speak first (Android 10+)
     let mut cmd = Command::new("/system/bin/cmd");
     cmd.arg("tts").arg("speak").arg(text);
 
@@ -77,18 +117,27 @@ pub async fn speak(Json(req): Json<TtsRequest>) -> Json<ApiResponse<String>> {
     if let Some(ref lang) = req.language {
         cmd.arg("-l").arg(lang);
     }
+    if let Some(rate) = req.rate {
+        cmd.arg("-r").arg(format!("{:.2}", rate));
+    }
+    if let Some(pitch) = req.pitch {
+        cmd.arg("-p").arg(format!("{:.2}", pitch));
+    }
+    if let Some(volume) = req.volume {
+        cmd.arg("-v").arg(format!("{:.2}", volume));
+    }
 
     match cmd.output().await {
         Ok(output) => {
             if output.status.success() {
                 return Json(ApiResponse::ok_msg("语音播放成功".to_string(), text));
             }
-            // If cmd tts failed, try am broadcast as fallback
         }
-        Err(_) => {}
+        Err(e) => {
+            return Json(ApiResponse::err(&format!("执行命令失败: {}", e)));
+        }
     }
 
-    // Fallback: am broadcast
     let escaped_text = text.replace("'", "\\'").replace("\"", "\\\"");
     let mut cmd_parts: Vec<String> = vec!["/system/bin/am", "broadcast",
         "-a", "com.google.android.tts.engine.TTS_SPEAK",
@@ -109,6 +158,19 @@ pub async fn speak(Json(req): Json<TtsRequest>) -> Json<ApiResponse<String>> {
             }
         }
         Err(e) => Json(ApiResponse::err(&format!("执行命令失败: {}", e))),
+    }
+}
+
+pub async fn stop_tts() -> Json<ApiResponse<String>> {
+    let result = Command::new("/system/bin/cmd")
+        .arg("tts")
+        .arg("stop")
+        .status()
+        .await;
+
+    match result {
+        Ok(_) => Json(ApiResponse::ok("语音播放已停止".to_string())),
+        Err(e) => Json(ApiResponse::err(&format!("停止失败: {}", e))),
     }
 }
 

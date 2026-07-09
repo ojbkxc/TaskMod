@@ -331,10 +331,9 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                                                             }
                                                             if !content.is_empty() {
                                                                 full_response.push_str(content);
-                                                                // Send streaming chunk to client
                                                                 let _ = write.send(axum::extract::ws::Message::Text(
                                                                     serde_json::to_string(&json!({
-                                                                        "type": "stream",
+                                                                        "type": "chunk",
                                                                         "content": content
                                                                     })).unwrap_or_default()
                                                                 )).await;
@@ -420,37 +419,42 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                             messages.push(assistant_msg.clone());
                             conversation_messages.push(assistant_msg);
 
-                            let mut tool_results: Vec<serde_json::Value> = Vec::new();
-
                             for tc in &tool_calls {
                                 if let Some(func) = tc.get("function") {
                                     let name = func.get("name").and_then(|n| n.as_str()).unwrap_or("");
                                     let args = func.get("arguments").and_then(|a| a.as_str()).unwrap_or("{}");
+
+                                    let _ = write.send(axum::extract::ws::Message::Text(
+                                        serde_json::to_string(&json!({
+                                            "type": "tool_call",
+                                            "name": name,
+                                            "arguments": args
+                                        })).unwrap_or_default()
+                                    )).await;
 
                                     let result = match registry.execute(name, args).await {
                                         Some(r) => r,
                                         None => format!("未知工具: {}", name),
                                     };
 
-                                    tool_results.push(json!({
+                                    let tool_result = json!({
                                         "role": "tool",
                                         "tool_call_id": tc.get("id").and_then(|v| v.as_str()).unwrap_or(""),
                                         "content": result
-                                    }));
+                                    });
+
+                                    messages.push(tool_result.clone());
+                                    conversation_messages.push(tool_result);
+
+                                    let _ = write.send(axum::extract::ws::Message::Text(
+                                        serde_json::to_string(&json!({
+                                            "type": "tool_result",
+                                            "name": name,
+                                            "result": result
+                                        })).unwrap_or_default()
+                                    )).await;
                                 }
                             }
-
-                            for tr in &tool_results {
-                                messages.push(tr.clone());
-                                conversation_messages.push(tr.clone());
-                            }
-
-                            let _ = write.send(axum::extract::ws::Message::Text(
-                                serde_json::to_string(&json!({
-                                    "type": "tool_result",
-                                    "results": tool_results
-                                })).unwrap_or_default()
-                            )).await;
                         } else {
                             if !full_response.is_empty() || !full_thinking.is_empty() {
                                 let mut msg = json!({

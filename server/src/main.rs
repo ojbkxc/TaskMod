@@ -22,35 +22,38 @@ fn start_watchdog(heartbeat: Arc<AtomicBool>, timeout_secs: u64) {
         return;
     }
     std::thread::spawn(move || {
-        let mut last_alive = true;
+        let mut missed_heartbeats = 0;
+        let max_missed = (timeout_secs / 10) as i32;
         loop {
-            std::thread::sleep(std::time::Duration::from_secs(5));
+            std::thread::sleep(std::time::Duration::from_secs(10));
             if heartbeat.load(Ordering::Relaxed) {
                 heartbeat.store(false, Ordering::Relaxed);
-                last_alive = true;
-            } else if last_alive {
-                // 心跳未更新，可能卡死
-                let email_conf = utils::email::get_email_config();
-                if email_conf.enable_notify {
-                    let now = chrono::Local::now();
-                    let subject = format!("[WARNING] TaskMod 可能卡死 - {}", now.format("%Y-%m-%d %H:%M:%S"));
-                    let body = format!(
-                        "TaskMod 主循环已超过 {} 秒未响应心跳。\n\n可能原因：\n- 主线程阻塞\n- 资源耗尽（内存/CPU）\n- 死锁\n\n请检查设备状态。",
-                        timeout_secs
-                    );
-                    let rt = match tokio::runtime::Handle::try_current() {
-                        Ok(h) => h,
-                        Err(_) => return,
-                    };
-                    let _ = rt.block_on(utils::email::send_email(
-                        &email_conf,
-                        Some(&subject),
-                        Some(&body),
-                        None,
-                    ));
+                missed_heartbeats = 0;
+            } else {
+                missed_heartbeats += 1;
+                if missed_heartbeats >= max_missed {
+                    let email_conf = utils::email::get_email_config();
+                    if email_conf.enable_notify {
+                        let now = chrono::Local::now();
+                        let subject = format!("[WARNING] TaskMod 可能卡死 - {}", now.format("%Y-%m-%d %H:%M:%S"));
+                        let body = format!(
+                            "TaskMod 主循环已超过 {} 秒未响应心跳。\n\n可能原因：\n- 主线程阻塞\n- 资源耗尽（内存/CPU）\n- 死锁\n\n请检查设备状态。",
+                            timeout_secs
+                        );
+                        let rt = match tokio::runtime::Handle::try_current() {
+                            Ok(h) => h,
+                            Err(_) => return,
+                        };
+                        let _ = rt.block_on(utils::email::send_email(
+                            &email_conf,
+                            Some(&subject),
+                            Some(&body),
+                            None,
+                        ));
+                    }
+                    eprintln!("[看门狗] 警告: 主循环可能卡死，已超过 {} 秒未响应", timeout_secs);
+                    missed_heartbeats = 0;
                 }
-                eprintln!("[看门狗] 警告: 主循环可能卡死，已超过 {} 秒未响应", timeout_secs);
-                last_alive = false;
             }
         }
     });
@@ -260,6 +263,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/status", get(api::system::system_status))
         .route("/api/tts/engines", get(api::tts::get_tts_engines))
         .route("/api/tts/speak", post(api::tts::speak))
+        .route("/api/tts/stop", post(api::tts::stop_tts))
         .route("/api/ai/providers", get(api::ai::list_ai_providers).post(api::ai::add_ai_provider))
         .route("/api/ai/providers/:id", get(api::ai::get_ai_provider_api).put(api::ai::update_ai_provider).delete(api::ai::delete_ai_provider))
         .route("/ws/ai-chat", get(api::ai::ai_chat_ws))

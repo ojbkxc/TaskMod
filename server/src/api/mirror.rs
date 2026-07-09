@@ -663,42 +663,143 @@ pub struct ClipboardReq {
 }
 
 pub async fn get_device_clipboard() -> Json<ApiResponse<String>> {
-    match Command::new("sh")
-        .args(["-c", "service call clipboard 2 i32 1 s16 'com.android.shell' | grep -o '0x[0-9a-f]*' | head -1"])
+    let cmd_output = Command::new("cmd")
+        .arg("clipboard")
+        .arg("get")
         .output()
-        .await
-    {
+        .await;
+    
+    match cmd_output {
         Ok(output) => {
-            let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let mut text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if text.is_empty() || text.contains("Error") {
+                let fallback = Command::new("sh")
+                    .args(["-c", "content query --uri content://clipboard --projection text"])
+                    .output()
+                    .await;
+                if let Ok(fb_output) = fallback {
+                    let fb_text = String::from_utf8_lossy(&fb_output.stdout);
+                    let parts: Vec<&str> = fb_text.split('=').collect();
+                    if parts.len() > 1 {
+                        text = parts[1].trim().to_string();
+                    }
+                }
+            }
+            if text.starts_with("0x") {
+                text = hex_to_string(&text);
+            }
             Json(ApiResponse::ok(text))
         }
-        Err(e) => Json(ApiResponse::err(&format!("获取剪贴板失败: {}", e))),
+        Err(e) => {
+            let fallback = Command::new("sh")
+                .args(["-c", "content query --uri content://clipboard --projection text | cut -d'=' -f2"])
+                .output()
+                .await;
+            match fallback {
+                Ok(output) => {
+                    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    Json(ApiResponse::ok(text))
+                }
+                Err(e2) => Json(ApiResponse::err(&format!("获取剪贴板失败: {}, 备用方案也失败: {}", e, e2))),
+            }
+        }
     }
 }
 
 pub async fn set_device_clipboard(Json(req): Json<ClipboardReq>) -> Json<ApiResponse<String>> {
-    let escaped = req.text.replace('\'', "'\\''");
-    match Command::new("sh")
-        .args(["-c", &format!("am broadcast -a clipper.set -e text '{}'", escaped)])
+    let text = req.text.clone();
+    
+    let cmd_output = Command::new("cmd")
+        .arg("clipboard")
+        .arg("set")
+        .arg(&text)
         .output()
-        .await
-    {
+        .await;
+    
+    match cmd_output {
         Ok(output) => {
             if output.status.success() {
                 Json(ApiResponse::ok("已设置设备剪贴板".to_string()))
             } else {
-                // fallback: 使用 input text
-                match Command::new("sh")
-                    .args(["-c", &format!("echo '{}' | pbcopy 2>/dev/null || true", escaped)])
+                let fallback = Command::new("sh")
+                    .args(["-c", &format!("am broadcast -a clipper.set -e text '{}'", escape_for_shell(&text))])
                     .output()
-                    .await
-                {
-                    _ => Json(ApiResponse::ok("已尝试设置剪贴板".to_string())),
+                    .await;
+                match fallback {
+                    Ok(fb_output) => {
+                        if fb_output.status.success() {
+                            Json(ApiResponse::ok("已设置设备剪贴板".to_string()))
+                        } else {
+                            let content_output = Command::new("sh")
+                                .args(["-c", &format!("content insert --uri content://clipboard --bind text:s:'{}'", escape_for_shell(&text))])
+                                .output()
+                                .await;
+                            match content_output {
+                                Ok(co) => {
+                                    if co.status.success() {
+                                        Json(ApiResponse::ok("已设置设备剪贴板".to_string()))
+                                    } else {
+                                        Json(ApiResponse::err(&format!("设置剪贴板失败: {}", String::from_utf8_lossy(&co.stderr))))
+                                    }
+                                }
+                                Err(e) => Json(ApiResponse::err(&format!("设置剪贴板失败: {}", e))),
+                            }
+                        }
+                    }
+                    Err(e) => Json(ApiResponse::err(&format!("设置剪贴板失败: {}", e))),
                 }
             }
         }
-        Err(e) => Json(ApiResponse::err(&format!("设置剪贴板失败: {}", e))),
+        Err(e) => {
+            let fallback = Command::new("sh")
+                .args(["-c", &format!("am broadcast -a clipper.set -e text '{}'", escape_for_shell(&text))])
+                .output()
+                .await;
+            match fallback {
+                Ok(fb_output) => {
+                    if fb_output.status.success() {
+                        Json(ApiResponse::ok("已设置设备剪贴板".to_string()))
+                    } else {
+                        Json(ApiResponse::err(&format!("设置剪贴板失败: {}", String::from_utf8_lossy(&fb_output.stderr))))
+                    }
+                }
+                Err(e2) => Json(ApiResponse::err(&format!("设置剪贴板失败: {}", e2))),
+            }
+        }
     }
+}
+
+fn hex_to_string(hex: &str) -> String {
+    let hex = hex.trim_start_matches("0x");
+    let mut result = String::new();
+    let bytes = hex.as_bytes();
+    for i in (0..bytes.len()).step_by(2) {
+        if let (Some(&a), Some(&b)) = (bytes.get(i), bytes.get(i + 1)) {
+            let byte = match (hex_char_to_u8(a), hex_char_to_u8(b)) {
+                (Some(h), Some(l)) => (h << 4) | l,
+                _ => continue,
+            };
+            result.push(byte as char);
+        }
+    }
+    result
+}
+
+fn hex_char_to_u8(c: u8) -> Option<u8> {
+    match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        b'A'..=b'F' => Some(c - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn escape_for_shell(text: &str) -> String {
+    text.replace('\\', "\\\\")
+        .replace('\'', "'\\''")
+        .replace('"', "\\\"")
+        .replace('$', "\\$")
+        .replace('`', "\\`")
 }
 
 // ==================== 设备信息获取 ====================
