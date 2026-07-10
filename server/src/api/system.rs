@@ -1,4 +1,4 @@
-use axum::{extract::Query, Json, response::Html};
+use axum::{extract::{Path as AxumPath, Query}, Json, response::{Html, IntoResponse}};
 use chrono::{DateTime, Local};
 use serde_json::json;
 use std::collections::HashMap;
@@ -97,7 +97,7 @@ pub async fn take_screenshot() -> Json<ApiResponse<String>> {
 }
 
 pub async fn get_screenshot(AxumPath(filename): AxumPath<String>) -> impl IntoResponse {
-    use axum::{http::StatusCode, response::IntoResponse};
+    use axum::http::StatusCode;
     
     if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
         return StatusCode::BAD_REQUEST.into_response();
@@ -733,5 +733,3 @@ fn evaluate_condition(expr: &str) -> bool {
         _ => false,
     }
 }
-
-use axum::{extract::Path as AxumPath, response::IntoResponse};

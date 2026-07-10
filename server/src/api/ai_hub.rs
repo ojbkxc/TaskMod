@@ -1313,7 +1313,7 @@ pub async fn upload_image(Json(req): Json<UploadImageReq>) -> Json<serde_json::V
     }
 }
 
-pub async fn get_image(Path(id): Path<String>) -> Result<axum::response::Response, (axum::http::StatusCode, String)> {
+pub async fn get_image(Path(id): Path<String>) -> impl axum::response::IntoResponse {
     use crate::config::UPLOAD_DIR;
     for ext in &["png", "jpg", "gif", "webp"] {
         let path = format!("{}/{}.{}", UPLOAD_DIR, id, ext);
@@ -1325,14 +1325,17 @@ pub async fn get_image(Path(id): Path<String>) -> Result<axum::response::Respons
                 "webp" => "image/webp",
                 _ => "application/octet-stream",
             };
-            return Ok(axum::response::Response::builder()
-                .header("content-type", mime)
-                .header("cache-control", "public, max-age=86400")
-                .body(axum::body::boxed(axum::body::Full::from(bytes)))
-                .unwrap_or_else(|_| axum::response::Response::new(axum::body::boxed(axum::body::Full::from("构建响应失败")))));
+            return (
+                axum::http::StatusCode::OK,
+                [
+                    (axum::http::header::CONTENT_TYPE, mime),
+                    (axum::http::header::CACHE_CONTROL, "public, max-age=86400"),
+                ],
+                bytes,
+            ).into_response();
         }
     }
-    Err((axum::http::StatusCode::NOT_FOUND, "图片未找到".to_string()))
+    (axum::http::StatusCode::NOT_FOUND, "图片未找到").into_response()
 }
 
 // ==================== Skill GitHub 导入 ====================
