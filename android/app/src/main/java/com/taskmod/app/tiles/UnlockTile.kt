@@ -21,7 +21,6 @@ class UnlockTile : TileService() {
 
     override fun onClick() {
         super.onClick()
-        val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 RootHelper.executeRoot("input keyevent KEYCODE_WAKEUP")
@@ -30,9 +29,7 @@ class UnlockTile : TileService() {
                 android.os.Handler(mainLooper).post {
                     Toast.makeText(this@UnlockTile, if (success) "上滑解锁已执行" else "解锁失败", Toast.LENGTH_SHORT).show()
                 }
-            } finally {
-                pendingResult.finish()
-            }
+            } catch (_: Exception) {}
         }
     }
 }

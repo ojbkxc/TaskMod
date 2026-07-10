@@ -499,36 +499,39 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> axum::response::Response {
                             messages.push(assistant_msg.clone());
                             conversation_messages.push(assistant_msg);
 
-                            // 创建本地 registry 用于工具执行
-                            let mut exec_registry = ToolRegistry::new();
-                            exec_registry.register(Box::new(adb_tools::AdbTapTool));
-                            exec_registry.register(Box::new(adb_tools::AdbSwipeTool));
-                            exec_registry.register(Box::new(adb_tools::AdbKeyeventTool));
-                            exec_registry.register(Box::new(adb_tools::AdbInputTextTool));
-                            exec_registry.register(Box::new(adb_tools::AdbScreencapTool));
-                            exec_registry.register(Box::new(adb_tools::AdbCommandTool));
-                            exec_registry.register(Box::new(adb_tools::AdbStartAppTool));
-                            exec_registry.register(Box::new(adb_tools::AdbStopAppTool));
-                            exec_registry.register(Box::new(adb_tools::AdbClearAppDataTool));
-                            exec_registry.register(Box::new(adb_tools::GetWifiInfoTool));
-                            exec_registry.register(Box::new(adb_tools::GetDeviceInfoTool));
-                            exec_registry.register(Box::new(adb_tools::GetBatteryInfoTool));
-                            exec_registry.register(Box::new(adb_tools::GetRunningAppsTool));
-                            exec_registry.register(Box::new(adb_tools::AdbRebootTool));
-                            exec_registry.register(Box::new(adb_tools::AdbShutdownTool));
-                            exec_registry.register(Box::new(adb_tools::AdbTtsTool));
-                            exec_registry.register(Box::new(adb_tools::AdbUnlockTool));
-                            exec_registry.register(Box::new(script_tools::ListScriptsTool));
-                            exec_registry.register(Box::new(script_tools::ReadScriptTool));
-                            exec_registry.register(Box::new(script_tools::WriteScriptTool));
-                            exec_registry.register(Box::new(script_tools::DeleteScriptTool));
-                            exec_registry.register(Box::new(script_tools::RunScriptTool));
-                            exec_registry.register(Box::new(script_tools::ViewLogsTool));
-                            exec_registry.register(Box::new(task_tools::ListTasksTool));
-                            exec_registry.register(Box::new(task_tools::AddTaskTool));
-                            exec_registry.register(Box::new(task_tools::DeleteTaskTool));
-                            exec_registry.register(Box::new(task_tools::ModifyTaskTool));
-                            exec_registry.register(Box::new(task_tools::ListScriptsForTaskTool));
+                            // 创建 registry 用于工具执行（Arc 共享给并行任务）
+                            let exec_registry = std::sync::Arc::new({
+                                let mut reg = ToolRegistry::new();
+                                reg.register(Box::new(adb_tools::AdbTapTool));
+                                reg.register(Box::new(adb_tools::AdbSwipeTool));
+                                reg.register(Box::new(adb_tools::AdbKeyeventTool));
+                                reg.register(Box::new(adb_tools::AdbInputTextTool));
+                                reg.register(Box::new(adb_tools::AdbScreencapTool));
+                                reg.register(Box::new(adb_tools::AdbCommandTool));
+                                reg.register(Box::new(adb_tools::AdbStartAppTool));
+                                reg.register(Box::new(adb_tools::AdbStopAppTool));
+                                reg.register(Box::new(adb_tools::AdbClearAppDataTool));
+                                reg.register(Box::new(adb_tools::GetWifiInfoTool));
+                                reg.register(Box::new(adb_tools::GetDeviceInfoTool));
+                                reg.register(Box::new(adb_tools::GetBatteryInfoTool));
+                                reg.register(Box::new(adb_tools::GetRunningAppsTool));
+                                reg.register(Box::new(adb_tools::AdbRebootTool));
+                                reg.register(Box::new(adb_tools::AdbShutdownTool));
+                                reg.register(Box::new(adb_tools::AdbTtsTool));
+                                reg.register(Box::new(adb_tools::AdbUnlockTool));
+                                reg.register(Box::new(script_tools::ListScriptsTool));
+                                reg.register(Box::new(script_tools::ReadScriptTool));
+                                reg.register(Box::new(script_tools::WriteScriptTool));
+                                reg.register(Box::new(script_tools::DeleteScriptTool));
+                                reg.register(Box::new(script_tools::RunScriptTool));
+                                reg.register(Box::new(script_tools::ViewLogsTool));
+                                reg.register(Box::new(task_tools::ListTasksTool));
+                                reg.register(Box::new(task_tools::AddTaskTool));
+                                reg.register(Box::new(task_tools::DeleteTaskTool));
+                                reg.register(Box::new(task_tools::ModifyTaskTool));
+                                reg.register(Box::new(task_tools::ListScriptsForTaskTool));
+                                reg
+                            });
 
                             // 并行执行所有工具调用，保持原始顺序
                             let tool_futures: Vec<_> = tool_calls.iter().map(|tc| {
@@ -554,10 +557,11 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> axum::response::Response {
                                     let name = name.clone();
                                     let args = args.clone();
                                     let tool_call_id = tool_call_id.clone();
+                                    let reg = exec_registry.clone();
                                     async move {
                                         let result = match tokio::time::timeout(
                                             std::time::Duration::from_secs(30),
-                                            exec_registry.execute(&name, &args),
+                                            reg.execute(&name, &args),
                                         ).await {
                                             Ok(Some(r)) => r,
                                             Ok(None) => format!("未知工具: {}", name),
