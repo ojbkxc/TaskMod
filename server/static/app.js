@@ -8,6 +8,101 @@
     let currentModel = '';
     let isChatStreaming = false;
     let ttsReplyEnabled = false; // 朗读AI回复开关
+
+    /* ===== WebSocket 自动重连 (参照 Scarlet 指数退避策略) ===== */
+    class WsAutoReconnect {
+        constructor(url, options = {}) {
+            this.url = url;
+            this.initialDelay = options.initialDelay || 1000;    // 初始延迟 1s
+            this.maxDelay = options.maxDelay || 30000;           // 最大延迟 30s
+            this.maxRetries = options.maxRetries || Infinity;    // 最大重试次数
+            this.onMessage = options.onMessage || null;
+            this.onOpen = options.onOpen || null;
+            this.onClose = options.onClose || null;
+            this.onError = options.onError || null;
+            this.autoConnect = options.autoConnect !== false;    // 默认自动连接
+
+            this._ws = null;
+            this._retryCount = 0;
+            this._timer = null;
+            this._intentionalClose = false;
+            this._state = 'disconnected'; // disconnected | connecting | connected | waiting
+
+            if (this.autoConnect) this.connect();
+        }
+
+        get ws() { return this._ws; }
+        get state() { return this._state; }
+
+        connect() {
+            if (this._state === 'connected' || this._state === 'connecting') return;
+            this._intentionalClose = false;
+            this._state = 'connecting';
+            clearTimeout(this._timer);
+
+            try {
+                const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                this._ws = new WebSocket(proto + '//' + location.host + this.url);
+            } catch (e) {
+                this._scheduleRetry();
+                return;
+            }
+
+            this._ws.onopen = () => {
+                this._retryCount = 0;
+                this._state = 'connected';
+                if (this.onOpen) this.onOpen(this._ws);
+            };
+
+            this._ws.onmessage = (e) => {
+                if (this.onMessage) this.onMessage(e, this._ws);
+            };
+
+            this._ws.onclose = (e) => {
+                this._state = 'disconnected';
+                if (this.onClose) this.onClose(e, this._ws);
+                if (!this._intentionalClose) this._scheduleRetry();
+            };
+
+            this._ws.onerror = (e) => {
+                if (this.onError) this.onError(e, this._ws);
+            };
+        }
+
+        // 指数退避 + 随机抖动 (ExponentialWithJitter)
+        _backoffDuration() {
+            const exp = Math.min(this.maxDelay, this.initialDelay * Math.pow(2, this._retryCount));
+            // 添加 ±25% 随机抖动
+            const jitter = exp * 0.25;
+            return Math.floor(exp - jitter + Math.random() * jitter * 2);
+        }
+
+        _scheduleRetry() {
+            if (this._retryCount >= this.maxRetries) return;
+            this._state = 'waiting';
+            const delay = this._backoffDuration();
+            this._retryCount++;
+            this._timer = setTimeout(() => this.connect(), delay);
+        }
+
+        send(data) {
+            if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+                this._ws.send(data);
+                return true;
+            }
+            return false;
+        }
+
+        close() {
+            this._intentionalClose = true;
+            clearTimeout(this._timer);
+            if (this._ws) {
+                this._ws.close();
+                this._ws = null;
+            }
+            this._state = 'disconnected';
+        }
+    }
     const _loaded = {}; // 懒加载标记，避免重复请求
 
     /* ===== Tab Switching ===== */
@@ -955,19 +1050,25 @@
         }
     }
 
+    let chatReconnect = null;
+
     function connectChatWs() {
-        if (chatWs && chatWs.readyState <= 1) return;
-        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        chatWs = new WebSocket(proto + '//' + location.host + '/ws/ai-chat');
-        chatWs.onopen = () => { /* ready */ };
-        chatWs.onmessage = (evt) => {
-            try {
-                const msg = JSON.parse(evt.data);
-                handleChatMessage(msg);
-            } catch (e) { /* ignore non-JSON */ }
-        };
-        chatWs.onclose = () => { isChatStreaming = false; };
-        chatWs.onerror = () => { showToast('AI 连接错误', 'error'); isChatStreaming = false; };
+        if (chatReconnect && (chatReconnect.state === 'connected' || chatReconnect.state === 'connecting')) return;
+
+        chatReconnect = new WsAutoReconnect('/ws/ai-chat', {
+            initialDelay: 2000,
+            maxDelay: 20000,
+            onOpen: (ws) => { chatWs = ws; },
+            onMessage: (evt) => {
+                try {
+                    const msg = JSON.parse(evt.data);
+                    handleChatMessage(msg);
+                } catch (e) { /* ignore non-JSON */ }
+            },
+            onClose: () => { isChatStreaming = false; },
+            onError: () => {}
+        });
+        chatWs = chatReconnect.ws;
     }
 
     let currentAssistantEl = null;
@@ -1198,6 +1299,7 @@
     }
 
     async function stopMirror() {
+        if (mirrorReconnect) { mirrorReconnect.close(); mirrorReconnect = null; }
         if (mirrorWs) { mirrorWs.close(); mirrorWs = null; }
         if (mirrorDecoder) { try { mirrorDecoder.close(); } catch(e) {} mirrorDecoder = null; }
         if (mirrorFallbackTimer) { clearInterval(mirrorFallbackTimer); mirrorFallbackTimer = null; }
@@ -1217,41 +1319,39 @@
         showToast('投屏已停止', 'info');
     }
 
+    let mirrorReconnect = null;
+
     function connectMirrorWs() {
-        if (mirrorWs && mirrorWs.readyState <= 1) return;
-        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        mirrorWs = new WebSocket(proto + '//' + location.host + '/ws/mirror');
-        mirrorWs.binaryType = 'arraybuffer';
+        if (mirrorReconnect && (mirrorReconnect.state === 'connected' || mirrorReconnect.state === 'connecting')) return;
 
-        mirrorWs.onopen = () => {
-            document.getElementById('mirror-status-text').textContent = '已连接';
-            document.getElementById('mirror-status').style.display = 'none';
-            if (!mirrorUseFallback) initMirrorDecoder();
-        };
-
-        mirrorWs.onmessage = (evt) => {
-            if (evt.data instanceof ArrayBuffer) {
-                if (!mirrorUseFallback) {
-                    handleMirrorBinary(evt.data);
+        mirrorReconnect = new WsAutoReconnect('/ws/mirror', {
+            initialDelay: 2000,
+            maxDelay: 15000,
+            onOpen: (ws) => {
+                ws.binaryType = 'arraybuffer';
+                mirrorWs = ws;
+                document.getElementById('mirror-status-text').textContent = '已连接';
+                document.getElementById('mirror-status').style.display = 'none';
+                if (!mirrorUseFallback) initMirrorDecoder();
+            },
+            onMessage: (evt) => {
+                if (evt.data instanceof ArrayBuffer) {
+                    if (!mirrorUseFallback) handleMirrorBinary(evt.data);
+                } else {
+                    try {
+                        const msg = JSON.parse(evt.data);
+                        if (msg.type === 'status') {
+                            document.getElementById('mirror-status-text').textContent = msg.message || '';
+                        }
+                    } catch (e) {}
                 }
-            } else {
-                try {
-                    const msg = JSON.parse(evt.data);
-                    if (msg.type === 'status') {
-                        document.getElementById('mirror-status-text').textContent = msg.message || '';
-                    }
-                } catch (e) {}
-            }
-        };
-
-        mirrorWs.onclose = () => {
-            document.getElementById('mirror-status').style.display = 'flex';
-            document.getElementById('mirror-status-text').textContent = '已断开';
-        };
-
-        mirrorWs.onerror = () => {
-            showToast('投屏连接错误', 'error');
-        };
+            },
+            onClose: () => {
+                document.getElementById('mirror-status').style.display = 'flex';
+                document.getElementById('mirror-status-text').textContent = '重连中...';
+            },
+            onError: () => {}
+        });
     }
 
     /**
@@ -1608,22 +1708,25 @@
                 mirrorAudioNode.connect(mirrorAudioCtx.destination);
                 URL.revokeObjectURL(url);
 
-                // 连接音频 WebSocket
-                const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-                mirrorAudioWs = new WebSocket(proto + '//' + location.host + '/ws/mirror/audio');
-                mirrorAudioWs.binaryType = 'arraybuffer';
-
-                mirrorAudioWs.onmessage = (evt) => {
-                    if (evt.data instanceof ArrayBuffer && mirrorAudioNode) {
-                        // 后端发送原始 PCM 16-bit mono 数据
-                        const pcm16 = new Int16Array(evt.data);
-                        mirrorAudioNode.port.postMessage(pcm16);
+                // 连接音频 WebSocket (自动重连)
+                let mirrorAudioReconnect = new WsAutoReconnect('/ws/mirror/audio', {
+                    initialDelay: 3000,
+                    maxDelay: 20000,
+                    onOpen: (ws) => {
+                        ws.binaryType = 'arraybuffer';
+                        mirrorAudioWs = ws;
+                    },
+                    onMessage: (evt) => {
+                        if (evt.data instanceof ArrayBuffer && mirrorAudioNode) {
+                            const pcm16 = new Int16Array(evt.data);
+                            mirrorAudioNode.port.postMessage(pcm16);
+                        }
+                    },
+                    onClose: () => {
+                        // 重连由 WsAutoReconnect 自动处理
                     }
-                };
-
-                mirrorAudioWs.onclose = () => {
-                    if (mirrorAudioEnabled) stopMirrorAudio();
-                };
+                });
+                mirrorAudioWs = mirrorAudioReconnect.ws;
 
                 mirrorAudioEnabled = true;
                 const btn = document.getElementById('mirror-audio-btn');
@@ -1949,6 +2052,9 @@
     async function loadFileManager(path) {
         _currentPath = path || '/';
         updateBreadcrumb();
+        // 清空搜索
+        const searchInput = document.getElementById('file-search-input');
+        if (searchInput) searchInput.value = '';
 
         const list = document.getElementById('file-list');
         list.innerHTML = '<div style="padding:30px;text-align:center;opacity:0.5;"><i class="fas fa-spinner fa-spin"></i> 加载中...</div>';
@@ -1957,50 +2063,98 @@
             const res = await apiGet('/api/files?path=' + encodeURIComponent(_currentPath));
             if (!res.ok) {
                 list.innerHTML = '<div class="ds-empty-state" style="padding:30px;"><i class="fas fa-exclamation-triangle" style="font-size:2rem;color:var(--ds-warning);"></i><p>' + escapeHtml(res.message || '加载失败') + '</p></div>';
+                _fileData = [];
                 return;
             }
 
-            const files = res.data || [];
-            if (files.length === 0) {
+            _fileData = res.data || [];
+            if (_fileData.length === 0) {
                 list.innerHTML = '<div class="ds-empty-state" style="padding:30px;"><i class="fas fa-folder-open" style="font-size:2rem;opacity:0.3;"></i><p>空目录</p></div>';
                 return;
             }
 
-            list.innerHTML = files.map(f => {
-                const icon = fileIcon(f.name, f.is_dir);
-                const size = f.is_dir ? '-' : formatSize(f.size);
-                const time = formatTimestamp(f.modified);
-                const nameStyle = f.is_dir ? 'color:var(--ds-blue);cursor:pointer;font-weight:500;' : 'cursor:pointer;';
-                const nameAction = f.is_dir ? 'onclick="loadFileManager(\'' + escapeJs(f.path) + '\')"' : 'onclick="fileOpen(\'' + escapeJs(f.path) + '\')"';
-                const downloadBtn = f.is_dir ? '' : '<a href="/api/files/download?path=' + encodeURIComponent(f.path) + '" download="' + escapeHtml(f.name) + '" style="color:var(--ds-text-secondary);padding:4px;" title="下载"><i class="fas fa-download" style="font-size:12px;"></i></a>';
-                const isZip = (f.name.toLowerCase().endsWith('.zip'));
-                const zipBtn = f.is_dir
-                    ? '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:4px;" onclick="fileZip(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')" title="压缩为zip"><i class="fas fa-file-archive" style="font-size:12px;"></i></button>'
-                    : (isZip
-                        ? '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:4px;" onclick="fileUnzip(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')" title="解压"><i class="fas fa-expand-arrows-alt" style="font-size:12px;"></i></button>'
-                        : '');
-
-                return '<div style="display:grid;grid-template-columns:1fr 100px 140px;gap:0;padding:8px 16px;align-items:center;border-bottom:1px solid var(--ds-border);font-size:13px;" ondblclick=' + (f.is_dir ? '"loadFileManager(\'' + escapeJs(f.path) + '\')"' : '"fileOpen(\'' + escapeJs(f.path) + '\')"') + '>' +
-                    '<div style="display:flex;align-items:center;gap:10px;min-width:0;">' +
-                    '<span style="font-size:16px;width:20px;text-align:center;">' + icon + '</span>' +
-                    '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' + nameStyle + '" ' + nameAction + '>' + escapeHtml(f.name) + '</span>' +
-                    '</div>' +
-                    '<span style="font-size:12px;color:var(--ds-text-tertiary);">' + size + '</span>' +
-                    '<div style="display:flex;align-items:center;gap:8px;">' +
-                    '<span style="font-size:12px;color:var(--ds-text-tertiary);min-width:80px;">' + time + '</span>' +
-                    '<div style="display:flex;gap:2px;flex-wrap:wrap;">' +
-                    '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:3px;" onclick="fileRename(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')" title="重命名"><i class="fas fa-pen" style="font-size:11px;"></i></button>' +
-                    '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:3px;" onclick="fileCopy(\'' + escapeJs(f.path) + '\')" title="复制"><i class="fas fa-copy" style="font-size:11px;"></i></button>' +
-                    '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:3px;" onclick="fileCut(\'' + escapeJs(f.path) + '\')" title="剪切"><i class="fas fa-cut" style="font-size:11px;"></i></button>' +
-                    '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:3px;" onclick="fileChmod(\'' + escapeJs(f.path) + '\')" title="权限"><i class="fas fa-key" style="font-size:11px;"></i></button>' +
-                    zipBtn +
-                    downloadBtn +
-                    '<button style="background:none;border:none;color:var(--ds-warning);cursor:pointer;padding:3px;" onclick="fileDelete(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')" title="删除"><i class="fas fa-trash" style="font-size:11px;"></i></button>' +
-                    '</div></div></div>';
-            }).join('');
+            renderFileList(_fileData);
         } catch (e) {
             list.innerHTML = '<div class="ds-empty-state" style="padding:30px;"><p>请求异常: ' + escapeHtml(e.message) + '</p></div>';
+            _fileData = [];
         }
+    }
+
+    function renderFileList(files) {
+        const list = document.getElementById('file-list');
+        const viewMode = (document.getElementById('file-view-mode') || {}).value || 'list';
+
+        if (files.length === 0) {
+            list.innerHTML = '<div class="ds-empty-state" style="padding:30px;"><i class="fas fa-search" style="font-size:2rem;opacity:0.3;"></i><p>无匹配文件</p></div>';
+            return;
+        }
+
+        if (viewMode === 'grid') {
+            renderFileGrid(files, list);
+        } else {
+            renderFileListRows(files, list);
+        }
+    }
+
+    function renderFileListRows(files, list) {
+        list.innerHTML = files.map(f => {
+            const icon = fileIcon(f.name, f.is_dir);
+            const size = f.is_dir ? '-' : formatSize(f.size);
+            const time = formatTimestamp(f.modified);
+            const nameStyle = f.is_dir ? 'color:var(--ds-blue);cursor:pointer;font-weight:500;' : 'cursor:pointer;';
+            const isImage = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(f.name);
+            const nameAction = f.is_dir
+                ? 'onclick="loadFileManager(\'' + escapeJs(f.path) + '\')"'
+                : (isImage
+                    ? 'onclick="openImageViewer(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')"'
+                    : 'onclick="fileOpen(\'' + escapeJs(f.path) + '\')"');
+            const downloadBtn = f.is_dir ? '' : '<a href="/api/files/download?path=' + encodeURIComponent(f.path) + '" download="' + escapeHtml(f.name) + '" style="color:var(--ds-text-secondary);padding:4px;" title="下载"><i class="fas fa-download" style="font-size:12px;"></i></a>';
+            const isZip = (f.name.toLowerCase().endsWith('.zip'));
+            const zipBtn = f.is_dir
+                ? '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:4px;" onclick="fileZip(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')" title="压缩为zip"><i class="fas fa-file-archive" style="font-size:12px;"></i></button>'
+                : (isZip
+                    ? '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:4px;" onclick="fileUnzip(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')" title="解压"><i class="fas fa-expand-arrows-alt" style="font-size:12px;"></i></button>'
+                    : '');
+
+            return '<div style="display:grid;grid-template-columns:1fr 100px 140px;gap:0;padding:8px 16px;align-items:center;border-bottom:1px solid var(--ds-border);font-size:13px;" ondblclick=' + (f.is_dir ? '"loadFileManager(\'' + escapeJs(f.path) + '\')"' : (isImage ? '"openImageViewer(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')"' : '"fileOpen(\'' + escapeJs(f.path) + '\')"')) + '>' +
+                '<div style="display:flex;align-items:center;gap:10px;min-width:0;">' +
+                '<span style="font-size:16px;width:20px;text-align:center;">' + icon + '</span>' +
+                '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' + nameStyle + '" ' + nameAction + '>' + escapeHtml(f.name) + '</span>' +
+                '</div>' +
+                '<span style="font-size:12px;color:var(--ds-text-tertiary);">' + size + '</span>' +
+                '<div style="display:flex;align-items:center;gap:8px;">' +
+                '<span style="font-size:12px;color:var(--ds-text-tertiary);min-width:80px;">' + time + '</span>' +
+                '<div style="display:flex;gap:2px;flex-wrap:wrap;">' +
+                '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:3px;" onclick="fileRename(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')" title="重命名"><i class="fas fa-pen" style="font-size:11px;"></i></button>' +
+                '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:3px;" onclick="fileCopy(\'' + escapeJs(f.path) + '\')" title="复制"><i class="fas fa-copy" style="font-size:11px;"></i></button>' +
+                '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:3px;" onclick="fileCut(\'' + escapeJs(f.path) + '\')" title="剪切"><i class="fas fa-cut" style="font-size:11px;"></i></button>' +
+                '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:3px;" onclick="fileChmod(\'' + escapeJs(f.path) + '\')" title="权限"><i class="fas fa-key" style="font-size:11px;"></i></button>' +
+                zipBtn +
+                downloadBtn +
+                '<button style="background:none;border:none;color:var(--ds-warning);cursor:pointer;padding:3px;" onclick="fileDelete(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')" title="删除"><i class="fas fa-trash" style="font-size:11px;"></i></button>' +
+                '</div></div></div>';
+        }).join('');
+    }
+
+    function renderFileGrid(files, list) {
+        list.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;padding:12px;">' +
+            files.map(f => {
+                const icon = fileIcon(f.name, f.is_dir);
+                const isImage = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(f.name);
+                const thumb = isImage
+                    ? '<img src="/api/files/download?path=' + encodeURIComponent(f.path) + '" style="width:100%;height:90px;object-fit:cover;border-radius:6px;margin-bottom:6px;">'
+                    : '<div style="width:100%;height:90px;display:flex;align-items:center;justify-content:center;font-size:32px;opacity:0.6;">' + icon + '</div>';
+                const click = f.is_dir
+                    ? 'onclick="loadFileManager(\'' + escapeJs(f.path) + '\')"'
+                    : (isImage
+                        ? 'onclick="openImageViewer(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')"'
+                        : 'onclick="fileOpen(\'' + escapeJs(f.path) + '\')"');
+                return '<div style="background:var(--ds-card);border:1px solid var(--ds-border);border-radius:var(--radius-ctrl);padding:10px;text-align:center;cursor:pointer;transition:border-color 0.15s;" onmouseover="this.style.borderColor=\'var(--ds-blue)\'" onmouseout="this.style.borderColor=\'var(--ds-border)\'" ' + click + '>' +
+                    thumb +
+                    '<div style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml(f.name) + '">' + escapeHtml(f.name) + '</div>' +
+                    '<div style="font-size:11px;color:var(--ds-text-tertiary);">' + (f.is_dir ? '目录' : formatSize(f.size)) + '</div>' +
+                    '</div>';
+            }).join('') + '</div>';
     }
 
     function escapeJs(s) {
@@ -2222,6 +2376,117 @@
         } else {
             showToast(res.message || '解压失败', 'error');
         }
+    }
+
+    // ===== 图片查看器 =====
+    function openImageViewer(path, name) {
+        const viewer = document.getElementById('image-viewer');
+        const img = document.getElementById('image-viewer-img');
+        const nameEl = document.getElementById('image-viewer-name');
+        const downloadBtn = document.getElementById('image-viewer-download');
+        img.src = '/api/files/download?path=' + encodeURIComponent(path);
+        nameEl.textContent = name;
+        downloadBtn.href = '/api/files/download?path=' + encodeURIComponent(path);
+        downloadBtn.download = name;
+        viewer.style.display = 'block';
+        document.body.style.overflow = 'hidden';
+        // 重置缩放和拖拽
+        img.style.transform = 'translate(-50%,-50%) scale(1)';
+        _imageViewerScale = 1;
+    }
+
+    function closeImageViewer() {
+        document.getElementById('image-viewer').style.display = 'none';
+        document.body.style.overflow = '';
+    }
+
+    let _imageViewerScale = 1;
+    let _imageViewerDrag = { active: false, x: 0, y: 0, imgX: 0, imgY: 0 };
+
+    function imageViewerDragStart(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const img = e.target;
+        _imageViewerDrag = { active: true, x: e.clientX, y: e.clientY, imgX: 0, imgY: 0 };
+        img.style.cursor = 'grabbing';
+        const onMove = (ev) => {
+            if (!_imageViewerDrag.active) return;
+            const dx = ev.clientX - _imageViewerDrag.x;
+            const dy = ev.clientY - _imageViewerDrag.y;
+            img.style.transform = 'translate(calc(-50% + ' + dx + 'px), calc(-50% + ' + dy + 'px)) scale(' + _imageViewerScale + ')';
+        };
+        const onUp = () => {
+            _imageViewerDrag.active = false;
+            img.style.cursor = 'grab';
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    }
+
+    // 滚轮缩放图片
+    document.addEventListener('DOMContentLoaded', () => {
+        const viewer = document.getElementById('image-viewer');
+        if (viewer) {
+            viewer.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const img = document.getElementById('image-viewer-img');
+                _imageViewerScale *= e.deltaY < 0 ? 1.15 : 0.87;
+                _imageViewerScale = Math.max(0.1, Math.min(10, _imageViewerScale));
+                img.style.transform = 'translate(-50%,-50%) scale(' + _imageViewerScale + ')';
+            }, { passive: false });
+        }
+        // ESC 关闭图片查看器
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && document.getElementById('image-viewer').style.display === 'block') {
+                closeImageViewer();
+            }
+        });
+    });
+
+    // ===== 文件搜索/排序/视图 =====
+    let _fileData = []; // 缓存当前目录数据
+    let _searchTimer = null;
+
+    function fileSearchDebounce() {
+        clearTimeout(_searchTimer);
+        _searchTimer = setTimeout(fileSort, 200);
+    }
+
+    function fileSort() {
+        if (!_fileData || _fileData.length === 0) return;
+        const query = (document.getElementById('file-search-input').value || '').toLowerCase();
+        const sortMode = document.getElementById('file-sort-select').value;
+
+        let files = _fileData.slice();
+
+        // 搜索过滤
+        if (query) {
+            files = files.filter(f => f.name.toLowerCase().includes(query));
+        }
+
+        // 排序
+        files.sort((a, b) => {
+            // 目录始终在前
+            if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+            switch (sortMode) {
+                case 'name-asc': return a.name.localeCompare(b.name);
+                case 'name-desc': return b.name.localeCompare(a.name);
+                case 'size-asc': return a.size - b.size;
+                case 'size-desc': return b.size - a.size;
+                case 'time-desc': return b.modified - a.modified;
+                case 'time-asc': return a.modified - b.modified;
+                case 'ext-asc': return (a.extension || '').localeCompare(b.extension || '');
+                default: return 0;
+            }
+        });
+
+        renderFileList(files);
+    }
+
+    function fileViewMode() {
+        fileSort(); // 重新渲染
     }
 
     // 文件编辑器自动换行切换

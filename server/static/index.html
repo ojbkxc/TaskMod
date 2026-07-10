@@ -494,6 +494,27 @@
                     <span style="cursor:pointer;color:var(--ds-blue);" onclick="loadFileManager('/')">/</span>
                 </div>
 
+                <!-- 搜索和排序 -->
+                <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+                    <div style="flex:1;min-width:200px;position:relative;">
+                        <input type="text" id="file-search-input" class="ds-chat-input" style="padding-left:32px;" placeholder="搜索文件名..." oninput="fileSearchDebounce()">
+                        <i class="fas fa-search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);opacity:0.4;font-size:13px;"></i>
+                    </div>
+                    <select id="file-sort-select" class="ds-chat-input" style="width:130px;padding:8px 10px;" onchange="fileSort()">
+                        <option value="name-asc">名称 A-Z</option>
+                        <option value="name-desc">名称 Z-A</option>
+                        <option value="size-asc">大小 ↑</option>
+                        <option value="size-desc">大小 ↓</option>
+                        <option value="time-desc">最新修改</option>
+                        <option value="time-asc">最早修改</option>
+                        <option value="ext-asc">类型 A-Z</option>
+                    </select>
+                    <select id="file-view-mode" class="ds-chat-input" style="width:90px;padding:8px 10px;" onchange="fileViewMode()">
+                        <option value="list">列表</option>
+                        <option value="grid">网格</option>
+                    </select>
+                </div>
+
                 <!-- 剪贴板状态 -->
                 <div id="file-clipboard-bar" style="display:none;padding:8px 16px;background:var(--ds-blue-light);border:1px solid var(--ds-selected-border);border-radius:var(--radius-ctrl);margin-bottom:12px;font-size:13px;">
                     <span id="file-clipboard-info"></span>
@@ -807,6 +828,18 @@
                 <button class="ds-btn-primary" onclick="saveScript()"><i class="fas fa-save"></i> 保存</button>
             </div>
         </div>
+    </div>
+
+    <!-- Image Viewer Modal -->
+    <div id="image-viewer" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.92);cursor:zoom-out;" onclick="closeImageViewer()">
+        <div style="position:absolute;top:12px;right:16px;display:flex;gap:10px;z-index:10;">
+            <a id="image-viewer-download" href="#" download style="color:#fff;font-size:20px;text-decoration:none;" title="下载" onclick="event.stopPropagation()"><i class="fas fa-download"></i></a>
+            <span style="color:#fff;font-size:20px;cursor:pointer;" onclick="closeImageViewer()" title="关闭"><i class="fas fa-times"></i></span>
+        </div>
+        <div style="position:absolute;bottom:12px;left:0;right:0;text-align:center;z-index:10;">
+            <span id="image-viewer-name" style="color:rgba(255,255,255,0.7);font-size:13px;"></span>
+        </div>
+        <img id="image-viewer-img" src="" style="max-width:95vw;max-height:95vh;object-fit:contain;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);cursor:grab;" onclick="event.stopPropagation()" onmousedown="imageViewerDragStart(event)">
     </div>
 
     <!-- File Editor Modal -->
