@@ -11,6 +11,7 @@ use crate::state::MirrorState;
 mod api;
 mod config;
 mod data;
+mod kcp_stream;
 mod state;
 mod tools;
 mod utils;
@@ -246,6 +247,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/mirror/control", post(api::mirror::send_control))
         .route("/api/mirror/status", get(api::mirror::mirror_status))
         .route("/api/mirror/screencap", get(api::mirror::screencap_jpeg))
+        .route("/api/mirror/quality", post(api::mirror::report_quality))
+        .route("/api/mirror/transport", get(api::mirror::transport_info))
         .route("/ws/mirror", get(api::mirror::mirror_ws))
         .route("/ws/mirror/audio", get(api::mirror::audio_ws))
         .with_state(mirror_state);
@@ -352,9 +355,27 @@ async fn main() -> anyhow::Result<()> {
     let addr = SocketAddr::from(([0, 0, 0, 0], listen_port));
     println!("TaskMod Web 管理服务已启动: http://0.0.0.0:{}", listen_port);
 
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await?;
+    // 使用 tokio TcpListener 启用 TCP_NODELAY（减少小包延迟，对投屏串流至关重要）
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    let tcp_listener = listener.into_std()?;
+    tcp_listener.set_nonblocking(true)?;
+
+    // 启动带 TCP_NODELAY 的服务器
+    let server = axum::Server::from_tcp(tcp_listener)?
+        .tcp_nodelay(true)  // 关键：禁用 Nagle 算法，小包立即发送
+        .serve(app.into_make_service());
+
+    let ctrl_c = tokio::signal::ctrl_c();
+    tokio::select! {
+        result = server => {
+            if let Err(e) = result {
+                eprintln!("服务器错误: {}", e);
+            }
+        }
+        _ = ctrl_c => {
+            println!("收到关闭信号，正在停止...");
+        }
+    }
 
     Ok(())
 }

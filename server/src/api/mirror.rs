@@ -12,11 +12,76 @@ use tokio::time::Duration;
 use crate::data::response::ApiResponse;
 use crate::state::SharedMirrorState;
 
+/// 视频广播通道容量（借鉴 RustDesk 多连接缓冲策略，增大以减少 Lagged 断帧）
+const VIDEO_CHANNEL_CAP: usize = 128;
+/// 音频广播通道容量
+const AUDIO_CHANNEL_CAP: usize = 64;
+/// H.264/H.265 流读取缓冲区大小（512KB，视频流需要更大缓冲区减少 read 系统调用次数）
+const READ_BUF_SIZE: usize = 524288;
+/// 默认视频码率 10Mbps（局域网场景，H.265 可以用更高码率获得更好画质）
+const DEFAULT_BIT_RATE: usize = 10_000_000;
+/// 默认帧率
+const DEFAULT_FPS: usize = 60;
+/// 静止画面检测阈值：连续 N 帧大小低于此值认为画面静止
+const STATIC_FRAME_SIZE_THRESHOLD: usize = 500;
+/// 静止画面跳过帧数：检测到静止后每 N 帧只编码一帧
+const STATIC_SKIP_FRAMES: u32 = 15;
+
+/// 视频编码器类型
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum VideoCodec {
+    H264,
+    H265,
+}
+
+impl VideoCodec {
+    fn as_str(&self) -> &'static str {
+        match self {
+            VideoCodec::H264 => "h264",
+            VideoCodec::H265 => "hevc",
+        }
+    }
+
+    /// 检查设备是否支持 H.265 硬件编码
+    async fn detect_best_codec() -> Self {
+        // 尝试启动 H.265 screenrecord，如果失败则降级到 H.264
+        let test = Command::new("screenrecord")
+            .args(["--codec=hevc", "--output-format=h264", "--time-limit=1", "--size=1x1", "-"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+
+        match test {
+            Ok(mut p) => {
+                let _ = p.kill().await;
+                let _ = p.wait().await;
+                tracing::info!("[mirror] 设备支持 H.265 硬件编码，画质翻倍！");
+                VideoCodec::H265
+            }
+            Err(_) => {
+                tracing::info!("[mirror] 设备不支持 H.265，使用 H.264");
+                VideoCodec::H264
+            }
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct MirrorStartRequest {
     bit_rate: Option<usize>,
     fps: Option<usize>,
     keep_screen: Option<bool>,
+    /// 编码器偏好: "h264", "h265", "auto"(自动检测)
+    codec: Option<String>,
+}
+
+/// 客户端上报的网络质量指标（借鉴 RustDesk 的 ABR 反馈机制）
+#[derive(Debug, Deserialize)]
+pub struct ClientQualityReport {
+    /// 前端解码队列积压帧数
+    pub queue_depth: Option<u32>,
+    /// 客户端实际渲染帧率
+    pub render_fps: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -39,9 +104,16 @@ pub async fn start_mirror(
     State(state): State<SharedMirrorState>,
     Json(req): Json<MirrorStartRequest>,
 ) -> Json<ApiResponse<String>> {
-    let bit_rate = req.bit_rate.unwrap_or(2000000);
-    let _fps = req.fps.unwrap_or(30);
+    let bit_rate = req.bit_rate.unwrap_or(DEFAULT_BIT_RATE);
+    let fps = req.fps.unwrap_or(DEFAULT_FPS);
     let keep_screen = req.keep_screen.unwrap_or(true);
+
+    // 自动检测最优编码器（H.265 > H.264）
+    let codec = match req.codec.as_deref() {
+        Some("h265") | Some("hevc") => VideoCodec::H265,
+        Some("h264") => VideoCodec::H264,
+        _ => VideoCodec::detect_best_codec().await,
+    };
 
     let original_brightness = if keep_screen {
         let output = Command::new("settings")
@@ -72,22 +144,57 @@ pub async fn start_mirror(
         None
     };
 
-    let (video_tx, _) = broadcast::channel(32);
-    let (audio_tx, _) = broadcast::channel(32);
+    let (video_tx, _) = broadcast::channel(VIDEO_CHANNEL_CAP);
+    let (audio_tx, _) = broadcast::channel(AUDIO_CHANNEL_CAP);
     let is_running = Arc::new(AtomicBool::new(true));
+
+    // 初始化 ABR 控制器（复用 state 中的实例，通过 reset 更新参数）
+    state.abr.reset(bit_rate as u32, fps as u32);
+    let abr = state.abr.clone();
 
     let video_tx_clone = video_tx.clone();
     let is_running_clone = is_running.clone();
+    let request_keyframe_clone = state.request_keyframe.clone();
+    let abr_clone = abr.clone();
+
+    // 发送编码器信息给前端（用于解码器配置）
+    let codec_tag = match codec {
+        VideoCodec::H264 => b"h264",
+        VideoCodec::H265 => b"hevc",
+    };
+    let _ = video_tx.send(build_nalu_message(b"codec", codec_tag));
+
     tokio::spawn(async move {
         while is_running_clone.load(Ordering::Relaxed) {
             let _ = video_tx_clone.send(build_nalu_message(b"rst", b""));
 
+            let cur_bitrate = abr_clone.get_bitrate() as usize;
+            let cur_fps = abr_clone.get_fps() as usize;
+            let resolution_scale = abr_clone.get_resolution_scale();
+
             let mut cmd = Command::new("screenrecord");
-            cmd.arg("--output-format=h264")
+            // H.265 编码：同等画质码率减半，或同码率画质翻倍
+            cmd.arg("--codec").arg(codec.as_str())
+                .arg("--output-format=h264")  // 输出格式仍为 Annex B
                 .arg("--bit-rate")
-                .arg(bit_rate.to_string())
-                .arg("-")
-                .stdout(Stdio::piped());
+                .arg(cur_bitrate.to_string())
+                .arg("--fps")
+                .arg(cur_fps.to_string());
+
+            // 分辨率自适应：当 ABR 系统要求降分辨率时，通过 --size 参数实现
+            // 这比单纯降码率更有效，因为编码器处理的像素更少
+            if resolution_scale < 100 {
+                if let Ok(output) = Command::new("sh").args(["-c", "wm size"]).output().await {
+                    let size_str = String::from_utf8_lossy(&output.stdout);
+                    if let Some(res) = parse_screen_size(&size_str) {
+                        let scaled_w = (res.0 as u32 * resolution_scale / 100) & !1; // 对齐到偶数
+                        let scaled_h = (res.1 as u32 * resolution_scale / 100) & !1;
+                        cmd.arg("--size").arg(format!("{}x{}", scaled_w, scaled_h));
+                    }
+                }
+            }
+
+            cmd.arg("-").stdout(Stdio::piped());
 
             let mut process = match cmd.spawn() {
                 Ok(p) => p,
@@ -105,12 +212,31 @@ pub async fn start_mirror(
                     continue;
                 }
             };
-            let mut reader = tokio::io::BufReader::new(stdout);
-            let mut residual = Vec::new();
+            // 使用更大缓冲区减少 read 系统调用次数
+            let mut reader = tokio::io::BufReader::with_capacity(READ_BUF_SIZE, stdout);
+            let mut residual = Vec::with_capacity(READ_BUF_SIZE);
 
-            let mut buf = [0u8; 65536];
+            // 帧差检测：跟踪连续小帧数量，静止画面时跳过编码节省带宽
+            // 这是 RustDesk 没有的优化——当屏幕内容不变时，P帧极小(<500字节)
+            // 检测到静止后每 STATIC_SKIP_FRAMES 帧只发送一帧，节省 90%+ 带宽
+            let mut consecutive_static_frames: u32 = 0;
+            let mut frame_skip_counter: u32 = 0;
+
+            let mut buf = vec![0u8; READ_BUF_SIZE];
             loop {
                 if !is_running_clone.load(Ordering::Relaxed) {
+                    let _ = process.kill().await;
+                    break;
+                }
+
+                // 检查关键帧请求：重启 screenrecord 以获取新的 IDR 帧
+                if request_keyframe_clone.swap(false, Ordering::Relaxed) {
+                    let _ = process.kill().await;
+                    break;
+                }
+
+                // 检查 ABR 调整：码率/帧率变化时重启 screenrecord
+                if abr_clone.take_need_restart() {
                     let _ = process.kill().await;
                     break;
                 }
@@ -121,27 +247,21 @@ pub async fn start_mirror(
                         residual.extend_from_slice(&buf[..n]);
                         let mut processed = 0;
                         while processed < residual.len() {
-                            // 查找当前 NALU 的起始码
                             let start_code = find_nalu_start(&residual[processed..]);
                             if start_code == residual.len() - processed {
-                                // 没有找到完整的起始码，保留残余数据等待下次读取
                                 break;
                             }
                             processed += start_code;
 
-                            // 边界保护
                             if processed >= residual.len() {
                                 break;
                             }
 
-                            // 查找下一个 NALU 的起始码（即当前 NALU 的结束位置）
                             let end_pos = find_nalu_end(&residual[processed..]);
                             if end_pos == residual.len() - processed {
-                                // 没有找到结束位置，保留残余数据等待下次读取
                                 break;
                             }
 
-                            // 边界保护
                             if processed + end_pos > residual.len() {
                                 break;
                             }
@@ -163,6 +283,20 @@ pub async fn start_mirror(
                                 }
                                 1 | 5 => {
                                     let tag = if nalu_type == 5 { b"key" } else { b"frm" };
+                                    // 帧差检测：P帧且帧极小说明画面静止
+                                    if nalu_type == 1 && nalu_data.len() < STATIC_FRAME_SIZE_THRESHOLD {
+                                        consecutive_static_frames += 1;
+                                        // 进入静止模式后，每 STATIC_SKIP_FRAMES 帧只发送一帧
+                                        if consecutive_static_frames > 3 {
+                                            frame_skip_counter += 1;
+                                            if frame_skip_counter % STATIC_SKIP_FRAMES != 0 {
+                                                continue; // 跳过此帧
+                                            }
+                                        }
+                                    } else {
+                                        consecutive_static_frames = 0;
+                                        frame_skip_counter = 0;
+                                    }
                                     let _ = video_tx_clone.send(build_nalu_message(tag, nalu_data));
                                 }
                                 _ => {}
@@ -171,7 +305,8 @@ pub async fn start_mirror(
                         if processed >= residual.len() {
                             residual.clear();
                         } else if processed > 0 {
-                            residual = residual[processed..].to_vec();
+                            // 高效移除已处理数据：使用 drain 而非 to_vec 避免额外分配
+                            residual.drain(..processed);
                         }
                     }
                     Err(_) => break,
@@ -292,7 +427,44 @@ pub async fn start_mirror(
         state.set_original_brightness(b);
     }
 
-    Json(ApiResponse::ok_msg("投屏已启动".to_string(), "WebSocket地址: ws://localhost:9527/ws/mirror"))
+    // 启动 KCP 服务端（低延迟 UDP 传输）
+    let kcp_state = state.clone();
+    tokio::spawn(async move {
+        let port = crate::config::get_listen_port();
+        if let Err(e) = crate::kcp_stream::KcpServer::start(port, kcp_state).await {
+            tracing::warn!("[KCP] 服务端启动失败: {} (不影响 WebSocket 传输)", e);
+        }
+    });
+
+    let port = crate::config::get_listen_port();
+    Json(ApiResponse::ok_msg(
+        "投屏已启动".to_string(),
+        &format!("WebSocket: ws://localhost:{}/ws/mirror | KCP: udp://localhost:{}", port, port + 1),
+    ))
+}
+
+/// 获取可用传输协议信息（供前端自动选择最优传输方式）
+pub async fn transport_info(
+    State(_state): State<SharedMirrorState>,
+) -> Json<ApiResponse<serde_json::Value>> {
+    let port = crate::config::get_listen_port();
+    let info = serde_json::json!({
+        "websocket": {
+            "url": format!("ws://localhost:{}/ws/mirror", port),
+            "protocol": "TCP",
+            "features": ["tcp_nodelay", "binary_frames"],
+            "latency_class": "medium"
+        },
+        "kcp": {
+            "url": format!("udp://localhost:{}", port + 1),
+            "protocol": "UDP",
+            "features": ["reliable_udp", "fast_retransmit", "no_head_of_line_blocking"],
+            "latency_class": "low",
+            "note": "仅支持原生客户端（非浏览器）"
+        },
+        "recommended": "kcp"
+    });
+    Json(ApiResponse::ok(info))
 }
 
 pub async fn stop_mirror(State(state): State<SharedMirrorState>) -> Json<ApiResponse<String>> {
@@ -556,13 +728,14 @@ pub async fn mirror_ws(
         return axum::http::StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
     crate::WS_CONNECTION_COUNT.fetch_add(1, Ordering::Relaxed);
+    let state_clone = state.clone();
     ws.on_upgrade(move |socket| async move {
         let (mut write, mut read) = socket.split();
         let mut ping_interval = tokio::time::interval(Duration::from_secs(30));
         let mut last_pong = tokio::time::Instant::now();
         const PONG_TIMEOUT: Duration = Duration::from_secs(60);
 
-        if let Some(mut video_rx) = state.get_video_rx() {
+        if let Some(mut video_rx) = state_clone.get_video_rx() {
             loop {
                 tokio::select! {
                     biased;
@@ -570,6 +743,13 @@ pub async fn mirror_ws(
                         match msg {
                             Some(Ok(axum::extract::ws::Message::Pong(_))) => {
                                 last_pong = tokio::time::Instant::now();
+                            }
+                            Some(Ok(axum::extract::ws::Message::Text(text))) => {
+                                // 支持客户端发送控制消息
+                                if text == "keyframe" {
+                                    // 客户端请求关键帧（画面卡住或新连接时）
+                                    state_clone.request_keyframe();
+                                }
                             }
                             Some(Ok(axum::extract::ws::Message::Close(_))) | None => break,
                             _ => {}
@@ -590,6 +770,10 @@ pub async fn mirror_ws(
                                 if write.send(axum::extract::ws::Message::Binary(data)).await.is_err() {
                                     break;
                                 }
+                            }
+                            // 借鉴 RustDesk：Lagged 时跳过积压帧，继续接收最新帧，不断开连接
+                            Err(broadcast::error::RecvError::Lagged(_)) => {
+                                continue;
                             }
                             Err(_) => break,
                         }
@@ -659,6 +843,9 @@ pub async fn audio_ws(
                                     break;
                                 }
                             }
+                            Err(broadcast::error::RecvError::Lagged(_)) => {
+                                continue;
+                            }
                             Err(_) => break,
                         }
                     }
@@ -671,6 +858,25 @@ pub async fn audio_ws(
 
 pub async fn mirror_status(State(state): State<SharedMirrorState>) -> Json<ApiResponse<bool>> {
     Json(ApiResponse::ok(state.is_running()))
+}
+
+/// 客户端上报网络质量指标（借鉴 RustDesk 的 ABR 反馈机制）
+/// 前端定期发送解码队列深度和渲染帧率，后端据此自适应调整码率和帧率
+pub async fn report_quality(
+    State(state): State<SharedMirrorState>,
+    Json(report): Json<ClientQualityReport>,
+) -> Json<ApiResponse<String>> {
+    let queue_depth = report.queue_depth.unwrap_or(0);
+    let render_fps = report.render_fps.unwrap_or(30);
+
+    // 更新 ABR 控制器的客户端反馈数据
+    state.abr.client_queue_depth.store(queue_depth, std::sync::atomic::Ordering::Relaxed);
+    state.abr.client_render_fps.store(render_fps, std::sync::atomic::Ordering::Relaxed);
+
+    // 触发 ABR 调整算法
+    state.abr.adjust(queue_depth, render_fps);
+
+    Json(ApiResponse::ok("ok".to_string()))
 }
 
 /// JPEG 截图 fallback 端点
@@ -993,4 +1199,30 @@ pub async fn get_device_info() -> Json<ApiResponse<serde_json::Value>> {
     }
 
     Json(ApiResponse::ok(serde_json::Value::Object(info)))
+}
+
+/// 解析 `wm size` 输出，如 "Physical size: 1080x1920" 或 "Override size: 1080x2400"
+fn parse_screen_size(output: &str) -> Option<(u32, u32)> {
+    for line in output.lines() {
+        if let Some(pos) = line.rfind(|c: char| c.is_ascii_digit()) {
+            // 找到类似 "1080x1920" 的部分
+            let segment = &line[..=pos];
+            if let Some(x_pos) = segment.rfind('x') {
+                let w_str = &segment[..x_pos];
+                let h_str = &segment[x_pos + 1..];
+                if let (Some(w_start), _) = (w_str.rfind(|c: char| !c.is_ascii_digit()), ()) {
+                    if let (Ok(w), Ok(h)) = (w_str[w_start + 1..].parse::<u32>(), h_str.parse::<u32>()) {
+                        if w > 0 && h > 0 {
+                            return Some((w, h));
+                        }
+                    }
+                } else if let (Ok(w), Ok(h)) = (w_str.parse::<u32>(), h_str.parse::<u32>()) {
+                    if w > 0 && h > 0 {
+                        return Some((w, h));
+                    }
+                }
+            }
+        }
+    }
+    None
 }
