@@ -145,8 +145,8 @@ jobs:
           gradle-version: '8.5'
 
       - name: Update APK version
+        id: version
         run: |
-          # 从 tag 或 workflow_dispatch 获取版本号
           if [ -n "${{ github.event.inputs.version }}" ]; then
             TAG_VERSION="${{ github.event.inputs.version }}"
           else
@@ -155,10 +155,8 @@ jobs:
           VERSION=${TAG_VERSION#v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-          # 更新 versionName
           sed -i "s/versionName \".*\"/versionName \"$VERSION\"/" android/app/build.gradle
 
-          # 计算 versionCode
           IFS='.' read -ra PARTS <<< "$VERSION"
           VERSION_CODE=0
           for i in "${!PARTS[@]}"; do
