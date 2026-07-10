@@ -1595,6 +1595,58 @@
             border-top: 1px solid var(--ds-border);
         }
 
+        /* 设备信息仪表盘 */
+        .device-dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 10px;
+            padding: 12px 0;
+        }
+        .device-stat-card {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 14px;
+            background: var(--ds-surface);
+            border: 1px solid var(--ds-border);
+            border-radius: var(--radius-card);
+            transition: all 0.2s ease;
+        }
+        .device-stat-card:hover {
+            border-color: var(--ds-border-hover);
+            background: var(--ds-surface-hover);
+        }
+        .device-stat-icon {
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            background: color-mix(in srgb, var(--ds-blue) 12%, transparent);
+            color: var(--ds-blue);
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+        .device-stat-info {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+        .device-stat-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--ds-text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .device-stat-label {
+            font-size: 11px;
+            color: var(--ds-text-tertiary);
+            margin-top: 1px;
+        }
+
         /* ADB command card grid */
         .mirror-cmd-grid {
             display: grid;

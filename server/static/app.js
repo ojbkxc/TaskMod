@@ -169,6 +169,7 @@
         currentTab = name;
         // 首次切换时加载数据，后续不重复请求
         if (name === 'dashboard') refreshStatus();
+        if (name === 'mirror') refreshDeviceDashboard();
         if (name === 'tasks' && !_loaded.tasks) { _loaded.tasks = true; loadTasks(); }
         if (name === 'scripts' && !_loaded.scripts) { _loaded.scripts = true; loadScripts(); }
         if (name === 'files' && !_loaded.files) { _loaded.files = true; loadFileManager('/sdcard'); }
@@ -436,6 +437,22 @@
         sendAdbCommand();
     }
 
+    /* ===== 设备信息仪表盘 ===== */
+    async function refreshDeviceDashboard() {
+        try {
+            const res = await apiGet('/api/device/info');
+            if (!res.success || !res.data) return;
+            const info = res.data;
+            var el;
+            el = document.getElementById('dev-battery'); if (el) el.textContent = info.battery || '--';
+            el = document.getElementById('dev-cpu'); if (el) el.textContent = info.cpu || '--';
+            el = document.getElementById('dev-memory'); if (el) el.textContent = info.memory || '--';
+            el = document.getElementById('dev-storage'); if (el) el.textContent = info.storage || '--';
+            el = document.getElementById('dev-wifi'); if (el) el.textContent = info.wifi || info.ip || '--';
+            el = document.getElementById('dev-model'); if (el) el.textContent = info.model || '--';
+        } catch (e) { /* ignore */ }
+    }
+
     /* ===== 设备工具 (剪贴板/上传/设备信息) ===== */
     async function loadDeviceInfo() {
         const container = document.getElementById('device-info-container');
@@ -640,6 +657,90 @@
         } else {
             showToast(res.message || '删除失败', 'error');
         }
+    }
+
+    /* ===== 供应商预设 ===== */
+    const VENDOR_PRESETS = {
+        openai: { name: 'OpenAI', url: 'https://api.openai.com/v1', models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo', 'o1-preview', 'o1-mini'] },
+        deepseek: { name: 'DeepSeek', url: 'https://api.deepseek.com/v1', models: ['deepseek-chat', 'deepseek-reasoner', 'deepseek-coder'] },
+        claude: { name: 'Claude', url: 'https://api.anthropic.com/v1', models: ['claude-sonnet-4-20250514', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229'] },
+        gemini: { name: 'Gemini', url: 'https://generativelanguage.googleapis.com/v1beta', models: ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'] },
+        qwen: { name: '通义千问', url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-long'] },
+        moonshot: { name: 'Moonshot', url: 'https://api.moonshot.cn/v1', models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'] },
+        zhipu: { name: '智谱', url: 'https://open.bigmodel.cn/api/paas/v4', models: ['glm-4', 'glm-4-flash', 'glm-4v', 'glm-3-turbo'] },
+        custom: { name: '', url: '', models: [] }
+    };
+
+    function applyVendorPreset(vendor) {
+        const preset = VENDOR_PRESETS[vendor];
+        if (!preset) return;
+        // 高亮选中的预设按钮
+        document.querySelectorAll('.vendor-preset-btn').forEach(function(btn) {
+            btn.classList.toggle('ds-btn-active', btn.dataset.vendor === vendor);
+        });
+        // 填充表单
+        if (preset.name) document.getElementById('prov-name').value = preset.name;
+        if (preset.url) document.getElementById('prov-url').value = preset.url;
+        // 更新模型建议列表
+        const datalist = document.getElementById('model-suggestions');
+        datalist.innerHTML = preset.models.map(function(m) { return '<option value="' + m + '">'; }).join('');
+        if (preset.models.length > 0) {
+            document.getElementById('prov-model').value = preset.models[0];
+        }
+        // 清空测试结果
+        var testEl = document.getElementById('prov-test-result');
+        testEl.style.display = 'none';
+    }
+
+    function toggleKeyVisibility() {
+        var input = document.getElementById('prov-key');
+        var icon = document.getElementById('key-eye-icon');
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.className = 'fas fa-eye-slash';
+        } else {
+            input.type = 'password';
+            icon.className = 'fas fa-eye';
+        }
+    }
+
+    async function testProviderConnection() {
+        var url = document.getElementById('prov-url').value.trim();
+        var key = document.getElementById('prov-key').value.trim();
+        var model = document.getElementById('prov-model').value.trim();
+        var resultEl = document.getElementById('prov-test-result');
+        var btn = document.getElementById('prov-test-btn');
+        if (!url || !key) {
+            resultEl.style.display = 'block';
+            resultEl.style.background = 'color-mix(in srgb, var(--ds-danger) 15%, transparent)';
+            resultEl.style.color = 'var(--ds-danger)';
+            resultEl.textContent = '请填写 API 地址和密钥';
+            return;
+        }
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 测试中...';
+        resultEl.style.display = 'block';
+        resultEl.style.background = 'color-mix(in srgb, var(--ds-blue) 15%, transparent)';
+        resultEl.style.color = 'var(--ds-blue)';
+        resultEl.textContent = '正在连接...';
+        try {
+            var res = await apiPost('/api/ai/test-connection', { base_url: url, api_key: key, model: model || 'gpt-3.5-turbo' });
+            if (res.ok) {
+                resultEl.style.background = 'color-mix(in srgb, var(--ds-success) 15%, transparent)';
+                resultEl.style.color = 'var(--ds-success)';
+                resultEl.textContent = '连接成功! ' + (res.data?.model || '') + (res.data?.latency ? ' (' + res.data.latency + 'ms)' : '');
+            } else {
+                resultEl.style.background = 'color-mix(in srgb, var(--ds-danger) 15%, transparent)';
+                resultEl.style.color = 'var(--ds-danger)';
+                resultEl.textContent = '连接失败: ' + (res.message || '未知错误');
+            }
+        } catch (e) {
+            resultEl.style.background = 'color-mix(in srgb, var(--ds-danger) 15%, transparent)';
+            resultEl.style.color = 'var(--ds-danger)';
+            resultEl.textContent = '请求异常: ' + e.message;
+        }
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-plug"></i> 测试连接';
     }
 
     /* ===== Library: Memories ===== */

@@ -123,6 +123,51 @@ pub async fn delete_ai_provider(AxumPath(id): AxumPath<String>) -> Json<ApiRespo
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub struct TestConnectionRequest {
+    pub base_url: String,
+    pub api_key: String,
+    pub model: Option<String>,
+}
+
+pub async fn test_ai_connection(Json(req): Json<TestConnectionRequest>) -> Json<ApiResponse<serde_json::Value>> {
+    let model = req.model.unwrap_or_else(|| "gpt-3.5-turbo".to_string());
+    let api_url = format!("{}/v1/chat/completions", req.base_url.trim_end_matches('/'));
+
+    let body = json!({
+        "model": model,
+        "messages": [{"role": "user", "content": "Hi"}],
+        "max_tokens": 5,
+        "stream": false
+    });
+
+    let start = std::time::Instant::now();
+    match HTTP_CLIENT.post(&api_url)
+        .header("Authorization", format!("Bearer {}", req.api_key))
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(15))
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            let latency = start.elapsed().as_millis();
+            let status = resp.status();
+            if status.is_success() {
+                Json(ApiResponse::ok(json!({
+                    "model": model,
+                    "latency": latency,
+                    "status": "ok"
+                })))
+            } else {
+                let err_body = resp.text().await.unwrap_or_default();
+                Json(ApiResponse::err(&format!("HTTP {}: {}", status, &err_body[..err_body.len().min(200)])))
+            }
+        }
+        Err(e) => Json(ApiResponse::err(&format!("连接失败: {}", e))),
+    }
+}
+
 pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> axum::response::Response {
     if crate::WS_CONNECTION_COUNT.load(Ordering::Relaxed) >= crate::MAX_WS_CONNECTIONS {
         return axum::http::StatusCode::SERVICE_UNAVAILABLE.into_response();

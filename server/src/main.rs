@@ -288,6 +288,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/tts/replace-rules/:id", put(api::tts::update_replace_rule).delete(api::tts::delete_replace_rule))
         .route("/api/ai/providers", get(api::ai::list_ai_providers).post(api::ai::add_ai_provider))
         .route("/api/ai/providers/:id", get(api::ai::get_ai_provider_api).put(api::ai::update_ai_provider).delete(api::ai::delete_ai_provider))
+        .route("/api/ai/test-connection", post(api::ai::test_ai_connection))
         .route("/ws/ai-chat", get(api::ai::ai_chat_ws))
         // AI Hub: 对话历史
         .route("/api/ai/sessions", get(api::ai_hub::list_sessions).post(api::ai_hub::create_session))

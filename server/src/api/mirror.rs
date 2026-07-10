@@ -965,6 +965,32 @@ pub async fn get_device_info() -> Json<ApiResponse<serde_json::Value>> {
     if let Ok(output) = Command::new("sh").args(["-c", "df -h /sdcard | tail -1 | awk '{print \"Used:\"$3\"/Total:\"$2}'"]).output().await {
         info.insert("storage".into(), serde_json::Value::String(String::from_utf8_lossy(&output.stdout).trim().to_string()));
     }
+    // 获取CPU使用率
+    if let Ok(output) = Command::new("sh").args(["-c", "top -bn1 | head -3 | grep 'CPU' | awk '{print $2}'"]).output().await {
+        let cpu = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !cpu.is_empty() {
+            info.insert("cpu".into(), serde_json::Value::String(cpu));
+        }
+    }
+    // 获取内存信息
+    if let Ok(output) = Command::new("sh").args(["-c", "cat /proc/meminfo | grep -E 'MemTotal|MemAvailable' | awk '{printf \"%s \", $2}'"]).output().await {
+        let mem_raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let parts: Vec<&str> = mem_raw.split_whitespace().collect();
+        if parts.len() >= 2 {
+            if let (Ok(total), Ok(avail)) = (parts[0].parse::<u64>(), parts[1].parse::<u64>()) {
+                let used_mb = (total - avail) / 1024;
+                let total_mb = total / 1024;
+                info.insert("memory".into(), serde_json::Value::String(format!("{}MB/{}MB", used_mb, total_mb)));
+            }
+        }
+    }
+    // 获取WiFi SSID
+    if let Ok(output) = Command::new("sh").args(["-c", "dumpsys wifi | grep 'mWifiInfo' | grep -o 'SSID: [^,]*' | head -1"]).output().await {
+        let wifi = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !wifi.is_empty() {
+            info.insert("wifi".into(), serde_json::Value::String(wifi));
+        }
+    }
 
     Json(ApiResponse::ok(serde_json::Value::Object(info)))
 }
