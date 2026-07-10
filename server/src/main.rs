@@ -247,6 +247,8 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/", get(api::system::index))
+        .route("/static/style.css", get(api::system::static_css))
+        .route("/static/app.js", get(api::system::static_js))
         .route("/api/tasks", get(api::tasks::list_tasks).post(api::tasks::add_task))
         .route("/api/tasks/:id", delete(api::tasks::delete_task))
         .route("/api/logs", get(api::system::get_logs))

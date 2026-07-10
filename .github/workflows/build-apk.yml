@@ -58,11 +58,11 @@ jobs:
 
       - name: Build Release APK
         working-directory: android
-        run: ./gradlew assembleRelease --no-daemon
+        run: gradle assembleRelease --no-daemon
 
       - name: Build Debug APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
+        run: gradle assembleDebug --no-daemon
 
       - name: Rename APKs
         run: |
