@@ -148,4 +148,8 @@ class ServerManager(private val context: Context) {
     fun executeCommand(command: String): Pair<Boolean, String> {
         return RootHelper.executeRoot(command)
     }
+
+    fun executeRoot(command: String): Pair<Boolean, String> {
+        return RootHelper.executeRoot(command)
+    }
 }
