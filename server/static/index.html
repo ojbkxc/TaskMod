@@ -648,7 +648,34 @@
             color: var(--ds-text);
         }
 
-        .ds-chat-config-panel {
+        /* Sub-tabs */
+        .ds-sub-tab {
+            display: inline-flex;
+            align-items: center;
+            height: 32px;
+            padding: 0 12px;
+            border-radius: 8px;
+            border: none;
+            background: transparent;
+            color: var(--ds-text-secondary);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+        }
+
+        .ds-sub-tab:hover {
+            background: var(--ds-surface-hover);
+            color: var(--ds-text);
+        }
+
+        .ds-sub-tab-active {
+            background: var(--ds-surface-active);
+            color: var(--ds-text);
+        }
+
+        .ds-badge-success {
             display: grid;
             gap: 8px;
             margin-top: 10px;
@@ -1833,6 +1860,13 @@
                 <span class="side-tab-label">投屏</span>
                 <span class="side-tab-indicator"></span>
             </button>
+            <button class="side-tab" onclick="showTab('library')">
+                <svg class="side-tab-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5s3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18s-3.332.477-4.5 1.253" />
+                </svg>
+                <span class="side-tab-label">知识库</span>
+                <span class="side-tab-indicator"></span>
+            </button>
             <button class="side-tab" onclick="showTab('tasks')">
                 <svg class="side-tab-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
@@ -1876,6 +1910,13 @@
                 </svg>
                 <span class="side-tab-label">主题</span>
             </button>
+            <div style="flex:1;"></div>
+            <a href="https://github.com/ojbkxc/TaskMod" target="_blank" title="GitHub" class="side-tab" style="text-decoration:none;cursor:pointer;">
+                <svg class="side-tab-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+                </svg>
+                <span class="side-tab-label">GitHub</span>
+            </a>
         </nav>
 
         <main class="ds-app-main">
@@ -1961,6 +2002,47 @@
                         </div>
                     </div>
                 </footer>
+                </div>
+            </section>
+
+            <!-- ========== Library (记忆/预设/技能) ========== -->
+            <section id="tab-library" class="tab-content page-content" style="display:none;">
+                <div class="ds-page-intro">
+                    <div>
+                        <h1 class="ds-page-intro-title">知识库</h1>
+                        <p class="ds-page-intro-description">管理记忆、预设和技能</p>
+                    </div>
+                </div>
+                <div class="ds-sub-tabs" style="display:flex;gap:4px;padding:0 16px 12px;border-bottom:1px solid var(--ds-border);overflow-x:auto;">
+                    <button class="ds-sub-tab ds-sub-tab-active" onclick="showLibraryTab('lib-memories')" id="libtab-lib-memories">记忆</button>
+                    <button class="ds-sub-tab" onclick="showLibraryTab('lib-presets')" id="libtab-lib-presets">预设</button>
+                    <button class="ds-sub-tab" onclick="showLibraryTab('lib-skills')" id="libtab-lib-skills">技能</button>
+                    <button class="ds-sub-tab" onclick="showLibraryTab('lib-saved')" id="libtab-lib-saved">保存项</button>
+                </div>
+                <div style="flex:1;overflow-y:auto;padding:16px;">
+                    <!-- 记忆系统 -->
+                    <div id="lib-memories" class="lib-subtab">
+                        <div style="display:flex;gap:8px;margin-bottom:12px;">
+                            <input type="text" id="lib-memory-search" placeholder="搜索记忆..." class="ds-chat-input" style="flex:1;" oninput="loadMemories()">
+                            <button class="ds-btn-primary" onclick="showMemoryModal()"><i class="fas fa-plus"></i> 新建</button>
+                        </div>
+                        <div id="lib-memories-list"></div>
+                    </div>
+                    <!-- 预设 -->
+                    <div id="lib-presets" class="lib-subtab" style="display:none;">
+                        <button class="ds-btn-primary" onclick="showPresetModal()" style="margin-bottom:12px;"><i class="fas fa-plus"></i> 新建预设</button>
+                        <div id="lib-presets-list"></div>
+                    </div>
+                    <!-- 技能 -->
+                    <div id="lib-skills" class="lib-subtab" style="display:none;">
+                        <button class="ds-btn-primary" onclick="showSkillModal()" style="margin-bottom:12px;"><i class="fas fa-plus"></i> 新建技能</button>
+                        <div id="lib-skills-list"></div>
+                    </div>
+                    <!-- 保存项 -->
+                    <div id="lib-saved" class="lib-subtab" style="display:none;">
+                        <button class="ds-btn-primary" onclick="showSavedItemModal()" style="margin-bottom:12px;"><i class="fas fa-plus"></i> 新建保存项</button>
+                        <div id="lib-saved-list"></div>
+                    </div>
                 </div>
             </section>
 
@@ -2239,6 +2321,94 @@
         </div>
     </div>
 
+    <!-- Memory Modal -->
+    <div class="ds-modal-overlay" id="memory-modal" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+        <div class="ds-modal-card" style="max-width:500px;">
+            <h3 style="font-weight:700;font-size:1.1rem;margin-bottom:16px;" id="memory-modal-title">新建记忆</h3>
+            <div class="form-group">
+                <label>名称</label>
+                <input type="text" id="memory-name" class="ds-chat-input" placeholder="记忆名称">
+            </div>
+            <div class="form-group">
+                <label>内容</label>
+                <textarea id="memory-content" class="ds-chat-input" rows="4" placeholder="记忆内容..."></textarea>
+            </div>
+            <div class="form-group">
+                <label>标签 (逗号分隔)</label>
+                <input type="text" id="memory-tags" class="ds-chat-input" placeholder="tag1, tag2">
+            </div>
+            <input type="hidden" id="memory-edit-id">
+            <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:12px;">
+                <button class="ds-btn-secondary" onclick="document.getElementById('memory-modal').style.display='none'">取消</button>
+                <button class="ds-btn-primary" onclick="saveMemory()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preset Modal -->
+    <div class="ds-modal-overlay" id="preset-modal" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+        <div class="ds-modal-card" style="max-width:500px;">
+            <h3 style="font-weight:700;font-size:1.1rem;margin-bottom:16px;" id="preset-modal-title">新建预设</h3>
+            <div class="form-group">
+                <label>名称</label>
+                <input type="text" id="preset-name" class="ds-chat-input" placeholder="预设名称">
+            </div>
+            <div class="form-group">
+                <label>内容</label>
+                <textarea id="preset-content" class="ds-chat-input" rows="6" placeholder="系统提示词..."></textarea>
+            </div>
+            <input type="hidden" id="preset-edit-id">
+            <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:12px;">
+                <button class="ds-btn-secondary" onclick="document.getElementById('preset-modal').style.display='none'">取消</button>
+                <button class="ds-btn-primary" onclick="savePreset()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Skill Modal -->
+    <div class="ds-modal-overlay" id="skill-modal" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+        <div class="ds-modal-card" style="max-width:500px;">
+            <h3 style="font-weight:700;font-size:1.1rem;margin-bottom:16px;" id="skill-modal-title">新建技能</h3>
+            <div class="form-group">
+                <label>名称</label>
+                <input type="text" id="skill-name" class="ds-chat-input" placeholder="技能名称">
+            </div>
+            <div class="form-group">
+                <label>描述</label>
+                <input type="text" id="skill-desc" class="ds-chat-input" placeholder="技能描述">
+            </div>
+            <div class="form-group">
+                <label>提示词模板</label>
+                <textarea id="skill-prompt" class="ds-chat-input" rows="6" placeholder="提示词模板..."></textarea>
+            </div>
+            <input type="hidden" id="skill-edit-id">
+            <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:12px;">
+                <button class="ds-btn-secondary" onclick="document.getElementById('skill-modal').style.display='none'">取消</button>
+                <button class="ds-btn-primary" onclick="saveSkill()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Saved Item Modal -->
+    <div class="ds-modal-overlay" id="saved-modal" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+        <div class="ds-modal-card" style="max-width:500px;">
+            <h3 style="font-weight:700;font-size:1.1rem;margin-bottom:16px;" id="saved-modal-title">新建保存项</h3>
+            <div class="form-group">
+                <label>标题</label>
+                <input type="text" id="saved-title" class="ds-chat-input" placeholder="标题">
+            </div>
+            <div class="form-group">
+                <label>内容</label>
+                <textarea id="saved-content" class="ds-chat-input" rows="4" placeholder="内容..."></textarea>
+            </div>
+            <input type="hidden" id="saved-edit-id">
+            <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:12px;">
+                <button class="ds-btn-secondary" onclick="document.getElementById('saved-modal').style.display='none'">取消</button>
+                <button class="ds-btn-primary" onclick="saveSavedItem()">保存</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Container -->
     <div id="toast-container" class="toast-container"></div>
 
@@ -2256,10 +2426,10 @@
     /* ===== Tab Switching ===== */
     function showTab(name) {
         document.querySelectorAll('.side-tab').forEach((t, i) => {
-            const tabs = ['dashboard','chat','mirror','tasks','scripts','tts','config','logs'];
+            const tabs = ['dashboard','chat','mirror','library','tasks','scripts','tts','config','logs'];
             t.classList.toggle('side-tab-active', tabs[i] === name);
         });
-        ['dashboard','chat','mirror','tasks','scripts','tts','config','logs'].forEach(id => {
+        ['dashboard','chat','mirror','library','tasks','scripts','tts','config','logs'].forEach(id => {
             const el = document.getElementById('tab-' + id);
             if (el) el.style.display = id === name ? 'flex' : 'none';
         });
@@ -2271,6 +2441,15 @@
         if (name === 'config') { loadEmailConfig(); loadMqttConfig(); }
         if (name === 'logs') loadLogs();
         if (name === 'chat') loadProviders();
+        if (name === 'library') { loadMemories(); loadPresets(); loadSkills(); loadSavedItems(); }
+    }
+
+    /* ===== Library Sub-tab Switching ===== */
+    function showLibraryTab(name) {
+        document.querySelectorAll('.lib-subtab').forEach(el => el.style.display = 'none');
+        document.querySelectorAll('[id^="libtab-"]').forEach(el => el.classList.remove('ds-sub-tab-active'));
+        document.getElementById(name).style.display = 'block';
+        document.getElementById('libtab-' + name).classList.add('ds-sub-tab-active');
     }
 
     /* ===== Theme Toggle ===== */
@@ -2448,7 +2627,7 @@
         const p = (res.data || []).find(x => x.id === id);
         if (!p) return;
         document.getElementById('prov-name').value = p.name || '';
-        document.getElementById('prov-url').value = p.api_url || '';
+        document.getElementById('prov-url').value = p.base_url || p.api_url || '';
         document.getElementById('prov-key').value = p.api_key || '';
         document.getElementById('prov-model').value = p.model || '';
         document.getElementById('prov-edit-id').value = id;
@@ -2457,11 +2636,11 @@
     async function saveProvider() {
         const body = {
             name: document.getElementById('prov-name').value.trim(),
-            api_url: document.getElementById('prov-url').value.trim(),
+            base_url: document.getElementById('prov-url').value.trim(),
             api_key: document.getElementById('prov-key').value.trim(),
             model: document.getElementById('prov-model').value.trim()
         };
-        if (!body.name || !body.api_url) return showToast('名称和 API 地址为必填', 'error');
+        if (!body.name || !body.base_url) return showToast('名称和 API 地址为必填', 'error');
         const editId = document.getElementById('prov-edit-id').value;
         let res;
         if (editId) {
@@ -2490,6 +2669,249 @@
             loadProviders();
         } else {
             showToast(res.message || '删除失败', 'error');
+        }
+    }
+
+    /* ===== Library: Memories ===== */
+    async function loadMemories() {
+        const q = document.getElementById('lib-memory-search')?.value || '';
+        const res = await apiGet('/api/ai/memories' + (q ? '?q=' + encodeURIComponent(q) : ''));
+        const list = document.getElementById('lib-memories-list');
+        if (!res.ok || !res.data || res.data.length === 0) {
+            list.innerHTML = '<div class="ds-empty-state"><p>暂无记忆</p></div>';
+            return;
+        }
+        list.innerHTML = res.data.map(m => {
+            const tags = (m.tags || []).map(t => '<span class="ds-badge">' + escapeHtml(t) + '</span>').join('');
+            return '<div class="ds-card" style="padding:12px;margin-bottom:8px;">' +
+                '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
+                '<div style="flex:1;"><strong>' + escapeHtml(m.name || '未命名') + '</strong>' +
+                '<p style="font-size:12px;color:var(--ds-text-secondary);margin-top:4px;">' + escapeHtml(m.content.substring(0, 100)) + '</p>' +
+                '<div style="margin-top:6px;">' + tags + '</div></div>' +
+                '<div style="display:flex;gap:6px;">' +
+                '<button class="ds-btn-secondary" style="font-size:11px;padding:4px 8px;" onclick="editMemory(\'' + m.id + '\')"><i class="fas fa-edit"></i></button>' +
+                '<button class="ds-btn-danger" style="font-size:11px;padding:4px 8px;" onclick="deleteMemory(\'' + m.id + '\')"><i class="fas fa-trash"></i></button>' +
+                '</div></div></div>';
+        }).join('');
+    }
+
+    async function editMemory(id) {
+        const res = await apiGet('/api/ai/memories');
+        if (!res.ok) return;
+        const m = (res.data || []).find(x => x.id === id);
+        if (m) showMemoryModal(m);
+    }
+
+    async function deleteMemory(id) {
+        if (!confirm('确定删除此记忆？')) return;
+        const res = await apiDelete('/api/ai/memories/' + id);
+        if (res.ok) { showToast('已删除', 'success'); loadMemories(); }
+        else showToast(res.message || '删除失败', 'error');
+    }
+
+    function showMemoryModal(m) {
+        document.getElementById('memory-modal-title').textContent = m ? '编辑记忆' : '新建记忆';
+        document.getElementById('memory-name').value = m?.name || '';
+        document.getElementById('memory-content').value = m?.content || '';
+        document.getElementById('memory-tags').value = (m?.tags || []).join(', ');
+        document.getElementById('memory-edit-id').value = m?.id || '';
+        document.getElementById('memory-modal').style.display = 'flex';
+    }
+
+    async function saveMemory() {
+        const body = {
+            name: document.getElementById('memory-name').value.trim(),
+            content: document.getElementById('memory-content').value.trim(),
+            tags: document.getElementById('memory-tags').value.split(',').map(t => t.trim()).filter(Boolean)
+        };
+        if (!body.content) return showToast('内容为必填', 'error');
+        const editId = document.getElementById('memory-edit-id').value;
+        const res = editId ? await apiPut('/api/ai/memories/' + editId, body) : await apiPost('/api/ai/memories', body);
+        if (res.ok) {
+            showToast('记忆已保存', 'success');
+            document.getElementById('memory-modal').style.display = 'none';
+            loadMemories();
+        } else {
+            showToast(res.message || '保存失败', 'error');
+        }
+    }
+
+    /* ===== Library: Presets ===== */
+    async function loadPresets() {
+        const res = await apiGet('/api/ai/presets');
+        const list = document.getElementById('lib-presets-list');
+        if (!res.ok || !res.data || res.data.length === 0) {
+            list.innerHTML = '<div class="ds-empty-state"><p>暂无预设</p></div>';
+            return;
+        }
+        list.innerHTML = res.data.map(p => {
+            return '<div class="ds-card" style="padding:12px;margin-bottom:8px;">' +
+                '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
+                '<div style="flex:1;"><strong>' + escapeHtml(p.name) + '</strong>' +
+                '<p style="font-size:12px;color:var(--ds-text-secondary);margin-top:4px;">' + escapeHtml(p.content.substring(0, 100)) + '</p></div>' +
+                '<div style="display:flex;gap:6px;">' +
+                '<button class="ds-btn-secondary" style="font-size:11px;padding:4px 8px;" onclick="editPreset(\'' + p.id + '\')"><i class="fas fa-edit"></i></button>' +
+                '<button class="ds-btn-danger" style="font-size:11px;padding:4px 8px;" onclick="deletePreset(\'' + p.id + '\')"><i class="fas fa-trash"></i></button>' +
+                '</div></div></div>';
+        }).join('');
+    }
+
+    async function editPreset(id) {
+        const res = await apiGet('/api/ai/presets');
+        if (!res.ok) return;
+        const p = (res.data || []).find(x => x.id === id);
+        if (p) showPresetModal(p);
+    }
+
+    async function deletePreset(id) {
+        if (!confirm('确定删除此预设？')) return;
+        const res = await apiDelete('/api/ai/presets/' + id);
+        if (res.ok) { showToast('已删除', 'success'); loadPresets(); }
+        else showToast(res.message || '删除失败', 'error');
+    }
+
+    function showPresetModal(p) {
+        document.getElementById('preset-modal-title').textContent = p ? '编辑预设' : '新建预设';
+        document.getElementById('preset-name').value = p?.name || '';
+        document.getElementById('preset-content').value = p?.content || '';
+        document.getElementById('preset-edit-id').value = p?.id || '';
+        document.getElementById('preset-modal').style.display = 'flex';
+    }
+
+    async function savePreset() {
+        const body = {
+            name: document.getElementById('preset-name').value.trim(),
+            content: document.getElementById('preset-content').value.trim()
+        };
+        if (!body.name || !body.content) return showToast('名称和内容为必填', 'error');
+        const editId = document.getElementById('preset-edit-id').value;
+        const res = editId ? await apiPut('/api/ai/presets/' + editId, body) : await apiPost('/api/ai/presets', body);
+        if (res.ok) {
+            showToast('预设已保存', 'success');
+            document.getElementById('preset-modal').style.display = 'none';
+            loadPresets();
+        } else {
+            showToast(res.message || '保存失败', 'error');
+        }
+    }
+
+    /* ===== Library: Skills ===== */
+    async function loadSkills() {
+        const res = await apiGet('/api/ai/skills');
+        const list = document.getElementById('lib-skills-list');
+        if (!res.ok || !res.data || res.data.length === 0) {
+            list.innerHTML = '<div class="ds-empty-state"><p>暂无技能</p></div>';
+            return;
+        }
+        list.innerHTML = res.data.map(s => {
+            return '<div class="ds-card" style="padding:12px;margin-bottom:8px;">' +
+                '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
+                '<div style="flex:1;"><strong>' + escapeHtml(s.name) + '</strong>' +
+                '<p style="font-size:12px;color:var(--ds-text-secondary);margin-top:4px;">' + escapeHtml(s.description || '') + '</p></div>' +
+                '<div style="display:flex;gap:6px;">' +
+                '<button class="ds-btn-secondary" style="font-size:11px;padding:4px 8px;" onclick="editSkill(\'' + s.id + '\')"><i class="fas fa-edit"></i></button>' +
+                '<button class="ds-btn-danger" style="font-size:11px;padding:4px 8px;" onclick="deleteSkill(\'' + s.id + '\')"><i class="fas fa-trash"></i></button>' +
+                '</div></div></div>';
+        }).join('');
+    }
+
+    async function editSkill(id) {
+        const res = await apiGet('/api/ai/skills');
+        if (!res.ok) return;
+        const s = (res.data || []).find(x => x.id === id);
+        if (s) showSkillModal(s);
+    }
+
+    async function deleteSkill(id) {
+        if (!confirm('确定删除此技能？')) return;
+        const res = await apiDelete('/api/ai/skills/' + id);
+        if (res.ok) { showToast('已删除', 'success'); loadSkills(); }
+        else showToast(res.message || '删除失败', 'error');
+    }
+
+    function showSkillModal(s) {
+        document.getElementById('skill-modal-title').textContent = s ? '编辑技能' : '新建技能';
+        document.getElementById('skill-name').value = s?.name || '';
+        document.getElementById('skill-desc').value = s?.description || '';
+        document.getElementById('skill-prompt').value = s?.prompt_template || '';
+        document.getElementById('skill-edit-id').value = s?.id || '';
+        document.getElementById('skill-modal').style.display = 'flex';
+    }
+
+    async function saveSkill() {
+        const body = {
+            name: document.getElementById('skill-name').value.trim(),
+            description: document.getElementById('skill-desc').value.trim(),
+            prompt_template: document.getElementById('skill-prompt').value.trim()
+        };
+        if (!body.name || !body.prompt_template) return showToast('名称和提示词为必填', 'error');
+        const editId = document.getElementById('skill-edit-id').value;
+        const res = editId ? await apiPut('/api/ai/skills/' + editId, body) : await apiPost('/api/ai/skills', body);
+        if (res.ok) {
+            showToast('技能已保存', 'success');
+            document.getElementById('skill-modal').style.display = 'none';
+            loadSkills();
+        } else {
+            showToast(res.message || '保存失败', 'error');
+        }
+    }
+
+    /* ===== Library: Saved Items ===== */
+    async function loadSavedItems() {
+        const res = await apiGet('/api/ai/saved');
+        const list = document.getElementById('lib-saved-list');
+        if (!res.ok || !res.data || res.data.length === 0) {
+            list.innerHTML = '<div class="ds-empty-state"><p>暂无保存项</p></div>';
+            return;
+        }
+        list.innerHTML = res.data.map(s => {
+            return '<div class="ds-card" style="padding:12px;margin-bottom:8px;">' +
+                '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
+                '<div style="flex:1;"><strong>' + escapeHtml(s.title) + '</strong>' +
+                '<p style="font-size:12px;color:var(--ds-text-secondary);margin-top:4px;">' + escapeHtml(s.content.substring(0, 100)) + '</p></div>' +
+                '<div style="display:flex;gap:6px;">' +
+                '<button class="ds-btn-secondary" style="font-size:11px;padding:4px 8px;" onclick="editSavedItem(\'' + s.id + '\')"><i class="fas fa-edit"></i></button>' +
+                '<button class="ds-btn-danger" style="font-size:11px;padding:4px 8px;" onclick="deleteSavedItem(\'' + s.id + '\')"><i class="fas fa-trash"></i></button>' +
+                '</div></div></div>';
+        }).join('');
+    }
+
+    async function editSavedItem(id) {
+        const res = await apiGet('/api/ai/saved');
+        if (!res.ok) return;
+        const s = (res.data || []).find(x => x.id === id);
+        if (s) showSavedItemModal(s);
+    }
+
+    async function deleteSavedItem(id) {
+        if (!confirm('确定删除此保存项？')) return;
+        const res = await apiDelete('/api/ai/saved/' + id);
+        if (res.ok) { showToast('已删除', 'success'); loadSavedItems(); }
+        else showToast(res.message || '删除失败', 'error');
+    }
+
+    function showSavedItemModal(s) {
+        document.getElementById('saved-modal-title').textContent = s ? '编辑保存项' : '新建保存项';
+        document.getElementById('saved-title').value = s?.title || '';
+        document.getElementById('saved-content').value = s?.content || '';
+        document.getElementById('saved-edit-id').value = s?.id || '';
+        document.getElementById('saved-modal').style.display = 'flex';
+    }
+
+    async function saveSavedItem() {
+        const body = {
+            title: document.getElementById('saved-title').value.trim(),
+            content: document.getElementById('saved-content').value.trim()
+        };
+        if (!body.title || !body.content) return showToast('标题和内容为必填', 'error');
+        const editId = document.getElementById('saved-edit-id').value;
+        const res = editId ? await apiPut('/api/ai/saved/' + editId, body) : await apiPost('/api/ai/saved', body);
+        if (res.ok) {
+            showToast('保存项已保存', 'success');
+            document.getElementById('saved-modal').style.display = 'none';
+            loadSavedItems();
+        } else {
+            showToast(res.message || '保存失败', 'error');
         }
     }
 
@@ -2829,9 +3251,9 @@
             const dt = Date.now() - touchStart.time;
 
             if (Math.abs(dx) < 20 && Math.abs(dy) < 20 && dt < 300) {
-                apiPost('/api/mirror/control', { type: 'click', x: touchStart.x, y: touchStart.y });
+                apiPost('/api/mirror/control', { action: 'touch', x: touchStart.x, y: touchStart.y });
             } else {
-                apiPost('/api/mirror/control', { type: 'swipe', x1: touchStart.x, y1: touchStart.y, x2: x, y2: y, duration: dt });
+                apiPost('/api/mirror/control', { action: 'swipe', x: touchStart.x, y: touchStart.y, x2: x, y2: y, duration: dt });
             }
             touchStart = null;
         });
@@ -2847,12 +3269,11 @@
         }
         list.innerHTML = res.data.map(t => {
             return '<div class="task-item">' +
-                '<div style="flex:1;"><strong>' + escapeHtml(t.name || '未命名') + '</strong><br>' +
-                '<code style="font-size:0.75rem;opacity:0.6;">' + escapeHtml(t.command || '') + '</code><br>' +
-                '<span style="font-size:0.7rem;opacity:0.5;">' + escapeHtml(t.schedule || '手动') + '</span></div>' +
+                '<div style="flex:1;"><strong>' + escapeHtml(t.task_type || t.script || '未命名') + '</strong><br>' +
+                '<code style="font-size:0.75rem;opacity:0.6;">' + escapeHtml(t.script || '') + '</code><br>' +
+                '<span style="font-size:0.7rem;opacity:0.5;">' + escapeHtml(t.time || '手动') + ' ' + escapeHtml(t.weeks || '') + '</span></div>' +
                 '<div style="display:flex;gap:6px;">' +
                 '<button class="ds-btn-primary" style="font-size:0.7rem;padding:4px 8px;" onclick="triggerTask(\'' + t.id + '\')"><i class="fas fa-play"></i></button>' +
-                '<button class="ds-btn-secondary" style="font-size:0.7rem;padding:4px 8px;" onclick="editTask(\'' + t.id + '\',\'' + escapeHtml(t.name || '') + '\',\'' + escapeHtml(t.command || '') + '\',\'' + escapeHtml(t.schedule || '') + '\')"><i class="fas fa-edit"></i></button>' +
                 '<button class="ds-btn-danger" style="font-size:0.7rem;padding:4px 8px;" onclick="deleteTask(\'' + t.id + '\')"><i class="fas fa-trash"></i></button>' +
                 '</div></div>';
         }).join('');
@@ -2880,13 +3301,17 @@
         const name = document.getElementById('task-name').value.trim();
         const command = document.getElementById('task-command').value.trim();
         const schedule = document.getElementById('task-schedule').value.trim();
-        if (!name || !command) return showToast('名称和命令为必填', 'error');
+        if (!command) return showToast('命令为必填', 'error');
 
         const editId = document.getElementById('task-edit-id').value;
         if (editId) {
             await apiDelete('/api/tasks/' + editId);
         }
-        const res = await apiPost('/api/tasks', { name, command, schedule });
+        const res = await apiPost('/api/tasks', { 
+            time: schedule || '* * * * *', 
+            script: command, 
+            task_type: name || 'custom'
+        });
         if (res.ok) {
             showToast('任务已保存', 'success');
             document.getElementById('task-modal').style.display = 'none';
@@ -2904,9 +3329,13 @@
     }
 
     async function triggerTask(id) {
-        const res = await apiPost('/api/trigger', { task_id: id });
-        if (res.ok) showToast('任务已触发', 'success');
-        else showToast(res.message || '触发失败', 'error');
+        const res = await apiGet('/api/tasks');
+        if (!res.ok) return showToast('获取任务失败', 'error');
+        const task = (res.data || []).find(t => t.id == id);
+        if (!task) return showToast('任务不存在', 'error');
+        const triggerRes = await apiPost('/api/trigger', { script: task.script });
+        if (triggerRes.ok) showToast('任务已触发', 'success');
+        else showToast(triggerRes.message || '触发失败', 'error');
     }
 
     /* ===== Scripts ===== */
@@ -3005,20 +3434,24 @@
         const res = await apiGet('/api/email/config');
         if (res.ok && res.data) {
             const d = res.data;
-            document.getElementById('cfg-smtp-host').value = d.host || '';
-            document.getElementById('cfg-smtp-port').value = d.port || '';
-            document.getElementById('cfg-smtp-user').value = d.user || '';
+            document.getElementById('cfg-smtp-host').value = d.smtp_server || d.host || '';
+            document.getElementById('cfg-smtp-port').value = d.smtp_port || d.port || '';
+            document.getElementById('cfg-smtp-user').value = d.username || d.user || '';
             document.getElementById('cfg-smtp-to').value = d.to || '';
         }
     }
 
     async function saveEmailConfig() {
         const body = {
-            host: document.getElementById('cfg-smtp-host').value.trim(),
-            port: parseInt(document.getElementById('cfg-smtp-port').value) || 587,
-            user: document.getElementById('cfg-smtp-user').value.trim(),
+            enable_notify: 'true',
+            smtp_server: document.getElementById('cfg-smtp-host').value.trim(),
+            smtp_port: parseInt(document.getElementById('cfg-smtp-port').value) || 587,
+            username: document.getElementById('cfg-smtp-user').value.trim(),
             password: document.getElementById('cfg-smtp-pass').value.trim(),
-            to: document.getElementById('cfg-smtp-to').value.trim()
+            from: document.getElementById('cfg-smtp-user').value.trim(),
+            to: document.getElementById('cfg-smtp-to').value.trim(),
+            subject: 'TaskMod 通知',
+            body: ''
         };
         const res = await apiPut('/api/email/config', body);
         if (res.ok) showToast('邮件配置已保存', 'success');
