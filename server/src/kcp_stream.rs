@@ -27,12 +27,18 @@ const KCP_MTU: usize = 1400;
 const KCP_UPDATE_INTERVAL_MS: u64 = 5;
 /// 最大 KCP 客户端数
 const MAX_KCP_CLIENTS: usize = 10;
+/// FEC 前向纠错组大小（每N帧生成1个FEC包，20%冗余，借鉴 Sunshine 的 FEC 策略）
+const FEC_GROUP_SIZE: usize = 5;
 
 /// KCP 客户端会话
 struct KcpSession {
     kcp: kcp::Kcp<UdpSocket>,
     addr: SocketAddr,
     last_active: std::time::Instant,
+    /// FEC 组缓冲区：累积帧数据用于 XOR 纠错
+    fec_buffer: Vec<Vec<u8>>,
+    /// 当前 FEC 组 ID
+    fec_group_id: u32,
 }
 
 /// KCP 服务端
@@ -114,6 +120,8 @@ impl KcpServer {
                                         kcp,
                                         addr,
                                         last_active: std::time::Instant::now(),
+                                        fec_buffer: Vec::with_capacity(FEC_GROUP_SIZE),
+                                        fec_group_id: 0,
                                     });
                                 } else if sessions.len() >= MAX_KCP_CLIENTS {
                                     tracing::warn!("[KCP] 客户端数已达上限，拒绝 {}", addr);
@@ -145,6 +153,19 @@ impl KcpServer {
                                 Ok(_) => {
                                     // 立即刷新，确保最低延迟
                                     let _ = session.kcp.flush();
+                                    // FEC 前向纠错：累积帧数据，每 FEC_GROUP_SIZE 帧生成 XOR FEC 包
+                                    // 借鉴 Sunshine 的20% FEC 冗余策略，可恢复 UDP 传输中任意单帧丢失
+                                    if data.len() <= 65000 {
+                                        session.fec_buffer.push(data.clone());
+                                        if session.fec_buffer.len() >= FEC_GROUP_SIZE {
+                                            let fec_data = generate_kcp_fec_xor(&session.fec_buffer);
+                                            let fec_msg = build_kcp_fec_message(session.fec_group_id, &fec_data);
+                                            let _ = session.kcp.send(&fec_msg);
+                                            let _ = session.kcp.flush();
+                                            session.fec_buffer.clear();
+                                            session.fec_group_id = session.fec_group_id.wrapping_add(1);
+                                        }
+                                    }
                                 }
                                 Err(e) => {
                                     tracing::warn!("[KCP] send error to {}: {}", addr, e);
@@ -197,4 +218,29 @@ impl KcpServer {
 
         Ok(())
     }
+}
+
+/// 生成 XOR 前向纠错数据（所有帧异或，可恢复组内任意单帧丢失）
+fn generate_kcp_fec_xor(frames: &[Vec<u8>]) -> Vec<u8> {
+    if frames.is_empty() {
+        return Vec::new();
+    }
+    let max_len = frames.iter().map(|f| f.len()).max().unwrap_or(0);
+    let mut fec = vec![0u8; max_len];
+    for frame in frames {
+        for (i, &byte) in frame.iter().enumerate() {
+            fec[i] ^= byte;
+        }
+    }
+    fec
+}
+
+/// 构建 KCP FEC 消息
+/// 格式: [tag="fec"(3B)][group_id(4B)][fec_data]
+fn build_kcp_fec_message(group_id: u32, fec_data: &[u8]) -> Vec<u8> {
+    let mut msg = Vec::with_capacity(3 + 4 + fec_data.len());
+    msg.extend_from_slice(b"fec");
+    msg.extend_from_slice(&group_id.to_be_bytes());
+    msg.extend_from_slice(fec_data);
+    msg
 }

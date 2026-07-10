@@ -1623,6 +1623,7 @@
     /* ===== Mirror ===== */
     let mirrorSps = null;
     let mirrorPps = null;
+    let mirrorVps = null; // H.265 独有
     let mirrorWidth = 0;
     let mirrorHeight = 0;
     let mirrorUseFallback = false;
@@ -1634,6 +1635,15 @@
     let mirrorRenderScheduled = false;
     // 编解码协商：后端告知使用的编码器，前端据此配置解码器
     let mirrorCodec = 'h264'; // 默认 H.264
+    // 管线延迟追踪（借鉴 Sunshine 的六阶段延迟监控）
+    let mirrorPipelineLatency = { capture: 0, encode: 0, network: 0, decode: 0, render: 0, total: 0 };
+    // 帧序列号追踪（用于丢包检测和 FEC 重组）
+    let mirrorLastSeq = -1;
+    let mirrorFramesLost = 0;
+    // FEC 前向纠错缓冲区
+    let mirrorFecGroup = {};
+    // requestVideoFrameCallback 句柄（比 requestAnimationFrame 延迟更低）
+    let mirrorRvfcHandle = null;
 
     /// 检测浏览器是否支持 H.265 解码
     function supportsH265() {
@@ -1648,7 +1658,7 @@
     async function startMirror() {
         document.getElementById('mirror-status').style.display = 'flex';
         document.getElementById('mirror-status-text').textContent = '正在启动...';
-        mirrorSps = null; mirrorPps = null;
+        mirrorSps = null; mirrorPps = null; mirrorVps = null;
         mirrorWidth = 0; mirrorHeight = 0;
         mirrorUseFallback = false;
 
@@ -1684,6 +1694,9 @@
         if (dot) dot.classList.add('connected');
         const txt = document.getElementById('mirror-conn-text');
         if (txt) txt.textContent = '已连接';
+        // 显示延迟徽章
+        const latencyEl = document.getElementById('mirror-latency');
+        if (latencyEl) latencyEl.style.display = '';
         // 显示手势提示
         const hint = document.getElementById('mirror-gesture-hint');
         if (hint) { hint.style.display = ''; setTimeout(() => hint.style.display = 'none', 8000); }
@@ -1693,12 +1706,19 @@
     }
 
     async function stopMirror() {
+        const canvas = document.getElementById('mirror-canvas');
         if (mirrorReconnect) { mirrorReconnect.close(); mirrorReconnect = null; }
         if (mirrorWs) { mirrorWs.close(); mirrorWs = null; }
         if (mirrorDecoder) { try { mirrorDecoder.close(); } catch(e) {} mirrorDecoder = null; }
         if (mirrorFallbackTimer) { clearInterval(mirrorFallbackTimer); mirrorFallbackTimer = null; }
         if (mirrorStatsTimer) { clearInterval(mirrorStatsTimer); mirrorStatsTimer = null; }
+        if (mirrorRvfcHandle !== null && typeof canvas !== 'undefined' && canvas.cancelVideoFrameCallback) {
+            try { canvas.cancelVideoFrameCallback(mirrorRvfcHandle); } catch(e) {}
+        }
+        mirrorRvfcHandle = null;
         mirrorBackCanvas = null; mirrorBackCtx = null; mirrorRenderScheduled = false;
+        mirrorLastSeq = -1; mirrorFramesLost = 0; mirrorFecGroup = {};
+        mirrorPipelineLatency = { capture: 0, encode: 0, network: 0, decode: 0, render: 0, total: 0 };
         stopMirrorAudio();
         // 退出全屏
         if (document.fullscreenElement) document.exitFullscreen();
@@ -1717,6 +1737,9 @@
         if (dot) dot.classList.remove('connected');
         const txt = document.getElementById('mirror-conn-text');
         if (txt) txt.textContent = '未连接';
+        // 隐藏延迟徽章
+        const latencyBadge = document.getElementById('mirror-latency');
+        if (latencyBadge) latencyBadge.style.display = 'none';
         const hint = document.getElementById('mirror-gesture-hint');
         if (hint) hint.style.display = 'none';
         showToast('投屏已停止', 'info');
@@ -1754,11 +1777,21 @@
                         mirrorStats.framesRendered = 0;
                         mirrorStats.lastFpsTime = now;
                         // 上报质量指标到后端（ABR 系统据此自适应调整码率/帧率）
+                        // 借鉴 Sunshine 的双层 ABR + 丢包感知
                         if (mirrorWs && mirrorWs.readyState === 1) {
                             apiPost('/api/mirror/quality', {
                                 queue_depth: mirrorStats.queueDepth,
-                                render_fps: mirrorStats.renderFps
+                                render_fps: mirrorStats.renderFps,
+                                frames_lost: mirrorFramesLost,
+                                pipeline_latency: mirrorPipelineLatency.total
                             }).catch(() => {});
+                            mirrorFramesLost = 0; // 重置丢帧计数
+                        }
+                        // 更新延迟显示
+                        const latencyEl = document.getElementById('mirror-latency');
+                        if (latencyEl) {
+                            const totalLatency = mirrorPipelineLatency.total || 0;
+                            latencyEl.textContent = totalLatency > 0 ? `${totalLatency}ms` : '--';
                         }
                     }
                 }, 2000);
@@ -1793,6 +1826,22 @@
         if (buffer.byteLength < 7) return null;
         const tag = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2));
         const len = view.getUint32(3, false);
+        // 帧消息(key/frm)包含序列号和时间戳：[tag(3B)][len(4B)][seq(4B)][ts(4B)][data]
+        if (tag === 'key' || tag === 'frm') {
+            if (buffer.byteLength < 15) return null;
+            const seq = view.getUint32(7, false);
+            const ts = view.getUint32(11, false);
+            const data = new Uint8Array(buffer, 15, Math.min(len - 8, buffer.byteLength - 15));
+            return { tag, data, seq, ts };
+        }
+        // FEC 消息：[tag(3B)][len(4B)][group_id(4B)][fec_data]
+        if (tag === 'fec') {
+            if (buffer.byteLength < 11) return null;
+            const groupId = view.getUint32(7, false);
+            const data = new Uint8Array(buffer, 11, Math.min(len - 4, buffer.byteLength - 11));
+            return { tag, data, groupId };
+        }
+        // 普通消息(sps/pps/vps/rst/codec): [tag(3B)][len(4B)][data]
         const data = new Uint8Array(buffer, 7, Math.min(len, buffer.byteLength - 7));
         return { tag, data };
     }
@@ -1837,6 +1886,7 @@
     }
 
     function initMirrorDecoder() {
+        let lastFrameTs = 0;
         const canvas = document.getElementById('mirror-canvas');
         canvas.width = mirrorWidth;
         canvas.height = mirrorHeight;
@@ -1866,14 +1916,25 @@
                     frame.close();
                     // 统计实际渲染帧数（用于 ABR 反馈）
                     if (mirrorStats) mirrorStats.framesRendered++;
-                    // 调度下一帧显示（使用 requestAnimationFrame 同步显示刷新率）
+                    // 使用 requestVideoFrameCallback 替代 requestAnimationFrame
+                    // rVFC 提供更精确的帧同步，比 rAF 延迟低1-2帧（借鉴 QtScrcpy 的无缓冲渲染策略）
                     if (!mirrorRenderScheduled) {
                         mirrorRenderScheduled = true;
-                        requestAnimationFrame(() => {
+                        const renderToCanvas = () => {
                             const ctx = canvas.getContext('2d');
                             ctx.drawImage(mirrorBackCanvas, 0, 0);
                             mirrorRenderScheduled = false;
-                        });
+                            // 管线延迟统计：从编码时间戳到渲染完成
+                            if (mirrorPipelineLatency && lastFrameTs > 0) {
+                                mirrorPipelineLatency.render = Math.round(performance.now() - lastFrameTs);
+                                mirrorPipelineLatency.total = mirrorPipelineLatency.render + mirrorPipelineLatency.network;
+                            }
+                        };
+                        if (typeof canvas.requestVideoFrameCallback === 'function') {
+                            mirrorRvfcHandle = canvas.requestVideoFrameCallback(renderToCanvas);
+                        } else {
+                            requestAnimationFrame(renderToCanvas);
+                        }
                     }
                 },
                 error: (e) => {
@@ -1895,7 +1956,7 @@
         switch (msg.tag) {
             case 'rst':
                 // 重置信号，清空缓存
-                mirrorSps = null; mirrorPps = null;
+                mirrorSps = null; mirrorPps = null; mirrorVps = null;
                 break;
             case 'codec':
                 // 后端告知使用的编码器（h264 或 hevc）
@@ -1905,22 +1966,68 @@
             case 'sps':
                 mirrorSps = msg.data;
                 break;
+            case 'vps':
+                mirrorVps = msg.data;
+                break;
             case 'pps':
                 mirrorPps = msg.data;
                 if (mirrorSps && mirrorDecoder) {
                     try {
                         let codecStr, description;
                         if (mirrorCodec === 'hevc') {
-                            // H.265 解码器配置
-                            // 使用 hev1.1.6.L120.B0 (Main Profile Level 4.0)
+                            // H.265 解码器配置（Main Profile Level 4.0）
                             codecStr = 'hev1.1.6.L120.B0';
-                            // HEVCDecoderConfigurationRecord: [header][VPS][SPS][PPS]
-                            // 简化实现：直接使用 SPS+PPS 作为 description
-                            // 实际需要构建 HVCC box，但 WebCodecs 也接受裸 NALU
-                            const desc = new Uint8Array(mirrorSps.length + mirrorPps.length);
-                            desc.set(mirrorSps, 0);
-                            desc.set(mirrorPps, mirrorSps.length);
-                            description = desc;
+                            // 构建正确的 HEVCDecoderConfigurationRecord (ISO 14496-15)
+                            // 包含 VPS/SPS/PPS 的完整配置
+                            const vpsNalu = mirrorVps || new Uint8Array(0);
+                            const spsNalu = mirrorSps;
+                            const ppsNalu = mirrorPps;
+                            // HVCC header (23 bytes) + arrays
+                            const numArrays = (vpsNalu.length > 0 ? 1 : 0) + 1 + 1; // VPS + SPS + PPS
+                            const configSize = 23 + numArrays * 3 + vpsNalu.length + spsNalu.length + ppsNalu.length;
+                            const config = new Uint8Array(configSize);
+                            const cv = new DataView(config.buffer);
+                            // HEVCDecoderConfigurationRecord header
+                            config[0] = 0x01; // configurationVersion
+                            // general_profile_space(2) + general_tier_flag(1) + general_profile_idc(5)
+                            config[1] = spsNalu.length > 3 ? spsNalu[3] : 0x01; // profile from SPS
+                            config[2] = 0x00; // general_profile_compatibility_flags[0-7]
+                            config[3] = 0x00; // general_profile_compatibility_flags[8-15]
+                            config[4] = 0x00; // general_profile_compatibility_flags[16-23]
+                            config[5] = 0x00; // general_profile_compatibility_flags[24-31]
+                            config[6] = 0x60; // general_level_idc (L4.0 = 120 = 0x78, 但用 0x60 更兼容)
+                            config[7] = 0xF0; // min_spatial_segmentation_idc (high bits)
+                            config[8] = 0x00; // min_spatial_segmentation_idc (low bits)
+                            config[9] = 0xFC; // parallelismType
+                            config[10] = 0xFC | 1; // chromaFormat (1 = 4:2:0)
+                            config[11] = 0xF8; // bitDepthLumaMinus8 (high bits)
+                            config[12] = 0x00; // bitDepthLumaMinus8
+                            config[13] = 0xF8; // bitDepthChromaMinus8 (high bits)
+                            config[14] = 0x00; // bitDepthChromaMinus8
+                            cv.setUint16(15, 0, false); // avgFrameRate
+                            config[17] = 0x0F; // constantFrameRate(2) + numTemporalLayers(3) + temporalIdNested(1) + lengthSizeMinusOne(2) = 0b00_000_1_11
+                            config[18] = numArrays; // numOfArrays
+                            let offset = 19;
+                            // VPS array (NAL unit type = 32)
+                            if (vpsNalu.length > 0) {
+                                config[offset] = 0x20; // array_completeness(1) + reserved(1) + NAL_unit_type(6) = 32
+                                cv.setUint16(offset + 1, 1, false); // numNalus
+                                cv.setUint16(offset + 3, vpsNalu.length, false); // nalUnitLength
+                                config.set(vpsNalu, offset + 5);
+                                offset += 5 + vpsNalu.length;
+                            }
+                            // SPS array (NAL unit type = 33)
+                            config[offset] = 0x21; // NAL_unit_type = 33
+                            cv.setUint16(offset + 1, 1, false);
+                            cv.setUint16(offset + 3, spsNalu.length, false);
+                            config.set(spsNalu, offset + 5);
+                            offset += 5 + spsNalu.length;
+                            // PPS array (NAL unit type = 34)
+                            config[offset] = 0x22; // NAL_unit_type = 34
+                            cv.setUint16(offset + 1, 1, false);
+                            cv.setUint16(offset + 3, ppsNalu.length, false);
+                            config.set(ppsNalu, offset + 5);
+                            description = config;
                         } else {
                             // H.264 解码器配置
                             codecStr = 'avc1.42001E';
@@ -1944,10 +2051,65 @@
                     }
                 }
                 break;
+            case 'fec': {
+                // FEC 前向纠错恢复（借鉴 Sunshine 的 Reed-Solomon 策略）
+                // XOR FEC 可恢复组内任意单帧丢失
+                if (msg.groupId !== undefined) {
+                    const groupStart = msg.groupId * 5;
+                    let missingSeq = -1;
+                    for (let i = 0; i < 5; i++) {
+                        const expectedSeq = groupStart + i;
+                        if (!mirrorFecGroup[expectedSeq % 5] || mirrorFecGroup[expectedSeq % 5].seq !== expectedSeq) {
+                            if (missingSeq >= 0) { missingSeq = -2; break; } // 多帧丢失，无法恢复
+                            missingSeq = expectedSeq;
+                        }
+                    }
+                    if (missingSeq >= 0) {
+                        // XOR 恢复丢失帧
+                        const recovered = new Uint8Array(msg.data.length);
+                        recovered.set(msg.data);
+                        for (let i = 0; i < 5; i++) {
+                            const entry = mirrorFecGroup[(groupStart + i) % 5];
+                            if (entry && entry.seq === groupStart + i && groupStart + i !== missingSeq) {
+                                for (let j = 0; j < Math.min(recovered.length, entry.data.length); j++) {
+                                    recovered[j] ^= entry.data[j];
+                                }
+                            }
+                        }
+                        console.log(`[FEC] 恢复丢失帧 seq=${missingSeq}`);
+                        // 将恢复的帧送入解码器
+                        if (mirrorDecoder && mirrorSps) {
+                            try {
+                                const avcData = naluToAvc(recovered);
+                                const chunk = new EncodedVideoChunk({
+                                    type: 'delta', timestamp: performance.now() * 1000, data: avcData
+                                });
+                                mirrorDecoder.decode(chunk);
+                            } catch(e) {}
+                        }
+                    }
+                }
+                break;
+            }
             case 'key':
             case 'frm': {
                 if (!mirrorDecoder || !mirrorSps) break;
                 mirrorStats.framesReceived++;
+                // 序列号追踪：检测丢帧（借鉴 Hylarana 的序列号丢包检测）
+                if (msg.seq !== undefined) {
+                    if (mirrorLastSeq >= 0 && msg.seq !== mirrorLastSeq + 1) {
+                        const lost = msg.seq - mirrorLastSeq - 1;
+                        if (lost > 0 && lost < 1000) {
+                            mirrorFramesLost += lost;
+                            console.warn(`[mirror] 丢帧: ${lost}帧 (seq ${mirrorLastSeq} -> ${msg.seq})`);
+                        }
+                    }
+                    mirrorLastSeq = msg.seq;
+                }
+                // 管线延迟：编码端时间戳到接收端的时间差
+                if (msg.ts !== undefined && msg.ts > 0) {
+                    mirrorPipelineLatency.network = msg.ts; // 编码端已消耗的时间
+                }
                 // 智能丢帧策略（借鉴 RustDesk 的 rc_dropframe_thresh）：
                 // 当解码队列积压超过 6 帧时，跳过 P 帧只保留关键帧，减少延迟
                 const queueSize = mirrorDecoder.decodeQueueSize || 0;
@@ -1955,6 +2117,10 @@
                 if (msg.tag === 'frm' && queueSize > 6) {
                     mirrorStats.framesDropped++;
                     break;
+                }
+                // FEC 缓冲：保存帧数据用于后续纠错恢复
+                if (msg.seq !== undefined) {
+                    mirrorFecGroup[msg.seq % 5] = { seq: msg.seq, data: msg.data };
                 }
                 const avcData = naluToAvc(msg.data);
                 try {
@@ -1966,7 +2132,7 @@
                     mirrorDecoder.decode(chunk);
                 } catch (e) {
                     // 解码失败，可能需要重新配置
-                    mirrorSps = null; mirrorPps = null;
+                    mirrorSps = null; mirrorPps = null; mirrorVps = null;
                     // 请求关键帧恢复
                     if (mirrorWs && mirrorWs.readyState === 1) {
                         try { mirrorWs.send('keyframe'); } catch(e2) {}

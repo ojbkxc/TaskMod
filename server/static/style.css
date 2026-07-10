@@ -1379,6 +1379,18 @@
             font-weight: 500;
         }
 
+        .mirror-latency-badge {
+            font-size: 11px;
+            color: var(--ds-text-tertiary);
+            background: var(--ds-surface-variant);
+            padding: 2px 6px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-weight: 600;
+            margin-left: 6px;
+            white-space: nowrap;
+        }
+
         .mirror-top-actions {
             display: flex;
             align-items: center;

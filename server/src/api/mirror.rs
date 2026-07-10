@@ -26,6 +26,22 @@ const DEFAULT_FPS: usize = 60;
 const STATIC_FRAME_SIZE_THRESHOLD: usize = 500;
 /// 静止画面跳过帧数：检测到静止后每 N 帧只编码一帧
 const STATIC_SKIP_FRAMES: u32 = 15;
+/// FEC 前向纠错组大小（每N帧生成1个FEC包，20%冗余，借鉴 Sunshine 的 Reed-Solomon 策略）
+const FEC_GROUP_SIZE: usize = 5;
+/// 输入活动加速持续时间（毫秒）：触摸时临时提升帧率，借鉴 Sunshine 的 Input Activity Boost
+const INPUT_BOOST_DURATION_MS: u64 = 300;
+/// 输入活动加速时的最低帧率
+const INPUT_BOOST_FPS: u32 = 60;
+
+// H.265 NALU 类型常量（与 H.264 的 5-bit 类型不同，H.265 使用 6-bit）
+const HEVC_NAL_VPS: u8 = 32;    // Video Parameter Set
+const HEVC_NAL_SPS: u8 = 33;    // Sequence Parameter Set
+const HEVC_NAL_PPS: u8 = 34;    // Picture Parameter Set
+const HEVC_NAL_IDR_W_RADL: u8 = 19; // IDR 帧（带 RADL）
+const HEVC_NAL_IDR_N_LP: u8 = 20;   // IDR 帧（无 RADL）
+const HEVC_NAL_CRA: u8 = 21;    // Clean Random Access
+const HEVC_NAL_TRAIL_R: u8 = 1; // 非IDR参考帧
+const HEVC_NAL_TRAIL_N: u8 = 0; // 非IDR非参考帧
 
 /// 视频编码器类型
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -75,13 +91,17 @@ pub struct MirrorStartRequest {
     codec: Option<String>,
 }
 
-/// 客户端上报的网络质量指标（借鉴 RustDesk 的 ABR 反馈机制）
+/// 客户端上报的网络质量指标（借鉴 RustDesk + Sunshine 的双层 ABR 反馈）
 #[derive(Debug, Deserialize)]
 pub struct ClientQualityReport {
     /// 前端解码队列积压帧数
     pub queue_depth: Option<u32>,
     /// 客户端实际渲染帧率
     pub render_fps: Option<u32>,
+    /// 客户端累计丢帧数（序列号间隙检测）
+    pub frames_lost: Option<u32>,
+    /// 客户端管线延迟 (ms)
+    pub pipeline_latency: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -156,6 +176,7 @@ pub async fn start_mirror(
     let is_running_clone = is_running.clone();
     let request_keyframe_clone = state.request_keyframe.clone();
     let abr_clone = abr.clone();
+    let input_boost_until = state.input_boost_until.clone();
 
     // 发送编码器信息给前端（用于解码器配置）
     let codec_tag = match codec {
@@ -165,16 +186,27 @@ pub async fn start_mirror(
     let _ = video_tx.send(build_nalu_message(b"codec", codec_tag));
 
     tokio::spawn(async move {
+        let codec_type = codec;
         while is_running_clone.load(Ordering::Relaxed) {
             let _ = video_tx_clone.send(build_nalu_message(b"rst", b""));
 
             let cur_bitrate = abr_clone.get_bitrate() as usize;
-            let cur_fps = abr_clone.get_fps() as usize;
+            // 输入活动加速：触摸时临时提升帧率到60fps
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            let abr_fps = abr_clone.get_fps();
+            let cur_fps = if now_ms < input_boost_until.load(Ordering::Relaxed) {
+                INPUT_BOOST_FPS.max(abr_fps)
+            } else {
+                abr_fps
+            } as usize;
             let resolution_scale = abr_clone.get_resolution_scale();
 
             let mut cmd = Command::new("screenrecord");
             // H.265 编码：同等画质码率减半，或同码率画质翻倍
-            cmd.arg("--codec").arg(codec.as_str())
+            cmd.arg("--codec").arg(codec_type.as_str())
                 .arg("--output-format=h264")  // 输出格式仍为 Annex B
                 .arg("--bit-rate")
                 .arg(cur_bitrate.to_string())
@@ -221,6 +253,12 @@ pub async fn start_mirror(
             // 检测到静止后每 STATIC_SKIP_FRAMES 帧只发送一帧，节省 90%+ 带宽
             let mut consecutive_static_frames: u32 = 0;
             let mut frame_skip_counter: u32 = 0;
+
+            let mut frame_sequence_counter: u32 = 0;
+            let frame_start = std::time::Instant::now();
+            // FEC 组缓冲区（XOR 前向纠错，借鉴 Sunshine 的 Reed-Solomon 策略）
+            let mut fec_group: Vec<Vec<u8>> = Vec::with_capacity(FEC_GROUP_SIZE);
+            let mut fec_group_id: u32 = 0;
 
             let mut buf = vec![0u8; READ_BUF_SIZE];
             loop {
@@ -273,18 +311,48 @@ pub async fn start_mirror(
                                 continue;
                             }
 
-                            let nalu_type = (nalu_data[0] >> 1) & 0x1F;
+                            // 根据编码器类型提取 NALU 类型（H.264: 5-bit, H.265: 6-bit）
+                            let nalu_type = if codec_type == VideoCodec::H265 {
+                                (nalu_data[0] >> 1) & 0x3F
+                            } else {
+                                (nalu_data[0] >> 1) & 0x1F
+                            };
+                            // 帧序列号（单调递增，用于前端丢包检测和 FEC 重组）
+                            let frame_seq = frame_sequence_counter;
+                            frame_sequence_counter = frame_sequence_counter.wrapping_add(1);
+                            let frame_ts = frame_start.elapsed().as_millis() as u32;
+
                             match nalu_type {
-                                7 => {
+                                // H.264: SPS(7), H.265: SPS(33)
+                                7 | HEVC_NAL_SPS => {
                                     let _ = video_tx_clone.send(build_nalu_message(b"sps", nalu_data));
                                 }
-                                8 => {
+                                // H.264: PPS(8), H.265: PPS(34)
+                                8 | HEVC_NAL_PPS => {
                                     let _ = video_tx_clone.send(build_nalu_message(b"pps", nalu_data));
                                 }
-                                1 | 5 => {
-                                    let tag = if nalu_type == 5 { b"key" } else { b"frm" };
+                                // H.265 独有：VPS(32)
+                                HEVC_NAL_VPS => {
+                                    let _ = video_tx_clone.send(build_nalu_message(b"vps", nalu_data));
+                                }
+                                // H.264: IDR(5), H.265: IDR(19,20) / CRA(21)
+                                5 | HEVC_NAL_IDR_W_RADL | HEVC_NAL_IDR_N_LP | HEVC_NAL_CRA => {
+                                    let _ = video_tx_clone.send(build_frame_message(b"key", nalu_data, frame_seq, frame_ts));
+                                    // FEC 前向纠错：累积帧数据，每 FEC_GROUP_SIZE 帧生成一个 XOR FEC 包
+                                    if nalu_data.len() <= 65000 {
+                                        fec_group.push(nalu_data.to_vec());
+                                        if fec_group.len() >= FEC_GROUP_SIZE {
+                                            let fec_data = generate_fec_xor(&fec_group);
+                                            let _ = video_tx_clone.send(build_fec_message(fec_group_id, &fec_data));
+                                            fec_group.clear();
+                                            fec_group_id = fec_group_id.wrapping_add(1);
+                                        }
+                                    }
+                                }
+                                // H.264: non-IDR(1), H.265: TRAIL_R(1), TRAIL_N(0)
+                                1 | HEVC_NAL_TRAIL_N | HEVC_NAL_TRAIL_R => {
                                     // 帧差检测：P帧且帧极小说明画面静止
-                                    if nalu_type == 1 && nalu_data.len() < STATIC_FRAME_SIZE_THRESHOLD {
+                                    if nalu_data.len() < STATIC_FRAME_SIZE_THRESHOLD {
                                         consecutive_static_frames += 1;
                                         // 进入静止模式后，每 STATIC_SKIP_FRAMES 帧只发送一帧
                                         if consecutive_static_frames > 3 {
@@ -297,7 +365,17 @@ pub async fn start_mirror(
                                         consecutive_static_frames = 0;
                                         frame_skip_counter = 0;
                                     }
-                                    let _ = video_tx_clone.send(build_nalu_message(tag, nalu_data));
+                                    let _ = video_tx_clone.send(build_frame_message(b"frm", nalu_data, frame_seq, frame_ts));
+                                    // FEC 前向纠错：累积帧数据
+                                    if nalu_data.len() <= 65000 {
+                                        fec_group.push(nalu_data.to_vec());
+                                        if fec_group.len() >= FEC_GROUP_SIZE {
+                                            let fec_data = generate_fec_xor(&fec_group);
+                                            let _ = video_tx_clone.send(build_fec_message(fec_group_id, &fec_data));
+                                            fec_group.clear();
+                                            fec_group_id = fec_group_id.wrapping_add(1);
+                                        }
+                                    }
                                 }
                                 _ => {}
                             }
@@ -505,6 +583,16 @@ pub async fn send_control(
     } else {
         "sh"
     };
+
+    // 输入活动加速（借鉴 Sunshine 的 Input Activity Boost）：
+    // 触摸操作时临时提升帧率到60fps，确保触摸响应丝滑
+    if matches!(req.action.as_str(), "touch" | "touch_down" | "touch_move" | "swipe" | "scroll") {
+        let boost_until = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64 + INPUT_BOOST_DURATION_MS;
+        state.input_boost_until.store(boost_until, std::sync::atomic::Ordering::Relaxed);
+    }
 
     let result = match req.action.as_str() {
         "touch" => {
@@ -868,12 +956,19 @@ pub async fn report_quality(
 ) -> Json<ApiResponse<String>> {
     let queue_depth = report.queue_depth.unwrap_or(0);
     let render_fps = report.render_fps.unwrap_or(30);
+    let frames_lost = report.frames_lost.unwrap_or(0);
+    let pipeline_latency = report.pipeline_latency.unwrap_or(0);
 
     // 更新 ABR 控制器的客户端反馈数据
     state.abr.client_queue_depth.store(queue_depth, std::sync::atomic::Ordering::Relaxed);
     state.abr.client_render_fps.store(render_fps, std::sync::atomic::Ordering::Relaxed);
+    // 累加丢帧数（ABR 在 adjust 中消费后重置）
+    if frames_lost > 0 {
+        state.abr.client_frames_lost.fetch_add(frames_lost, std::sync::atomic::Ordering::Relaxed);
+    }
+    state.abr.client_pipeline_latency.store(pipeline_latency, std::sync::atomic::Ordering::Relaxed);
 
-    // 触发 ABR 调整算法
+    // 触发双层 ABR 调整算法
     state.abr.adjust(queue_depth, render_fps);
 
     Json(ApiResponse::ok("ok".to_string()))
@@ -940,6 +1035,46 @@ fn build_nalu_message(tag: &[u8; 3], nalu: &[u8]) -> Vec<u8> {
     msg.extend_from_slice(&(nalu.len() as u32).to_be_bytes());
     msg.extend_from_slice(nalu);
     msg
+}
+
+/// 构建带序列号和时间戳的帧消息（借鉴 Sunshine 的短帧头设计）
+/// 格式: [tag(3B)][len(4B)][seq(4B)][timestamp_ms(4B)][data]
+fn build_frame_message(tag: &[u8; 3], nalu: &[u8], seq: u32, ts: u32) -> Vec<u8> {
+    let data_len = 8 + nalu.len(); // seq(4) + ts(4) + nalu
+    let mut msg = Vec::with_capacity(3 + 4 + data_len);
+    msg.extend_from_slice(tag);
+    msg.extend_from_slice(&(data_len as u32).to_be_bytes());
+    msg.extend_from_slice(&seq.to_be_bytes());
+    msg.extend_from_slice(&ts.to_be_bytes());
+    msg.extend_from_slice(nalu);
+    msg
+}
+
+/// 构建 FEC 前向纠错消息
+/// 格式: [tag="fec"(3B)][len(4B)][group_id(4B)][fec_data]
+fn build_fec_message(group_id: u32, fec_data: &[u8]) -> Vec<u8> {
+    let data_len = 4 + fec_data.len();
+    let mut msg = Vec::with_capacity(3 + 4 + data_len);
+    msg.extend_from_slice(b"fec");
+    msg.extend_from_slice(&(data_len as u32).to_be_bytes());
+    msg.extend_from_slice(&group_id.to_be_bytes());
+    msg.extend_from_slice(fec_data);
+    msg
+}
+
+/// 生成 XOR 前向纠错数据（所有帧异或，可恢复组内任意单帧丢失）
+fn generate_fec_xor(frames: &[Vec<u8>]) -> Vec<u8> {
+    if frames.is_empty() {
+        return Vec::new();
+    }
+    let max_len = frames.iter().map(|f| f.len()).max().unwrap_or(0);
+    let mut fec = vec![0u8; max_len];
+    for frame in frames {
+        for (i, &byte) in frame.iter().enumerate() {
+            fec[i] ^= byte;
+        }
+    }
+    fec
 }
 
 // ==================== 文件上传到设备 (借鉴QtScrcpy) ====================
