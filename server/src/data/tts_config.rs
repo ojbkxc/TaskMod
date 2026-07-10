@@ -152,7 +152,7 @@ impl TtsConfig {
 
     /// 智能分句：按标点符号切分长文本
     pub fn split_sentences(&self, text: &str) -> Vec<String> {
-        if !self.split_enabled || text.len() <= 200 {
+        if !self.split_enabled || text.chars().count() <= 200 {
             return vec![text.to_string()];
         }
         split_text(text)
@@ -185,13 +185,13 @@ fn split_text(text: &str) -> Vec<String> {
     // 如果分句结果只有一段（没有标点），按逗号再分
     if sentences.len() <= 1 {
         let original = sentences.first().cloned().unwrap_or_default();
-        if original.len() > 200 {
+        if original.chars().count() > 200 {
             let mut sub_sentences = Vec::new();
             let mut sub_current = String::new();
             let sub_delimiters: &[char] = &['，', ',', '、', ' '];
             for ch in original.chars() {
                 sub_current.push(ch);
-                if sub_delimiters.contains(&ch) && sub_current.len() >= 50 {
+                if sub_delimiters.contains(&ch) && sub_current.chars().count() >= 50 {
                     let trimmed = sub_current.trim().to_string();
                     if !trimmed.is_empty() {
                         sub_sentences.push(trimmed);

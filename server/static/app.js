@@ -26,7 +26,7 @@
         if (name === 'tasks' && !_loaded.tasks) { _loaded.tasks = true; loadTasks(); }
         if (name === 'scripts' && !_loaded.scripts) { _loaded.scripts = true; loadScripts(); }
         if (name === 'tts' && !_loaded.tts) { _loaded.tts = true; loadTtsEngines(); loadTtsSettings(); }
-        if (name === 'config' && !_loaded.config) { _loaded.config = true; loadEmailConfig(); loadMqttConfig(); }
+        if (name === 'config' && !_loaded.config) { _loaded.config = true; loadEmailConfig(); loadMqttConfig(); loadVoiceSettings(); }
         if (name === 'logs') loadLogs();
         if (name === 'chat' && !_loaded.chat) { _loaded.chat = true; loadProviders(); }
         if (name === 'library' && !_loaded.library) {
@@ -1592,15 +1592,15 @@
                     sel.value = d.default_engine;
                 }
             }
-            if (d.default_rate) {
+            if (d.default_rate != null) {
                 document.getElementById('tts-speed').value = d.default_rate;
                 document.getElementById('tts-speed-val').textContent = d.default_rate;
             }
-            if (d.default_pitch) {
+            if (d.default_pitch != null) {
                 document.getElementById('tts-pitch').value = d.default_pitch;
                 document.getElementById('tts-pitch-val').textContent = d.default_pitch;
             }
-            if (d.default_volume) {
+            if (d.default_volume != null) {
                 document.getElementById('tts-volume').value = d.default_volume;
                 document.getElementById('tts-volume-val').textContent = d.default_volume;
             }
@@ -1862,8 +1862,8 @@
             const res = await apiPost('/api/tts/speak', {
                 text: speakText,
                 engine,
-                rate: voiceSettings.rate || parseFloat(document.getElementById('tts-speed')?.value || '1.0'),
-                pitch: voiceSettings.pitch || parseFloat(document.getElementById('tts-pitch')?.value || '1.0'),
+                rate: voiceSettings.rate != null ? voiceSettings.rate : parseFloat(document.getElementById('tts-speed')?.value || '1.0'),
+                 pitch: voiceSettings.pitch != null ? voiceSettings.pitch : parseFloat(document.getElementById('tts-pitch')?.value || '1.0'),
                 volume: parseFloat(document.getElementById('tts-volume')?.value || '1.0')
             });
             if (!res.ok) showToast('TTS: ' + (res.message || '朗读失败'), 'error');
