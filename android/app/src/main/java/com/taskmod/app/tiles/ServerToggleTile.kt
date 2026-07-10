@@ -10,7 +10,7 @@ class ServerToggleTile : TileService() {
 
     override fun onStartListening() {
         super.onStartListening()
-        val manager = ServerManager(this)
+        val manager = ServerManager.getInstance(this)
         val running = manager.isRunning()
         qsTile?.let {
             it.state = if (running) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
