@@ -14,30 +14,52 @@ use crate::utils::mqtt;
 
 
 
-pub async fn index() -> Html<&'static str> {
-    Html(include_str!("../../static/index.html"))
+pub async fn index() -> axum::response::Response {
+    use axum::http::header;
+    match tokio::fs::read_to_string("static/index.html").await {
+        Ok(content) => ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], content).into_response(),
+        Err(_) => ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], include_str!("../../static/index.html").to_string()).into_response(),
+    }
 }
 
 pub async fn static_css() -> axum::response::Response {
     use axum::http::header;
-    (
-        [(header::CONTENT_TYPE, "text/css; charset=utf-8"),
-         (header::CACHE_CONTROL, "public, max-age=3600")],
-        include_str!("../../static/style.css"),
-    ).into_response()
+    match tokio::fs::read_to_string("static/style.css").await {
+        Ok(content) => (
+            [(header::CONTENT_TYPE, "text/css; charset=utf-8"),
+             (header::CACHE_CONTROL, "no-cache")],
+            content,
+        ).into_response(),
+        Err(_) => (
+            [(header::CONTENT_TYPE, "text/css; charset=utf-8"),
+             (header::CACHE_CONTROL, "public, max-age=3600")],
+            include_str!("../../static/style.css").to_string(),
+        ).into_response(),
+    }
 }
 
 pub async fn static_js() -> axum::response::Response {
     use axum::http::header;
-    (
-        [(header::CONTENT_TYPE, "application/javascript; charset=utf-8"),
-         (header::CACHE_CONTROL, "public, max-age=3600")],
-        include_str!("../../static/app.js"),
-    ).into_response()
+    match tokio::fs::read_to_string("static/app.js").await {
+        Ok(content) => (
+            [(header::CONTENT_TYPE, "application/javascript; charset=utf-8"),
+             (header::CACHE_CONTROL, "no-cache")],
+            content,
+        ).into_response(),
+        Err(_) => (
+            [(header::CONTENT_TYPE, "application/javascript; charset=utf-8"),
+             (header::CACHE_CONTROL, "public, max-age=3600")],
+            include_str!("../../static/app.js").to_string(),
+        ).into_response(),
+    }
 }
 
-pub async fn api_docs() -> Html<&'static str> {
-    Html(include_str!("../../static/api-docs.html"))
+pub async fn api_docs() -> axum::response::Response {
+    use axum::http::header;
+    match tokio::fs::read_to_string("static/api-docs.html").await {
+        Ok(content) => ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], content).into_response(),
+        Err(_) => ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], include_str!("../../static/api-docs.html").to_string()).into_response(),
+    }
 }
 
 pub async fn get_logs(Query(params): Query<HashMap<String, String>>) -> Json<ApiResponse<Vec<String>>> {

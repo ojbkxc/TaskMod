@@ -175,13 +175,14 @@ jobs:
 
       - name: Rename APK
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk TaskMod-app.apk
+          VERSION=${{ steps.version.outputs.version }}
+          cp android/app/build/outputs/apk/debug/app-debug.apk TaskMod-app-${VERSION}.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: TaskMod-APK
-          path: TaskMod-app.apk
+          path: TaskMod-app-*.apk
 
   release:
     needs: [build-server, build-apk]
@@ -249,11 +250,11 @@ jobs:
             3. 浏览器访问 `http://设备IP:9527`
 
             **APK 安装**
-            1. 下载 `TaskMod-app.apk`
+            1. 下载 `TaskMod-app-${{ steps.version.outputs.version }}.apk`
             2. 允许安装未知来源应用
             3. 安装并打开
           files: |
             release-files/TaskMod-${{ steps.version.outputs.version }}.zip
-            release-files/TaskMod-app.apk
+            release-files/TaskMod-app-${{ steps.version.outputs.version }}.apk
           draft: false
           prerelease: false

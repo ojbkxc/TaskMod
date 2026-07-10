@@ -1418,7 +1418,7 @@
 
         .mirror-container {
             border: 1px solid var(--ds-border);
-            border-radius: var(--radius-ctrl);
+            border-radius: 16px;
             overflow: hidden;
             background: #0a0a0f;
             position: relative;
@@ -1428,7 +1428,14 @@
             min-height: 420px;
             aspect-ratio: 9 / 16;
             max-height: 80vh;
-            box-shadow: var(--ds-shadow-sm);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.25), 0 2px 8px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.05);
+            transition: box-shadow 0.3s ease, transform 0.3s ease;
+            margin: 0 auto;
+            max-width: 400px;
+        }
+        .mirror-container:hover {
+            box-shadow: 0 12px 48px rgba(0,0,0,0.35), 0 4px 12px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.08);
+            transform: translateY(-2px);
         }
 
         .mirror-empty-state {
