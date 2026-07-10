@@ -247,7 +247,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/mirror/status", get(api::mirror::mirror_status))
         .route("/api/mirror/screencap", get(api::mirror::screencap_jpeg))
         .route("/ws/mirror", get(api::mirror::mirror_ws))
-        .route("/ws/audio", get(api::mirror::audio_ws))
+        .route("/ws/mirror/audio", get(api::mirror::audio_ws))
         .with_state(mirror_state);
 
     let app = Router::new()

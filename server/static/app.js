@@ -374,14 +374,20 @@
 
     /* ===== Dashboard ===== */
     async function refreshStatus() {
-        const res = await apiGet('/api/status');
-        if (res.ok && res.data) {
-            const d = res.data;
-            document.getElementById('status-battery').textContent = (d.battery ?? '--') + '%';
-            document.getElementById('status-cpu').textContent = (d.cpu ?? '--') + '%';
-            document.getElementById('status-memory').textContent = d.memory ? (d.memory + ' MB') : '-- MB';
-            document.getElementById('status-uptime').textContent = d.uptime || '--';
-        }
+        try {
+            const res = await apiGet('/api/status');
+            if (res.ok && res.data) {
+                const d = res.data;
+                // battery 可能是对象 {capacity,temperature,status} 或字符串
+                const batt = (typeof d.battery === 'object' && d.battery !== null) ? d.battery.capacity : (d.battery ?? '--');
+                document.getElementById('status-battery').textContent = (batt || '--') + '%';
+                document.getElementById('status-cpu').textContent = (d.cpu ?? '--') + '%';
+                document.getElementById('status-memory').textContent = d.memory ? (d.memory + ' MB') : '-- MB';
+                document.getElementById('status-uptime').textContent = d.uptime || '--';
+            }
+        } catch (e) { /* ignore */ }
+        // 同时刷新设备仪表盘
+        refreshDeviceDashboard();
     }
 
     async function screenshot() {
@@ -567,6 +573,7 @@
         const container = document.getElementById('chat-messages');
         container.innerHTML = '<div class="ds-chat-empty"><div class="ds-empty-state-icon"><svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg></div><div class="ds-empty-state-title">欢迎使用 AI 助手</div><div class="ds-empty-state-description">选择一个AI提供商，然后输入消息控制设备。你也可以试试下面的快捷操作：</div><div class="ds-quick-prompts"><button class="ds-quick-prompt-card" onclick="insertChatPrompt(\'帮我查看设备状态\')"><i class="fas fa-mobile-alt"></i><span>查看设备状态</span></button><button class="ds-quick-prompt-card" onclick="insertChatPrompt(\'截一张屏幕截图并分析\')"><i class="fas fa-camera"></i><span>截图分析</span></button><button class="ds-quick-prompt-card" onclick="insertChatPrompt(\'帮我打开设置页面\')"><i class="fas fa-cog"></i><span>打开设置</span></button><button class="ds-quick-prompt-card" onclick="insertChatPrompt(\'列出已安装的应用\')"><i class="fas fa-th"></i><span>列出应用</span></button></div><div style="display:flex;gap:8px;margin-top:12px;"><button class="ds-chat-text-button" onclick="clearChat()"><i class="fas fa-plus" style="margin-right:4px;"></i>新对话</button><button class="ds-chat-text-button" onclick="exportChat()"><i class="fas fa-download" style="margin-right:4px;"></i>导出对话</button></div></div>';
         currentAssistantEl = null;
+        _streamRawText = '';
         isChatStreaming = false;
         if (chatWs && chatWs.readyState === WebSocket.OPEN) {
             chatWs.close();
@@ -1309,6 +1316,7 @@
     }
 
     let currentAssistantEl = null;
+    let _streamRawText = ''; // 累积流式原始文本（不含HTML）
 
     function handleChatMessage(msg) {
         const container = document.getElementById('chat-messages');
@@ -1319,15 +1327,22 @@
             if (!currentAssistantEl) {
                 currentAssistantEl = createMessageRow('assistant', '');
                 container.appendChild(currentAssistantEl);
+                _streamRawText = '';
                 // 启动 token 速度跟踪
                 _tokenTracker = createTokenSpeedTracker();
                 _tokenTracker.start();
             }
             const body = currentAssistantEl.querySelector('.ds-chat-message-content') || currentAssistantEl.querySelector('.markdown-body');
             if (body) {
+                _streamRawText += msg.content;
                 const cursor = body.querySelector('.ds-streaming-cursor');
                 if (cursor) cursor.remove();
-                body.innerHTML += escapeHtml(msg.content) + '<span class="ds-streaming-cursor"></span>';
+                // 暂存思考区
+                let thinkingEl = body.querySelector('.ds-chat-thinking');
+                if (thinkingEl) thinkingEl.remove();
+                body.innerHTML = escapeHtml(_streamRawText) + '<span class="ds-streaming-cursor"></span>';
+                // 恢复思考区到最前面
+                if (thinkingEl) body.prepend(thinkingEl);
                 // 跟踪 token 数量
                 if (_tokenTracker) _tokenTracker.addTokens(msg.content.length);
                 // 更新 token 速度指示器
@@ -1392,9 +1407,14 @@
                     // 移除流式光标
                     const cursor = body.querySelector('.ds-streaming-cursor');
                     if (cursor) cursor.remove();
-                    if (typeof marked !== 'undefined') {
-                        try { body.innerHTML = marked.parse(body.textContent); } catch (e) { /* keep raw */ }
+                    // 保留思考区，只对正文做 markdown 渲染
+                    const thinkingEl = body.querySelector('.ds-chat-thinking');
+                    if (thinkingEl) thinkingEl.remove();
+                    if (typeof marked !== 'undefined' && _streamRawText) {
+                        try { body.innerHTML = marked.parse(_streamRawText); } catch (e) { /* keep raw */ }
                     }
+                    // 恢复思考区到最前面
+                    if (thinkingEl) body.prepend(thinkingEl);
                     // 为代码块添加复制按钮
                     addCodeBlockCopyButtons(body);
                     // 显示最终统计
@@ -1405,13 +1425,14 @@
                         body.appendChild(stats);
                     }
                 }
-                // 自动朗读AI回复
-                if (ttsReplyEnabled && body) {
-                    const text = body.textContent.trim();
+                // 自动朗读AI回复（仅正文，不含思考区）
+                if (ttsReplyEnabled && _streamRawText) {
+                    const text = _streamRawText.trim();
                     if (text) ttsReadText(text);
                 }
             }
             currentAssistantEl = null;
+            _streamRawText = '';
             isChatStreaming = false;
             removeTokenSpeedIndicator();
             _tokenTracker = null;
@@ -1437,6 +1458,7 @@
             row.innerHTML = '<div class="ds-chat-error"><i class="fas fa-exclamation-triangle"></i> ' + escapeHtml(msg.message || '未知错误') + '</div>';
             container.appendChild(row);
             currentAssistantEl = null;
+            _streamRawText = '';
             isChatStreaming = false;
             scrollChatToBottom();
         }
