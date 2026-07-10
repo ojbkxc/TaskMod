@@ -18,8 +18,13 @@ fn now_ms() -> i64 {
         .as_millis() as i64
 }
 
+/// 全局原子计数器，防止同一毫秒内 ID 碰撞
+static ID_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 fn gen_id() -> String {
-    format!("{:x}", now_ms() as u64)
+    let ts = now_ms() as u64;
+    let seq = ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("{:x}_{:04x}", ts, seq & 0xFFFF)
 }
 
 async fn ensure_dir(path: &str) {

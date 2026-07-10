@@ -11,6 +11,54 @@ use crate::data::response::ApiResponse;
 use crate::tools::{adb_tools, script_tools, task_tools, ToolRegistry};
 use crate::utils::adb;
 
+/// 全局共享 HTTP Client（连接池复用，避免每次请求重建 TLS）
+lazy_static::lazy_static! {
+    static ref HTTP_CLIENT: Client = Client::builder()
+        .pool_max_idle_per_host(4)
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .expect("Failed to create HTTP client");
+}
+
+/// 全局共享 ToolRegistry JSON（26 个工具只注册一次）
+fn shared_tools_json() -> &'static serde_json::Value {
+    lazy_static::lazy_static! {
+        static ref TOOLS_JSON: serde_json::Value = {
+            let mut registry = ToolRegistry::new();
+            registry.register(Box::new(adb_tools::AdbTapTool));
+            registry.register(Box::new(adb_tools::AdbSwipeTool));
+            registry.register(Box::new(adb_tools::AdbKeyeventTool));
+            registry.register(Box::new(adb_tools::AdbInputTextTool));
+            registry.register(Box::new(adb_tools::AdbScreencapTool));
+            registry.register(Box::new(adb_tools::AdbCommandTool));
+            registry.register(Box::new(adb_tools::AdbStartAppTool));
+            registry.register(Box::new(adb_tools::AdbStopAppTool));
+            registry.register(Box::new(adb_tools::AdbClearAppDataTool));
+            registry.register(Box::new(adb_tools::GetWifiInfoTool));
+            registry.register(Box::new(adb_tools::GetDeviceInfoTool));
+            registry.register(Box::new(adb_tools::GetBatteryInfoTool));
+            registry.register(Box::new(adb_tools::GetRunningAppsTool));
+            registry.register(Box::new(adb_tools::AdbRebootTool));
+            registry.register(Box::new(adb_tools::AdbShutdownTool));
+            registry.register(Box::new(adb_tools::AdbTtsTool));
+            registry.register(Box::new(adb_tools::AdbUnlockTool));
+            registry.register(Box::new(script_tools::ListScriptsTool));
+            registry.register(Box::new(script_tools::ReadScriptTool));
+            registry.register(Box::new(script_tools::WriteScriptTool));
+            registry.register(Box::new(script_tools::DeleteScriptTool));
+            registry.register(Box::new(script_tools::RunScriptTool));
+            registry.register(Box::new(script_tools::ViewLogsTool));
+            registry.register(Box::new(task_tools::ListTasksTool));
+            registry.register(Box::new(task_tools::AddTaskTool));
+            registry.register(Box::new(task_tools::DeleteTaskTool));
+            registry.register(Box::new(task_tools::ModifyTaskTool));
+            registry.register(Box::new(task_tools::ListScriptsForTaskTool));
+            registry.get_tools_json()
+        };
+    }
+    &TOOLS_JSON
+}
+
 pub async fn list_ai_providers() -> Json<ApiResponse<Vec<AiProvider>>> {
     let providers = load_ai_providers();
     Json(ApiResponse::ok(providers))
@@ -78,6 +126,7 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
     ws.on_upgrade(move |socket| async move {
         let (mut write, mut read) = socket.split();
         let mut conversation_messages: Vec<serde_json::Value> = Vec::new();
+        const MAX_HISTORY: usize = 100; // 对话历史上限，防止 OOM
 
         while let Some(msg) = read.next().await {
             if let Ok(axum::extract::ws::Message::Text(text)) = msg {
@@ -90,19 +139,6 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                                 serde_json::to_string(&json!({
                                     "type": "error",
                                     "message": "供应商不存在"
-                                })).unwrap_or_default()
-                            )).await;
-                            continue;
-                        }
-                    };
-
-                    let client = match Client::builder().build() {
-                        Ok(c) => c,
-                        Err(_) => {
-                            let _ = write.send(axum::extract::ws::Message::Text(
-                                serde_json::to_string(&json!({
-                                    "type": "error",
-                                    "message": "创建客户端失败"
                                 })).unwrap_or_default()
                             )).await;
                             continue;
@@ -230,38 +266,26 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                         }
                     }
 
-                    let mut registry = ToolRegistry::new();
-                    registry.register(Box::new(adb_tools::AdbTapTool));
-                    registry.register(Box::new(adb_tools::AdbSwipeTool));
-                    registry.register(Box::new(adb_tools::AdbKeyeventTool));
-                    registry.register(Box::new(adb_tools::AdbInputTextTool));
-                    registry.register(Box::new(adb_tools::AdbScreencapTool));
-                    registry.register(Box::new(adb_tools::AdbCommandTool));
-                    registry.register(Box::new(adb_tools::AdbStartAppTool));
-                    registry.register(Box::new(adb_tools::AdbStopAppTool));
-                    registry.register(Box::new(adb_tools::AdbClearAppDataTool));
-                    registry.register(Box::new(adb_tools::GetWifiInfoTool));
-                    registry.register(Box::new(adb_tools::GetDeviceInfoTool));
-                    registry.register(Box::new(adb_tools::GetBatteryInfoTool));
-                    registry.register(Box::new(adb_tools::GetRunningAppsTool));
-                    registry.register(Box::new(adb_tools::AdbRebootTool));
-                    registry.register(Box::new(adb_tools::AdbShutdownTool));
-                    registry.register(Box::new(adb_tools::AdbTtsTool));
-                    registry.register(Box::new(adb_tools::AdbUnlockTool));
-                    registry.register(Box::new(script_tools::ListScriptsTool));
-                    registry.register(Box::new(script_tools::ReadScriptTool));
-                    registry.register(Box::new(script_tools::WriteScriptTool));
-                    registry.register(Box::new(script_tools::DeleteScriptTool));
-                    registry.register(Box::new(script_tools::RunScriptTool));
-                    registry.register(Box::new(script_tools::ViewLogsTool));
-                    registry.register(Box::new(task_tools::ListTasksTool));
-                    registry.register(Box::new(task_tools::AddTaskTool));
-                    registry.register(Box::new(task_tools::DeleteTaskTool));
-                    registry.register(Box::new(task_tools::ModifyTaskTool));
-                    registry.register(Box::new(task_tools::ListScriptsForTaskTool));
-
-                    let tools = registry.get_tools_json();
+                    let tools = shared_tools_json().clone();
                     let mut messages = conversation_messages.clone();
+
+                    // 对话历史截断，保留 system prompt + 最近消息
+                    if messages.len() > MAX_HISTORY {
+                        let system_msgs: Vec<_> = messages.iter()
+                            .filter(|m| m.get("role").and_then(|r| r.as_str()) == Some("system"))
+                            .cloned()
+                            .collect();
+                        let recent: Vec<_> = messages.iter()
+                            .filter(|m| m.get("role").and_then(|r| r.as_str()) != Some("system"))
+                            .cloned()
+                            .collect();
+                        let keep = MAX_HISTORY.saturating_sub(system_msgs.len());
+                        let recent_len = recent.len();
+                        let truncated: Vec<_> = system_msgs.into_iter()
+                            .chain(recent.into_iter().skip(recent_len.saturating_sub(keep)))
+                            .collect();
+                        messages = truncated;
+                    }
 
                     loop {
                         let api_url = format!("{}/v1/chat/completions", provider.base_url);
@@ -274,7 +298,7 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                             "stream": true
                         });
 
-                        let response = match client.post(&api_url)
+                        let response = match HTTP_CLIENT.post(&api_url)
                             .header("Authorization", format!("Bearer {}", provider.api_key))
                             .header("Content-Type", "application/json")
                             .json(&body)
@@ -583,8 +607,6 @@ pub async fn call_ai_image_with_fallback(prompt: &str, size: &str, provider_ids:
 }
 
 pub async fn call_ai(provider: &AiProvider, prompt: &str) -> Result<String, String> {
-    let client = Client::builder().build().map_err(|e| format!("创建客户端失败: {}", e))?;
-    
     let api_url = format!("{}/v1/chat/completions", provider.base_url);
     
     let body = json!({
@@ -596,7 +618,7 @@ pub async fn call_ai(provider: &AiProvider, prompt: &str) -> Result<String, Stri
         "stream": false
     });
     
-    let response = client.post(&api_url)
+    let response = HTTP_CLIENT.post(&api_url)
         .header("Authorization", format!("Bearer {}", provider.api_key))
         .header("Content-Type", "application/json")
         .json(&body)
@@ -625,8 +647,6 @@ pub async fn call_ai(provider: &AiProvider, prompt: &str) -> Result<String, Stri
 /// 调用AI生成图像（兼容DALL-E API）
 #[allow(dead_code)]
 pub async fn call_ai_image(provider: &AiProvider, prompt: &str, size: &str) -> Result<String, String> {
-    let client = Client::builder().build().map_err(|e| format!("创建客户端失败: {}", e))?;
-    
     let api_url = format!("{}/v1/images/generations", provider.base_url);
     
     let body = json!({
@@ -637,7 +657,7 @@ pub async fn call_ai_image(provider: &AiProvider, prompt: &str, size: &str) -> R
         "response_format": "url"
     });
     
-    let response = client.post(&api_url)
+    let response = HTTP_CLIENT.post(&api_url)
         .header("Authorization", format!("Bearer {}", provider.api_key))
         .header("Content-Type", "application/json")
         .json(&body)
@@ -667,8 +687,6 @@ pub async fn call_ai_image(provider: &AiProvider, prompt: &str, size: &str) -> R
 /// 调用AI生成嵌入向量
 #[allow(dead_code)]
 pub async fn call_ai_embedding(provider: &AiProvider, input: &str) -> Result<Vec<f64>, String> {
-    let client = Client::builder().build().map_err(|e| format!("创建客户端失败: {}", e))?;
-    
     let api_url = format!("{}/v1/embeddings", provider.base_url);
     
     let body = json!({
@@ -676,7 +694,7 @@ pub async fn call_ai_embedding(provider: &AiProvider, input: &str) -> Result<Vec
         "input": input
     });
     
-    let response = client.post(&api_url)
+    let response = HTTP_CLIENT.post(&api_url)
         .header("Authorization", format!("Bearer {}", provider.api_key))
         .header("Content-Type", "application/json")
         .json(&body)
@@ -732,12 +750,7 @@ pub async fn call_ai_image_analyze(provider: &AiProvider, prompt: &str, img_base
         "max_tokens": 2000
     });
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .build()
-        .map_err(|e| format!("创建HTTP客户端失败: {}", e))?;
-
-    let resp = client.post(&api_url)
+    let resp = HTTP_CLIENT.post(&api_url)
         .header("Authorization", format!("Bearer {}", provider.api_key))
         .header("Content-Type", "application/json")
         .json(&body)

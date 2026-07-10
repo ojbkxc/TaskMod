@@ -7,6 +7,7 @@
     let currentProviderId = '';
     let currentModel = '';
     let isChatStreaming = false;
+    const _loaded = {}; // 懒加载标记，避免重复请求
 
     /* ===== Tab Switching ===== */
     function showTab(name) {
@@ -19,14 +20,19 @@
             if (el) el.style.display = id === name ? 'flex' : 'none';
         });
         currentTab = name;
+        // 首次切换时加载数据，后续不重复请求
         if (name === 'dashboard') refreshStatus();
-        if (name === 'tasks') loadTasks();
-        if (name === 'scripts') loadScripts();
-        if (name === 'tts') loadTtsEngines();
-        if (name === 'config') { loadEmailConfig(); loadMqttConfig(); }
+        if (name === 'tasks' && !_loaded.tasks) { _loaded.tasks = true; loadTasks(); }
+        if (name === 'scripts' && !_loaded.scripts) { _loaded.scripts = true; loadScripts(); }
+        if (name === 'tts' && !_loaded.tts) { _loaded.tts = true; loadTtsEngines(); }
+        if (name === 'config' && !_loaded.config) { _loaded.config = true; loadEmailConfig(); loadMqttConfig(); }
         if (name === 'logs') loadLogs();
-        if (name === 'chat') loadProviders();
-        if (name === 'library') { loadMemories(); loadPresets(); loadSkills(); loadSavedItems(); loadScenarios(); loadProjects(); loadMcpServers(); loadScreenshots(); loadPromptSettings(); }
+        if (name === 'chat' && !_loaded.chat) { _loaded.chat = true; loadProviders(); }
+        if (name === 'library' && !_loaded.library) {
+            _loaded.library = true;
+            loadMemories(); loadPresets(); loadSkills(); loadSavedItems();
+            loadScenarios(); loadProjects(); loadMcpServers(); loadScreenshots(); loadPromptSettings();
+        }
     }
 
     /* ===== Library Sub-tab Switching ===== */
@@ -35,15 +41,20 @@
         document.querySelectorAll('[id^="libtab-"]').forEach(el => el.classList.remove('ds-sub-tab-active'));
         document.getElementById(name).style.display = 'block';
         document.getElementById('libtab-' + name).classList.add('ds-sub-tab-active');
-        if (name === 'lib-memories') loadMemories();
-        else if (name === 'lib-presets') loadPresets();
-        else if (name === 'lib-skills') loadSkills();
-        else if (name === 'lib-saved') loadSavedItems();
-        else if (name === 'lib-scenarios') loadScenarios();
-        else if (name === 'lib-projects') loadProjects();
-        else if (name === 'lib-mcp') loadMcpServers();
-        else if (name === 'lib-screenshots') loadScreenshots();
-        else if (name === 'lib-prompt-ctrl') loadPromptSettings();
+        // 子tab也做懒加载
+        const key = 'lib_' + name;
+        if (!_loaded[key]) {
+            _loaded[key] = true;
+            if (name === 'lib-memories') loadMemories();
+            else if (name === 'lib-presets') loadPresets();
+            else if (name === 'lib-skills') loadSkills();
+            else if (name === 'lib-saved') loadSavedItems();
+            else if (name === 'lib-scenarios') loadScenarios();
+            else if (name === 'lib-projects') loadProjects();
+            else if (name === 'lib-mcp') loadMcpServers();
+            else if (name === 'lib-screenshots') loadScreenshots();
+            else if (name === 'lib-prompt-ctrl') loadPromptSettings();
+        }
     }
 
     /* ===== Theme Toggle ===== */
