@@ -4,6 +4,7 @@ use eq_ui::prelude::*;
 use crate::components::shell::AppShell;
 use crate::pages::dashboard::DashboardPage;
 use crate::pages::chat::ChatPage;
+use crate::pages::daemon::DaemonPage;
 use crate::pages::tasks::TasksPage;
 use crate::pages::scripts::ScriptsPage;
 use crate::pages::mirror::MirrorPage;
@@ -18,6 +19,7 @@ use crate::pages::library::LibraryPage;
 pub enum ActivePage {
     Dashboard,
     Chat,
+    Daemon,
     Mirror,
     Library,
     Tasks,
@@ -33,6 +35,7 @@ impl ActivePage {
         match self {
             Self::Dashboard => "仪表盘",
             Self::Chat => "AI助手",
+            Self::Daemon => "隧道",
             Self::Mirror => "设备",
             Self::Library => "知识库",
             Self::Tasks => "任务",
@@ -68,6 +71,7 @@ pub fn App() -> Element {
                         match *active_page.read() {
                             ActivePage::Dashboard => rsx! { DashboardPage {} },
                             ActivePage::Chat => rsx! { ChatPage {} },
+                            ActivePage::Daemon => rsx! { DaemonPage {} },
                             ActivePage::Mirror => rsx! { MirrorPage {} },
                             ActivePage::Library => rsx! { LibraryPage {} },
                             ActivePage::Tasks => rsx! { TasksPage {} },

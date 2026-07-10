@@ -349,6 +349,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/files/zip", post(api::files::zip_file))
         .route("/api/files/unzip", post(api::files::unzip_file))
         .route("/api/files/dir-size", get(api::files::dir_size))
+        // 隧道管理（守护进程）
+        .merge(api::daemon::routes())
         .merge(mirror_routes)
         .layer(CorsLayer::permissive());
 

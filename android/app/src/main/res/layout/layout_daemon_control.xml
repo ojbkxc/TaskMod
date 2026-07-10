@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/daemon_card"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="16dp"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="2dp"
+    app:strokeWidth="0dp"
+    app:cardBackgroundColor="@color/surface">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- 标题 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="cloudflared 隧道"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:textColor="@color/on_surface" />
+
+        <!-- 状态信息 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="12dp"
+            android:gravity="center_vertical">
+
+            <View
+                android:id="@+id/daemon_status_dot"
+                android:layout_width="10dp"
+                android:layout_height="10dp"
+                android:background="@drawable/status_dot_stopped" />
+
+            <TextView
+                android:id="@+id/tv_daemon_status"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="未运行"
+                android:textSize="14sp"
+                android:textColor="@color/on_surface" />
+
+            <TextView
+                android:id="@+id/tv_daemon_pid"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:layout_marginEnd="8dp" />
+        </LinearLayout>
+
+        <!-- 运行时长 -->
+        <TextView
+            android:id="@+id/tv_daemon_uptime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text=""
+            android:textSize="12sp"
+            android:textColor="@color/text_secondary" />
+
+        <!-- 控制按钮 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="16dp"
+            android:gravity="end">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_daemon_start"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="启动"
+                android:textSize="12sp"
+                app:cornerRadius="18dp"
+                app:backgroundTint="@color/primary" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_daemon_stop"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_marginStart="8dp"
+                android:text="停止"
+                android:textSize="12sp"
+                app:cornerRadius="18dp"
+                app:strokeColor="@color/error" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_daemon_restart"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_marginStart="8dp"
+                android:text="重启"
+                android:textSize="12sp"
+                app:cornerRadius="18dp"
+                app:strokeColor="@color/primary" />
+        </LinearLayout>
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>

@@ -14,6 +14,7 @@ pub fn Sidebar(props: SidebarProps) -> Element {
     let pages = vec![
         ActivePage::Dashboard,
         ActivePage::Chat,
+        ActivePage::Daemon,
         ActivePage::Mirror,
         ActivePage::Library,
         ActivePage::Tasks,
@@ -136,6 +137,11 @@ fn PageIcon(page: ActivePage) -> Element {
         ActivePage::Chat => rsx! {
             svg { class: "w-4 h-4", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
                 path { stroke_linecap: "round", stroke_linejoin: "round", d: "M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" }
+            }
+        },
+        ActivePage::Daemon => rsx! {
+            svg { class: "w-4 h-4", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
+                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" }
             }
         },
         ActivePage::Mirror => rsx! {

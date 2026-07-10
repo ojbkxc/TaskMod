@@ -1,23 +1,13 @@
 //! IPC 通信模块
 //!
-//! 通过 Unix Domain Socket (datagram) 提供外部控制接口。
-//! 守护进程监听 /tmp/taskmod.sock，客户端通过同名 socket 发送命令。
-//!
-//! 支持的命令：
-//! - STATUS: 返回进程状态 JSON
-//! - STOP: 优雅关闭守护进程
-//! - RESTART: 触发热重载（先启动新进程，再关闭旧进程）
-//!
-//! 使用 datagram 而非 stream，因为：
-//! 1. 消息边界清晰，无需处理粘包
-//! 2. 无需维护连接状态
-//! 3. 实现更简单
+//! 通过 Unix Domain Socket (datagram) 提供外部控制接口
+//! 支持多隧道、多服务的增删改查和状态管理
 
 use std::os::unix::net::UnixDatagram;
 use std::path::{Path, PathBuf};
 
 use log::{error, info, warn};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::{Result, TaskModError};
 
@@ -27,40 +17,77 @@ pub const SOCKET_PATH: &str = "/tmp/taskmod.sock";
 /// PID 文件路径
 pub const PID_FILE_PATH: &str = "/tmp/taskmod.pid";
 
-/// 守护进程支持的 IPC 命令
-#[derive(Debug, Clone, PartialEq)]
+/// IPC 命令
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Command {
+    // ========== 守护进程控制 ==========
+    /// 查询守护进程整体状态
     Status,
+    /// 停止守护进程
     Stop,
-    Restart,
+    /// 重启所有隧道
+    RestartAll,
+
+    // ========== 隧道管理 ==========
+    /// 列出所有隧道
+    ListTunnels,
+    /// 获取隧道详情
+    GetTunnel { name: String },
+    /// 添加隧道
+    AddTunnel { name: String, token: String, enabled: bool },
+    /// 更新隧道
+    UpdateTunnel { name: String, new_name: Option<String>, token: Option<String>, enabled: Option<bool> },
+    /// 删除隧道
+    DeleteTunnel { name: String },
+    /// 启用隧道
+    EnableTunnel { name: String },
+    /// 禁用隧道
+    DisableTunnel { name: String },
+    /// 重启指定隧道
+    RestartTunnel { name: String },
+
+    // ========== 服务管理 ==========
+    /// 列出隧道下的服务
+    ListServices { tunnel_name: String },
+    /// 获取服务详情
+    GetService { tunnel_name: String, service_name: String },
+    /// 添加服务
+    AddService { tunnel_name: String, service_name: String, url: String, enabled: bool },
+    /// 更新服务
+    UpdateService { tunnel_name: String, service_name: String, new_name: Option<String>, url: Option<String>, enabled: Option<bool> },
+    /// 删除服务
+    DeleteService { tunnel_name: String, service_name: String },
+    /// 启用服务
+    EnableService { tunnel_name: String, service_name: String },
+    /// 禁用服务
+    DisableService { tunnel_name: String, service_name: String },
+
+    // ========== 进程状态 ==========
+    /// 列出所有运行中的进程
+    ListProcesses,
+    /// 获取指定隧道的进程状态
+    GetProcessStatus { tunnel_name: String },
+    /// 启动指定隧道
+    StartTunnel { name: String },
+    /// 停止指定隧道
+    StopTunnel { name: String },
 }
 
-/// 进程状态响应（序列化为 JSON 返回给客户端）
-#[derive(Debug, Serialize)]
-pub struct StatusResponse {
-    pub pid: u32,
-    pub uptime_secs: u64,
+/// IPC 响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Response {
+    /// 成功
+    Success(String),
+    /// 错误
+    Error(String),
+    /// JSON 数据
+    Json(serde_json::Value),
 }
 
-impl Command {
-    /// 从字符串解析命令
-    pub fn from_str(s: &str) -> Result<Self> {
-        match s.trim().to_uppercase().as_str() {
-            "STATUS" => Ok(Command::Status),
-            "STOP" => Ok(Command::Stop),
-            "RESTART" => Ok(Command::Restart),
-            _ => Err(TaskModError::InvalidCommand(s.to_string())),
-        }
-    }
-}
-
-/// 创建 IPC socket 并绑定
-///
-/// 如果 socket 文件已存在（上次未清理），先删除再创建
+/// 创建 IPC socket
 pub fn create_socket() -> Result<UnixDatagram> {
     let path = Path::new(SOCKET_PATH);
 
-    // 清理可能残留的旧 socket 文件
     if path.exists() {
         std::fs::remove_file(path).map_err(|e| TaskModError::SocketBind {
             path: path.to_path_buf(),
@@ -68,31 +95,25 @@ pub fn create_socket() -> Result<UnixDatagram> {
         })?;
     }
 
-    let socket =
-        UnixDatagram::bind(path).map_err(|e| TaskModError::SocketBind {
-            path: path.to_path_buf(),
-            source: e,
-        })?;
+    let socket = UnixDatagram::bind(path).map_err(|e| TaskModError::SocketBind {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
 
-    // 设置为非阻塞模式，避免 epoll_wait 被 socket 阻塞
-    socket
-        .set_nonblocking(true)
-        .map_err(TaskModError::Io)?;
+    socket.set_nonblocking(true).map_err(TaskModError::Io)?;
 
     info!("IPC socket 已创建: {}", SOCKET_PATH);
     Ok(socket)
 }
 
 /// 从 socket 接收命令（非阻塞）
-///
-/// 返回 (命令, 客户端地址) 或 None（无数据时）
 pub fn recv_command(socket: &UnixDatagram) -> Option<(Command, PathBuf)> {
-    let mut buf = [0u8; 1024];
+    let mut buf = [0u8; 4096];
 
     match socket.recv_from(&mut buf) {
         Ok((size, sender_addr)) => {
             let msg = String::from_utf8_lossy(&buf[..size]);
-            match Command::from_str(&msg) {
+            match serde_json::from_str::<Command>(&msg) {
                 Ok(cmd) => {
                     info!("收到 IPC 命令: {:?}", cmd);
                     let path = match sender_addr.as_pathname() {
@@ -116,19 +137,37 @@ pub fn recv_command(socket: &UnixDatagram) -> Option<(Command, PathBuf)> {
 }
 
 /// 向客户端发送响应
-pub fn send_response(socket: &UnixDatagram, target: &Path, response: &str) {
-    if let Err(e) = socket.send_to(response.as_bytes(), target) {
+pub fn send_response(socket: &UnixDatagram, target: &Path, response: &Response) {
+    let json = serde_json::to_string(response).unwrap_or_else(|_| {
+        r#"{"Error":"序列化失败"}"#.to_string()
+    });
+
+    if let Err(e) = socket.send_to(json.as_bytes(), target) {
         error!("IPC 响应发送失败: {}", e);
     }
 }
 
-// --- PID 文件管理 ---
+/// 发送成功响应
+pub fn send_success(socket: &UnixDatagram, target: &Path, msg: &str) {
+    send_response(socket, target, &Response::Success(msg.to_string()));
+}
+
+/// 发送错误响应
+pub fn send_error(socket: &UnixDatagram, target: &Path, msg: &str) {
+    send_response(socket, target, &Response::Error(msg.to_string()));
+}
+
+/// 发送 JSON 响应
+pub fn send_json(socket: &UnixDatagram, target: &Path, data: serde_json::Value) {
+    send_response(socket, target, &Response::Json(data));
+}
+
+// ========== PID 文件管理 ==========
 
 /// 写入 PID 文件
 pub fn write_pid_file(pid: u32) -> Result<()> {
-    std::fs::write(PID_FILE_PATH, pid.to_string()).map_err(|e| {
-        TaskModError::PidFile(format!("写入失败: {}", e))
-    })?;
+    std::fs::write(PID_FILE_PATH, pid.to_string())
+        .map_err(|e| TaskModError::PidFile(format!("写入失败: {}", e)))?;
     info!("PID 文件已写入: {} (pid={})", PID_FILE_PATH, pid);
     Ok(())
 }
@@ -142,24 +181,15 @@ pub fn read_pid_file() -> Option<u32> {
 
 /// 检查 PID 对应的进程是否存活
 fn is_pid_alive(pid: u32) -> bool {
-    nix::sys::signal::kill(
-        nix::unistd::Pid::from_raw(pid as i32),
-        None,
-    )
-    .is_ok()
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), None).is_ok()
 }
 
 /// 检查守护进程是否已在运行
-///
-/// 1. 读取 PID 文件
-/// 2. 检查对应进程是否存活
-/// 3. 若存活则返回 PID，否则清理残留文件
 pub fn check_existing_instance() -> Option<u32> {
     if let Some(pid) = read_pid_file() {
         if is_pid_alive(pid) {
             return Some(pid);
         }
-        // 进程已死，清理残留
         let _ = std::fs::remove_file(PID_FILE_PATH);
     }
     None
@@ -172,41 +202,30 @@ pub fn cleanup() {
 }
 
 /// 客户端：发送命令到守护进程
-///
-/// 用于 taskmod stop/status/restart 子命令
-pub fn client_send_command(cmd: &str) -> Result<String> {
-    // 检查守护进程是否在运行
+pub fn client_send_command(cmd: &Command) -> Result<Response> {
     if check_existing_instance().is_none() {
         return Err(TaskModError::ProcessNotRunning);
     }
 
-    let socket = UnixDatagram::bind("").map_err(|e| TaskModError::SocketCreate(e))?;
+    let socket = UnixDatagram::bind("").map_err(TaskModError::SocketCreate)?;
     socket
         .set_read_timeout(Some(std::time::Duration::from_secs(5)))
         .map_err(TaskModError::Io)?;
 
     // 发送命令
+    let json = serde_json::to_string(cmd)
+        .map_err(|e| TaskModError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e)))?;
+
     socket
-        .send_to(cmd.as_bytes(), SOCKET_PATH)
+        .send_to(json.as_bytes(), SOCKET_PATH)
         .map_err(TaskModError::SocketSend)?;
 
     // 接收响应
     let mut buf = [0u8; 4096];
     let size = socket.recv(&mut buf).map_err(TaskModError::SocketRecv)?;
 
-    String::from_utf8_lossy(&buf[..size])
-        .into_owned()
-        .pipe(|s| Ok(s))
-}
+    let response: Response = serde_json::from_slice(&buf[..size])
+        .map_err(|e| TaskModError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e)))?;
 
-/// 辅助 trait，用于链式调用
-trait Pipe: Sized {
-    fn pipe<F, R>(self, f: F) -> R
-    where
-        F: FnOnce(Self) -> R,
-    {
-        f(self)
-    }
+    Ok(response)
 }
-
-impl<T> Pipe for T {}

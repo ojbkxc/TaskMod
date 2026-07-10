@@ -1,5 +1,6 @@
 pub mod dashboard;
 pub mod chat;
+pub mod daemon;
 pub mod mirror;
 pub mod library;
 pub mod tasks;

@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod ai_hub;
+pub mod daemon;
 pub mod files;
 pub mod mirror;
 pub mod scripts;
