@@ -131,9 +131,21 @@ pub struct TestConnectionRequest {
     pub model: Option<String>,
 }
 
+/// 构建OpenAI兼容API的完整URL
+/// 自动处理base_url末尾的/和已包含/v1的情况
+fn build_api_url(base_url: &str, path: &str) -> String {
+    let base = base_url.trim_end_matches('/');
+    // 如果base_url已经以/v1结尾，不再重复添加
+    if base.ends_with("/v1") {
+        format!("{}{}", base, path)
+    } else {
+        format!("{}/v1{}", base, path)
+    }
+}
+
 pub async fn test_ai_connection(Json(req): Json<TestConnectionRequest>) -> Json<ApiResponse<serde_json::Value>> {
     let model = req.model.unwrap_or_else(|| "gpt-3.5-turbo".to_string());
-    let api_url = format!("{}/v1/chat/completions", req.base_url.trim_end_matches('/'));
+    let api_url = build_api_url(&req.base_url, "/chat/completions");
 
     let body = json!({
         "model": model,
@@ -369,7 +381,7 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> axum::response::Response {
                             )).await;
                             break;
                         }
-                        let api_url = format!("{}/v1/chat/completions", provider.base_url);
+                        let api_url = build_api_url(&provider.base_url, "/chat/completions");
 
                         let body = json!({
                             "model": provider.model,
@@ -746,7 +758,7 @@ pub async fn call_ai_image_with_fallback(prompt: &str, size: &str, provider_ids:
 }
 
 pub async fn call_ai(provider: &AiProvider, prompt: &str) -> Result<String, String> {
-    let api_url = format!("{}/v1/chat/completions", provider.base_url);
+    let api_url = build_api_url(&provider.base_url, "/chat/completions");
     
     let body = json!({
         "model": provider.model,
@@ -786,7 +798,7 @@ pub async fn call_ai(provider: &AiProvider, prompt: &str) -> Result<String, Stri
 /// 调用AI生成图像（兼容DALL-E API）
 #[allow(dead_code)]
 pub async fn call_ai_image(provider: &AiProvider, prompt: &str, size: &str) -> Result<String, String> {
-    let api_url = format!("{}/v1/images/generations", provider.base_url);
+    let api_url = build_api_url(&provider.base_url, "/images/generations");
     
     let body = json!({
         "model": provider.model,
@@ -826,7 +838,7 @@ pub async fn call_ai_image(provider: &AiProvider, prompt: &str, size: &str) -> R
 /// 调用AI生成嵌入向量
 #[allow(dead_code)]
 pub async fn call_ai_embedding(provider: &AiProvider, input: &str) -> Result<Vec<f64>, String> {
-    let api_url = format!("{}/v1/embeddings", provider.base_url);
+    let api_url = build_api_url(&provider.base_url, "/embeddings");
     
     let body = json!({
         "model": provider.model,
@@ -876,7 +888,7 @@ fn save_ai_providers(providers: &[AiProvider]) -> Result<(), std::io::Error> {
 
 /// 调用支持视觉的AI分析截图
 pub async fn call_ai_image_analyze(provider: &AiProvider, prompt: &str, img_base64: &str) -> Result<String, String> {
-    let api_url = format!("{}/v1/chat/completions", provider.base_url.trim_end_matches('/'));
+    let api_url = build_api_url(&provider.base_url, "/chat/completions");
     let body = json!({
         "model": provider.model,
         "messages": [{

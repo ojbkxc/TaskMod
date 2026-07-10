@@ -51,8 +51,12 @@ pub struct Script {
 pub struct AiProvider {
     pub id: String,
     pub name: String,
-    pub api_url: String,
+    pub base_url: String,
+    #[serde(default)]
+    pub api_key: String,
     pub model: String,
+    #[serde(default)]
+    pub enabled: bool,
 }
 
 /// 获取系统状态

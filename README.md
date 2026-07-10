@@ -41,8 +41,9 @@ https://github.com/ojbkxc/TaskMod
 - **触摸控制** - 鼠标/触摸点击、滑动操作
 - **键盘输入** - 支持文本输入和按键模拟
 - **息屏操作** - 息屏状态下继续操作，不影响后续亮度
-- **麦克风音频** - 实时音频传输
+- **麦克风音频** - 实时音频传输，Web Audio API 播放（48kHz 16-bit mono PCM）
 - **浏览器录屏** - 边录制边下载，无需存储在服务器
+- **设备工具布局** - ADB 命令面板在投屏左侧，设备工具（截屏、电池信息、设备型号等）在右侧，操作更合理
 
 ### 🔊 TTS 语音播报（热加载）
 - **文本转语音** - 在手机上播放文本语音
@@ -51,7 +52,8 @@ https://github.com/ojbkxc/TaskMod
 - **热加载** - 按需调用，不占用常驻内存
 
 ### 🤖 AI 助手
-- **多供应商配置** - 支持 OpenAI 兼容接口（Moonshot、DeepSeek、千问等）
+- **多供应商配置** - 支持 OpenAI 兼容接口（Moonshot、DeepSeek、千问等），模型名称手动输入不内置
+- **智能 URL 拼接** - Base URL 自动处理 `/v1` 后缀，避免重复拼接导致 404
 - **多会话窗口** - 支持同时开启多个对话会话
 - **图片生成** - AI生成的图片自动显示
 - **自然语言对话** - 与 AI 实时对话
@@ -130,9 +132,10 @@ TaskMod/
 ├── server/                # Rust 服务器源码
 │   ├── src/               # 源代码
 │   │   ├── api/           # API 路由
-│   │   │   ├── ai.rs      # AI对话核心
+│   │   │   ├── ai.rs      # AI对话核心（build_api_url 智能URL拼接）
 │   │   │   ├── ai_hub.rs  # AI Hub
-│   │   │   ├── mirror.rs  # 投屏控制
+│   │   │   ├── mirror.rs  # 投屏控制（含音频采集）
+│   │   │   ├── daemon.rs  # 隧道与服务管理
 │   │   │   ├── system.rs  # 系统管理
 │   │   │   ├── tasks.rs   # 定时任务
 │   │   │   ├── scripts.rs # 脚本管理
@@ -141,10 +144,19 @@ TaskMod/
 │   │   ├── utils/         # 工具模块
 │   │   ├── config.rs      # 路径常量
 │   │   └── main.rs        # 入口
-│   ├── static/            # Web 静态资源
-│   │   ├── index.html     # HTML 结构
-│   │   ├── style.css      # 样式
-│   │   └── app.js         # JavaScript 逻辑
+│   └── Cargo.toml
+├── frontend/              # Web 前端源码（Dioxus 0.7）
+│   ├── src/
+│   │   ├── pages/         # 页面组件
+│   │   │   ├── dashboard.rs  # 仪表盘
+│   │   │   ├── chat.rs       # AI 对话
+│   │   │   ├── mirror.rs     # 投屏（左右三栏布局 + Web Audio API 音频播放）
+│   │   │   ├── config.rs     # 配置（AI通道、邮件、MQTT、语音）
+│   │   │   ├── daemon.rs     # 隧道管理
+│   │   │   └── ...
+│   │   ├── components/   # 公共组件（EqCard、EqButton 等）
+│   │   ├── api/          # API 客户端
+│   │   └── main.rs       # 入口
 │   └── Cargo.toml
 ├── android/               # Android APK 源码
 │   ├── app/src/main/java/com/taskmod/app/
@@ -176,8 +188,16 @@ TaskMod/
 推送代码到 GitHub 后，CI/CD 会自动编译并生成 release 包。
 
 ### 编译目标
-- 架构: `aarch64-linux-android`
-- 平台: Android (Magisk 模块)
+- 服务端: `aarch64-linux-android`（交叉编译，打包到 APK assets 目录）
+- 前端: `wasm32-unknown-unknown`（Dioxus 0.7 编译为 WebAssembly）
+- 平台: Android (Magisk 模块 + APK)
+
+### CI/CD 流程
+1. 安装 Rust 工具链 + Android NDK
+2. 交叉编译服务端 `cargo build --release --target aarch64-linux-android`
+3. 将 `taskmod-server` 二进制文件复制到 `android/app/src/main/assets/`
+4. 编译前端 `dx build --release`
+5. Gradle 构建 APK（自动包含服务端二进制文件）
 
 ## 安装方法
 
@@ -264,12 +284,13 @@ every 5 check.sh
 **侧边栏导航:**
 - 仪表盘 - 系统状态概览与快捷操作
 - AI助手 - AI对话与设备控制（支持工具调用、流式响应）
-- 投屏 - 实时屏幕镜像与触摸控制
+- 投屏 - 实时屏幕镜像与触摸控制，ADB命令面板在左、设备工具在右
 - 知识库 - 记忆、预设、技能、保存项管理
 - 任务 - 定时任务管理
 - 脚本 - 脚本编辑与执行
 - TTS - 语音播报配置
-- 配置 - 邮件、MQTT、系统命令配置
+- 隧道 - Cloudflare Tunnels 隧道与服务管理
+- 配置 - AI通道、邮件、MQTT、系统命令配置
 - 日志 - 实时日志查看
 - 主题 - 深色/浅色主题切换
 - GitHub - 快速访问项目仓库
@@ -532,6 +553,20 @@ POST /api/service/unload - 手动卸载服务
 - 邮件功能使用统一的utils/email.rs实现，无重复代码
 
 ## 更新日志
+
+### v1.0.5 (2026-07-11)
+
+**Bug 修复：**
+- **AI 通道连接 404** - Base URL 拼接未处理已包含 `/v1` 的情况，新增 `build_api_url()` 函数自动处理 `/v1` 后缀，修复 DeepSeek 等提供商连接失败问题
+- **APK 显示"服务已停止"** - CI 构建流程未交叉编译 Rust 服务端二进制文件并打包到 APK assets 目录，导致 APK 安装后找不到 `taskmod-server` 进程
+- **Daemon 页面编译失败** - 旧版 Dioxus API（`cx: Scope`、`use_state`、`ApiClient`）与 Dioxus 0.7 不兼容，重写为 `use_signal`、`spawn`、`reqwest` 新版 API
+- **投屏无音频** - 前端缺少 WebSocket 音频接收和播放代码，新增 Web Audio API 播放 48kHz 16-bit mono PCM 数据
+
+**功能改进：**
+- **设备页面布局优化** - ADB 命令面板移至投屏左侧，设备工具（截屏、电池信息、设备型号等）移至右侧，中间为投屏区域，操作分布更合理
+- **AI 通道配置界面** - 配置页面新增 AI 通道管理卡片，模型名称为纯输入框不内置固定列表
+- **投屏连接状态** - 添加连接状态指示器和音频开关提示
+- **CI 构建流程** - `build-apk.yml` 新增 Rust 工具链安装、Android NDK 配置、aarch64-linux-android 交叉编译步骤
 
 ### v1.0.4 (2026-07-10)
 

@@ -1,19 +1,94 @@
 use dioxus::prelude::*;
 use eq_ui::prelude::*;
+use wasm_bindgen::closure::Closure;
+use web_sys::MessageEvent;
 
 #[component]
 pub fn MirrorPage() -> Element {
+    let mut is_connected = use_signal(|| false);
+    let mut audio_enabled = use_signal(|| false);
+
+    let start_mirror = move |_| {
+        is_connected.set(true);
+        // 启动音频播放
+        audio_enabled.set(true);
+        spawn(async move {
+            use web_sys::WebSocket;
+            use wasm_bindgen::JsCast;
+            use js_sys::Uint8Array;
+
+            let ws = match WebSocket::new("/ws/mirror/audio") {
+                Ok(ws) => ws,
+                Err(_) => return,
+            };
+            ws.set_binary_type(web_sys::BinaryType::Arraybuffer);
+
+            let audio_ctx = web_sys::AudioContext::new().ok();
+            let sample_rate = 48000.0;
+
+            let onmessage = Closure::<dyn FnMut(MessageEvent)>::new(move |ev| {
+                if let Some(ab) = ev.data().dyn_ref::<js_sys::ArrayBuffer>() {
+                    if let Some(ctx) = &audio_ctx {
+                        let array = Uint8Array::new(&ab);
+                        let len = array.length() as usize / 2;
+                        let mut samples = Vec::with_capacity(len);
+                        let bytes = array.to_vec();
+                        for i in (0..bytes.len()).step_by(2) {
+                            if i + 1 < bytes.len() {
+                                let v = i16::from_le_bytes([bytes[i], bytes[i + 1]]);
+                                samples.push(v as f32 / 32768.0);
+                            }
+                        }
+                        if samples.is_empty() { return; }
+                        if let Ok(buffer) = ctx.create_buffer(1, samples.len() as u32, sample_rate as f32) {
+                            buffer.copy_to_channel(&samples, 0);
+                            if let Ok(src) = ctx.create_buffer_source() {
+                                src.set_buffer(Some(&buffer));
+                                let _ = src.connect_with_audio_node(&ctx.destination());
+                                let _ = src.start();
+                            }
+                        }
+                    }
+                }
+            });
+            ws.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
+            onmessage.forget();
+        });
+    };
+
     rsx! {
         div { class: "p-4 space-y-3",
             div { class: "flex items-center justify-between",
                 div { class: "flex items-center gap-2",
-                    span { class: "w-2.5 h-2.5 rounded-full bg-[var(--ds-text-tertiary)]" }
-                    span { class: "text-sm text-[var(--ds-text-secondary)]", "未连接" }
+                    span {
+                        class: "w-2.5 h-2.5 rounded-full",
+                        background_color: if *is_connected.read() { "var(--ds-success)" } else { "var(--ds-text-tertiary)" }
+                    }
+                    span { class: "text-sm text-[var(--ds-text-secondary)]",
+                        if *is_connected.read() { "已连接" } else { "未连接" }
+                    }
+                    if *audio_enabled.read() {
+                        span { class: "ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--ds-surface)] text-[var(--ds-text-tertiary)]",
+                            "音频已开启"
+                        }
+                    }
                 }
                 div { class: "flex items-center gap-2",
-                    EqButton {
-                        variant: EqButtonVariant::Primary,
-                        "开始投屏"
+                    if *is_connected.read() {
+                        EqButton {
+                            variant: EqButtonVariant::Secondary,
+                            onclick: move |_| {
+                                is_connected.set(false);
+                                audio_enabled.set(false);
+                            },
+                            "停止投屏"
+                        }
+                    } else {
+                        EqButton {
+                            variant: EqButtonVariant::Primary,
+                            onclick: start_mirror,
+                            "开始投屏"
+                        }
                     }
                 }
             }
@@ -61,14 +136,20 @@ pub fn MirrorPage() -> Element {
 
                 div { class: "flex-1 flex items-center justify-center min-w-0",
                     div { class: "border border-[var(--ds-border)] rounded-md overflow-hidden bg-[#0a0a0f] flex items-center justify-center w-full max-w-[420px] aspect-[9/16] max-h-[80vh] shadow-sm",
-                        div { class: "flex flex-col items-center gap-3 p-10 text-center",
-                            div { class: "w-20 h-20 flex items-center justify-center bg-[var(--ds-surface)] border border-[var(--ds-border)] rounded-2xl text-3xl text-[var(--ds-text-tertiary)] opacity-60",
-                                svg { class: "w-8 h-8", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
-                                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" }
-                                }
+                        if *is_connected.read() {
+                            div { class: "flex flex-col items-center gap-3 p-10 text-center",
+                                p { class: "text-sm text-[var(--ds-text-secondary)]", "投屏中..." }
                             }
-                            p { class: "text-base font-semibold text-[var(--ds-text-secondary)]", "设备未连接" }
-                            p { class: "text-sm text-[var(--ds-text-tertiary)]", "点击上方\"开始投屏\"连接设备屏幕" }
+                        } else {
+                            div { class: "flex flex-col items-center gap-3 p-10 text-center",
+                                div { class: "w-20 h-20 flex items-center justify-center bg-[var(--ds-surface)] border border-[var(--ds-border)] rounded-2xl text-3xl text-[var(--ds-text-tertiary)] opacity-60",
+                                    svg { class: "w-8 h-8", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
+                                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" }
+                                    }
+                                }
+                                p { class: "text-base font-semibold text-[var(--ds-text-secondary)]", "设备未连接" }
+                                p { class: "text-sm text-[var(--ds-text-tertiary)]", "点击上方\"开始投屏\"连接设备屏幕" }
+                            }
                         }
                     }
                 }

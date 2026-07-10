@@ -4,9 +4,8 @@
 //! 包含 Token 管理、服务绑定、状态监控
 
 use dioxus::prelude::*;
+use eq_ui::prelude::*;
 use serde::{Deserialize, Serialize};
-
-use crate::api::client::ApiClient;
 
 /// 隧道信息
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -34,300 +33,271 @@ pub struct ProcessStatus {
     pub is_alive: bool,
 }
 
+/// 格式化运行时长
+fn format_uptime(secs: u64) -> String {
+    match secs {
+        s if s < 60 => format!("{}秒", s),
+        s if s < 3600 => format!("{}分{}秒", s / 60, s % 60),
+        s if s < 86400 => format!("{}时{}分", s / 3600, (s % 3600) / 60),
+        s => format!("{}天{}时", s / 86400, (s % 86400) / 3600),
+    }
+}
+
 /// 隧道管理页面组件
-pub fn DaemonPage(cx: Scope) -> Element {
-    let tunnels = use_state::<Vec<TunnelInfo>>(cx, || Vec::new());
-    let processes = use_state::<Vec<ProcessStatus>>(cx, || Vec::new());
-    let loading = use_state(cx, || false);
-    let error = use_state::<Option<String>>(cx, || None);
-    let show_add_tunnel = use_state(cx, || false);
-    let selected_tunnel = use_state::<Option<String>>(cx, || None);
+#[component]
+pub fn DaemonPage() -> Element {
+    let mut tunnels = use_signal(|| Vec::<TunnelInfo>::new());
+    let mut processes = use_signal(|| Vec::<ProcessStatus>::new());
+    let mut loading = use_signal(|| false);
+    let mut error = use_signal(|| None::<String>);
+    let mut show_add_tunnel = use_signal(|| false);
+    let mut refresh = use_signal(|| 0u32);
 
-    // 加载数据
-    let load_data = move |_| {
-        loading.set(true);
-        error.set(None);
+    // 加载数据（由 refresh signal 触发）
+    use_effect(move || {
+        let _ = *refresh.read();
 
-        cx.spawn({
-            let tunnels = tunnels.clone();
-            let processes = processes.clone();
-            let loading = loading.clone();
-            let error = error.clone();
+        spawn(async move {
+            loading.set(true);
+            error.set(None);
 
-            async move {
-                // 加载隧道列表
-                match ApiClient::get("/api/tunnels").await {
-                    Ok(resp) => {
-                        if let Ok(data) = resp.json::<serde_json::Value>().await {
-                            if let Some(arr) = data["data"].as_array() {
-                                let list: Vec<TunnelInfo> = arr
-                                    .iter()
-                                    .filter_map(|v| serde_json::from_value(v.clone()).ok())
-                                    .collect();
-                                tunnels.set(list);
-                            }
+            // 加载隧道列表
+            match reqwest::get("/api/tunnels").await {
+                Ok(resp) => {
+                    if let Ok(data) = resp.json::<serde_json::Value>().await {
+                        if let Some(arr) = data["data"].as_array() {
+                            let list: Vec<TunnelInfo> = arr
+                                .iter()
+                                .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                                .collect();
+                            tunnels.set(list);
                         }
                     }
-                    Err(e) => {
-                        error.set(Some(format!("加载隧道失败: {}", e)));
-                    }
                 }
-
-                // 加载进程状态
-                match ApiClient::get("/api/processes").await {
-                    Ok(resp) => {
-                        if let Ok(data) = resp.json::<serde_json::Value>().await {
-                            if let Some(arr) = data["data"].as_array() {
-                                let list: Vec<ProcessStatus> = arr
-                                    .iter()
-                                    .filter_map(|v| serde_json::from_value(v.clone()).ok())
-                                    .collect();
-                                processes.set(list);
-                            }
-                        }
-                    }
-                    Err(_) => {}
+                Err(e) => {
+                    error.set(Some(format!("加载隧道失败: {}", e)));
                 }
-
-                loading.set(false);
             }
-        });
-    };
 
-    // 初始加载
-    use_effect(cx, (), |_| {
-        load_data(());
-        async {}
+            // 加载进程状态
+            match reqwest::get("/api/processes").await {
+                Ok(resp) => {
+                    if let Ok(data) = resp.json::<serde_json::Value>().await {
+                        if let Some(arr) = data["data"].as_array() {
+                            let list: Vec<ProcessStatus> = arr
+                                .iter()
+                                .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                                .collect();
+                            processes.set(list);
+                        }
+                    }
+                }
+                Err(_) => {}
+            }
+
+            loading.set(false);
+        });
     });
 
-    // 格式化运行时长
-    let format_uptime = |secs: u64| -> String {
-        match secs {
-            s if s < 60 => format!("{}秒", s),
-            s if s < 3600 => format!("{}分{}秒", s / 60, s % 60),
-            s if s < 86400 => format!("{}时{}分", s / 3600, (s % 3600) / 60),
-            s => format!("{}天{}时", s / 86400, (s % 86400) / 3600),
-        }
-    };
-
-    // 获取进程状态
-    let get_process = |tunnel_name: &str| -> Option<&ProcessStatus> {
-        processes.iter().find(|p| p.tunnel_name == tunnel_name)
-    };
-
-    cx.render(rsx! {
-        div {
-            class: "p-6 max-w-6xl mx-auto",
-            div {
-                class: "flex justify-between items-center mb-6",
-                h1 {
-                    class: "text-2xl font-bold",
-                    "隧道管理"
-                }
+    rsx! {
+        div { class: "p-4 space-y-4",
+            // 页面标题
+            div { class: "flex items-start justify-between gap-3 pb-4 border-b border-[var(--ds-border)]",
                 div {
-                    class: "flex space-x-2",
-                    button {
-                        class: "px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600",
+                    h1 { class: "text-lg font-bold text-[var(--ds-text)]", "隧道管理" }
+                    p { class: "text-xs text-[var(--ds-text-secondary)] mt-2", "隧道与服务配置、状态监控" }
+                }
+                div { class: "flex gap-1.5",
+                    EqButton {
+                        variant: EqButtonVariant::Secondary,
+                        onclick: move |_| refresh.set(*refresh.read() + 1),
+                        "刷新"
+                    }
+                    EqButton {
+                        variant: EqButtonVariant::Primary,
                         onclick: move |_| show_add_tunnel.set(true),
                         "添加隧道"
-                    }
-                    button {
-                        class: "px-4 py-2 bg-gray-100 rounded hover:bg-gray-200",
-                        onclick: load_data,
-                        "刷新"
                     }
                 }
             }
 
             // 错误提示
-            if let Some(err) = error.get() {
-                rsx! {
-                    div {
-                        class: "bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4",
-                        "{err}"
-                    }
+            if let Some(err) = error.read().clone() {
+                div { class: "p-3 border border-[var(--ds-danger)] bg-[color-mix(in_srgb,var(--ds-danger)_10%,transparent)] text-[var(--ds-danger)] rounded-md text-sm",
+                    "{err}"
                 }
             }
 
             // 添加隧道对话框
-            if *show_add_tunnel.get() {
-                rsx! {
-                    AddTunnelDialog {
-                        on_close: move |_| show_add_tunnel.set(false),
-                        on_success: move |_| {
-                            show_add_tunnel.set(false);
-                            load_data(());
-                        }
+            if *show_add_tunnel.read() {
+                AddTunnelDialog {
+                    on_close: move |_| show_add_tunnel.set(false),
+                    on_success: move |_| {
+                        show_add_tunnel.set(false);
+                        refresh.set(*refresh.read() + 1);
                     }
                 }
             }
 
             // 隧道列表
-            if tunnels.is_empty() && !*loading.get() {
-                rsx! {
-                    div {
-                        class: "bg-white rounded-lg shadow-md p-8 text-center text-gray-500",
-                        p { "暂无隧道配置" }
-                        p { class: "text-sm mt-2", "点击「添加隧道」开始配置" }
+            if tunnels.read().is_empty() && !*loading.read() {
+                div { class: "flex flex-col items-center justify-center min-h-[280px] gap-2.5 p-6 text-center",
+                    div { class: "flex items-center justify-center w-7 h-7 border border-[var(--ds-border)] rounded-md text-[var(--ds-text-tertiary)]",
+                        svg { class: "w-5 h-5", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
+                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M13 10V3L4 14h7v7l9-11h-7z" }
+                        }
                     }
+                    p { class: "text-sm font-semibold text-[var(--ds-text)]", "暂无隧道配置" }
+                    p { class: "text-xs text-[var(--ds-text-tertiary)]", "点击\"添加隧道\"开始配置" }
                 }
             } else {
-                rsx! {
-                    div {
-                        class: "space-y-4",
-                        for tunnel in tunnels.get() {
-                            TunnelCard {
-                                key: "{tunnel.name}",
-                                tunnel: tunnel.clone(),
-                                process: get_process(&tunnel.name).cloned(),
-                                format_uptime: format_uptime,
-                                on_refresh: move |_| load_data(()),
-                            }
+                div { class: "space-y-3",
+                    for tunnel in tunnels.read().clone() {
+                        let process = processes
+                            .read()
+                            .iter()
+                            .find(|p| p.tunnel_name == tunnel.name)
+                            .cloned();
+                        TunnelCard {
+                            key: "{tunnel.name}",
+                            tunnel: tunnel.clone(),
+                            process: process,
+                            on_refresh: move |_| refresh.set(*refresh.read() + 1),
                         }
                     }
                 }
             }
         }
-    })
+    }
 }
 
 /// 隧道卡片组件
-#[component]
-fn TunnelCard<'a>(
-    cx: Scope,
+#[derive(Props, PartialEq, Clone)]
+struct TunnelCardProps {
     tunnel: TunnelInfo,
     process: Option<ProcessStatus>,
-    format_uptime: fn(u64) -> String,
-    on_refresh: EventHandler<'a, ()>,
-) -> Element {
-    let expanded = use_state(cx, || false);
-    let loading = use_state(cx, || false);
+    on_refresh: EventHandler<()>,
+}
 
-    let tunnel_name = tunnel.name.clone();
-    let tunnel_name2 = tunnel.name.clone();
-    let tunnel_name3 = tunnel.name.clone();
-    let tunnel_name4 = tunnel.name.clone();
-    let tunnel_name5 = tunnel.name.clone();
+#[component]
+fn TunnelCard(props: TunnelCardProps) -> Element {
+    let mut expanded = use_signal(|| false);
+    let mut loading = use_signal(|| false);
+
+    let tunnel_name = props.tunnel.name.clone();
 
     // 启用/禁用隧道
     let toggle_enabled = move |_| {
         let name = tunnel_name.clone();
-        let enabled = !tunnel.enabled;
+        let enabled = !props.tunnel.enabled;
+        let on_refresh = props.on_refresh.clone();
         loading.set(true);
 
-        cx.spawn({
-            let loading = loading.clone();
-            let on_refresh = on_refresh.clone();
-
-            async move {
-                let url = if enabled {
-                    format!("/api/tunnels/{}/enable", name)
-                } else {
-                    format!("/api/tunnels/{}/disable", name)
-                };
-                let _ = ApiClient::post(&url, "").await;
-                loading.set(false);
-                on_refresh.call(());
-            }
+        spawn(async move {
+            let url = if enabled {
+                format!("/api/tunnels/{}/enable", name)
+            } else {
+                format!("/api/tunnels/{}/disable", name)
+            };
+            let _ = reqwest::Client::new().post(&url).body("").send().await;
+            loading.set(false);
+            on_refresh.call(());
         });
     };
 
     // 启动隧道
     let start_tunnel = move |_| {
-        let name = tunnel_name2.clone();
+        let name = tunnel_name.clone();
+        let on_refresh = props.on_refresh.clone();
         loading.set(true);
 
-        cx.spawn({
-            let loading = loading.clone();
-            let on_refresh = on_refresh.clone();
-
-            async move {
-                let _ = ApiClient::post(&format!("/api/tunnels/{}/start", name), "").await;
-                loading.set(false);
-                on_refresh.call(());
-            }
+        spawn(async move {
+            let _ = reqwest::Client::new()
+                .post(&format!("/api/tunnels/{}/start", name))
+                .body("")
+                .send()
+                .await;
+            loading.set(false);
+            on_refresh.call(());
         });
     };
 
     // 停止隧道
     let stop_tunnel = move |_| {
-        let name = tunnel_name3.clone();
+        let name = tunnel_name.clone();
+        let on_refresh = props.on_refresh.clone();
         loading.set(true);
 
-        cx.spawn({
-            let loading = loading.clone();
-            let on_refresh = on_refresh.clone();
-
-            async move {
-                let _ = ApiClient::post(&format!("/api/tunnels/{}/stop", name), "").await;
-                loading.set(false);
-                on_refresh.call(());
-            }
+        spawn(async move {
+            let _ = reqwest::Client::new()
+                .post(&format!("/api/tunnels/{}/stop", name))
+                .body("")
+                .send()
+                .await;
+            loading.set(false);
+            on_refresh.call(());
         });
     };
 
     // 重启隧道
     let restart_tunnel = move |_| {
-        let name = tunnel_name4.clone();
+        let name = tunnel_name.clone();
+        let on_refresh = props.on_refresh.clone();
         loading.set(true);
 
-        cx.spawn({
-            let loading = loading.clone();
-            let on_refresh = on_refresh.clone();
-
-            async move {
-                let _ = ApiClient::post(&format!("/api/tunnels/{}/restart", name), "").await;
-                loading.set(false);
-                on_refresh.call(());
-            }
+        spawn(async move {
+            let _ = reqwest::Client::new()
+                .post(&format!("/api/tunnels/{}/restart", name))
+                .body("")
+                .send()
+                .await;
+            loading.set(false);
+            on_refresh.call(());
         });
     };
 
     // 删除隧道
     let delete_tunnel = move |_| {
-        let name = tunnel_name5.clone();
+        let name = tunnel_name.clone();
+        let on_refresh = props.on_refresh.clone();
         loading.set(true);
 
-        cx.spawn({
-            let loading = loading.clone();
-            let on_refresh = on_refresh.clone();
-
-            async move {
-                let _ = ApiClient::delete(&format!("/api/tunnels/{}", name)).await;
-                loading.set(false);
-                on_refresh.call(());
-            }
+        spawn(async move {
+            let _ = reqwest::Client::new()
+                .delete(&format!("/api/tunnels/{}", name))
+                .send()
+                .await;
+            loading.set(false);
+            on_refresh.call(());
         });
     };
 
-    let is_running = process.as_ref().map(|p| p.is_alive).unwrap_or(false);
-    let pid = process.as_ref().map(|p| p.pid).unwrap_or(0);
-    let uptime = process.as_ref().map(|p| p.uptime_secs).unwrap_or(0);
+    let is_running = props.process.as_ref().map(|p| p.is_alive).unwrap_or(false);
+    let pid = props.process.as_ref().map(|p| p.pid).unwrap_or(0);
+    let uptime = props.process.as_ref().map(|p| p.uptime_secs).unwrap_or(0);
 
-    cx.render(rsx! {
-        div {
-            class: "bg-white rounded-lg shadow-md overflow-hidden",
+    rsx! {
+        EqCard { class: "overflow-hidden",
             // 头部
-            div {
-                class: "p-4 flex items-center justify-between",
-                div {
-                    class: "flex items-center space-x-3",
+            div { class: "p-4 flex items-center justify-between",
+                div { class: "flex items-center space-x-3",
                     // 状态指示器
                     div {
-                        class: format_args!("w-3 h-3 rounded-full {}",
-                            if is_running { "bg-green-500" } else if tunnel.enabled { "bg-yellow-500" } else { "bg-gray-400" }
-                        )
+                        class: "w-2.5 h-2.5 rounded-full",
+                        background_color: if is_running {
+                            "var(--ds-success)"
+                        } else if props.tunnel.enabled {
+                            "var(--ds-warning)"
+                        } else {
+                            "var(--ds-text-tertiary)"
+                        }
                     }
                     div {
-                        h3 {
-                            class: "font-semibold text-lg",
-                            "{tunnel.name}"
-                        }
-                        p {
-                            class: "text-sm text-gray-500",
+                        h3 { class: "font-semibold text-[var(--ds-text)]", "{props.tunnel.name}" }
+                        p { class: "text-xs text-[var(--ds-text-tertiary)]",
                             if is_running {
                                 "运行中 - PID: {pid} - {format_uptime(uptime)}"
-                            } else if tunnel.enabled {
+                            } else if props.tunnel.enabled {
                                 "已启用 - 未运行"
                             } else {
                                 "已禁用"
@@ -335,410 +305,379 @@ fn TunnelCard<'a>(
                         }
                     }
                 }
-                div {
-                    class: "flex items-center space-x-2",
+                div { class: "flex items-center gap-2",
                     // 启用/禁用开关
                     button {
-                        class: format_args!("px-3 py-1 rounded text-sm {}",
-                            if tunnel.enabled { "bg-green-100 text-green-700" } else { "bg-gray-100 text-gray-700" }
+                        class: format!("px-2.5 py-1 rounded text-xs {}",
+                            if props.tunnel.enabled {
+                                "bg-[color-mix(in_srgb,var(--ds-success)_15%,transparent)] text-[var(--ds-success)]"
+                            } else {
+                                "bg-[var(--ds-surface)] text-[var(--ds-text-tertiary)]"
+                            }
                         ),
                         onclick: toggle_enabled,
-                        disabled: "{loading}",
-                        if tunnel.enabled { "启用中" } else { "已禁用" }
+                        disabled: *loading.read(),
+                        if props.tunnel.enabled { "启用中" } else { "已禁用" }
                     }
                     // 展开/收起
                     button {
-                        class: "px-2 py-1 text-gray-500 hover:text-gray-700",
-                        onclick: move |_| expanded.set(!expanded),
-                        if *expanded.get() { "收起" } else { "展开" }
+                        class: "px-2 py-1 text-[var(--ds-text-tertiary)] hover:text-[var(--ds-text)] text-xs",
+                        onclick: move |_| expanded.set(!*expanded.read()),
+                        if *expanded.read() { "收起" } else { "展开" }
                     }
                 }
             }
 
             // 控制按钮
-            div {
-                class: "px-4 pb-3 flex space-x-2",
+            div { class: "px-4 pb-3 flex gap-2",
                 if is_running {
-                    rsx! {
-                        button {
-                            class: "px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 disabled:opacity-50",
-                            onclick: stop_tunnel,
-                            disabled: "{loading}",
-                            "停止"
-                        }
-                        button {
-                            class: "px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 disabled:opacity-50",
-                            onclick: restart_tunnel,
-                            disabled: "{loading}",
-                            "重启"
-                        }
+                    EqButton {
+                        variant: EqButtonVariant::Secondary,
+                        size: EqButtonSize::Sm,
+                        onclick: stop_tunnel,
+                        disabled: *loading.read(),
+                        "停止"
+                    }
+                    EqButton {
+                        variant: EqButtonVariant::Secondary,
+                        size: EqButtonSize::Sm,
+                        onclick: restart_tunnel,
+                        disabled: *loading.read(),
+                        "重启"
                     }
                 } else {
-                    rsx! {
-                        button {
-                            class: "px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600 disabled:opacity-50",
-                            onclick: start_tunnel,
-                            disabled: "{loading}",
-                            "启动"
-                        }
+                    EqButton {
+                        variant: EqButtonVariant::Primary,
+                        size: EqButtonSize::Sm,
+                        onclick: start_tunnel,
+                        disabled: *loading.read(),
+                        "启动"
                     }
                 }
-                button {
-                    class: "px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300 disabled:opacity-50",
+                EqButton {
+                    variant: EqButtonVariant::Ghost,
+                    size: EqButtonSize::Sm,
                     onclick: delete_tunnel,
-                    disabled: "{loading}",
+                    disabled: *loading.read(),
                     "删除"
                 }
             }
 
             // 展开的服务列表
-            if *expanded.get() {
-                rsx! {
-                    div {
-                        class: "border-t border-gray-100 p-4",
-                        h4 {
-                            class: "font-medium mb-3",
-                            "绑定的服务"
-                        }
-                        if tunnel.services.is_empty() {
-                            rsx! {
-                                p {
-                                    class: "text-sm text-gray-500",
-                                    "暂无服务配置"
-                                }
-                            }
-                        } else {
-                            rsx! {
-                                div {
-                                    class: "space-y-2",
-                                    for service in &tunnel.services {
-                                        ServiceItem {
-                                            key: "{service.name}",
-                                            tunnel_name: tunnel.name.clone(),
-                                            service: service.clone(),
-                                            on_refresh: move |_| on_refresh.call(()),
-                                        }
-                                    }
+            if *expanded.read() {
+                div { class: "border-t border-[var(--ds-border)] p-4",
+                    h4 { class: "font-medium mb-3 text-[var(--ds-text)]", "绑定的服务" }
+                    if props.tunnel.services.is_empty() {
+                        p { class: "text-sm text-[var(--ds-text-tertiary)]", "暂无服务配置" }
+                    } else {
+                        div { class: "space-y-2",
+                            for service in props.tunnel.services.clone() {
+                                ServiceItem {
+                                    key: "{service.name}",
+                                    tunnel_name: props.tunnel.name.clone(),
+                                    service: service.clone(),
+                                    on_refresh: props.on_refresh.clone(),
                                 }
                             }
                         }
-                        AddServiceForm {
-                            tunnel_name: tunnel.name.clone(),
-                            on_success: move |_| on_refresh.call(()),
-                        }
+                    }
+                    AddServiceForm {
+                        tunnel_name: props.tunnel.name.clone(),
+                        on_success: props.on_refresh.clone(),
                     }
                 }
             }
         }
-    })
+    }
 }
 
 /// 服务项组件
-#[component]
-fn ServiceItem<'a>(
-    cx: Scope,
+#[derive(Props, PartialEq, Clone)]
+struct ServiceItemProps {
     tunnel_name: String,
     service: ServiceInfo,
-    on_refresh: EventHandler<'a, ()>,
-) -> Element {
-    let loading = use_state(cx, || false);
+    on_refresh: EventHandler<()>,
+}
 
-    let tn = tunnel_name.clone();
-    let sn = service.name.clone();
+#[component]
+fn ServiceItem(props: ServiceItemProps) -> Element {
+    let mut loading = use_signal(|| false);
+
+    let tunnel_name = props.tunnel_name.clone();
+    let service_name = props.service.name.clone();
 
     // 启用/禁用服务
     let toggle_service = move |_| {
-        let tn = tn.clone();
-        let sn = sn.clone();
-        let enabled = !service.enabled;
+        let tn = tunnel_name.clone();
+        let sn = service_name.clone();
+        let enabled = !props.service.enabled;
+        let on_refresh = props.on_refresh.clone();
         loading.set(true);
 
-        cx.spawn({
-            let loading = loading.clone();
-            let on_refresh = on_refresh.clone();
-
-            async move {
-                let url = if enabled {
-                    format!("/api/tunnels/{}/services/{}/enable", tn, sn)
-                } else {
-                    format!("/api/tunnels/{}/services/{}/disable", tn, sn)
-                };
-                let _ = ApiClient::post(&url, "").await;
-                loading.set(false);
-                on_refresh.call(());
-            }
+        spawn(async move {
+            let url = if enabled {
+                format!("/api/tunnels/{}/services/{}/enable", tn, sn)
+            } else {
+                format!("/api/tunnels/{}/services/{}/disable", tn, sn)
+            };
+            let _ = reqwest::Client::new().post(&url).body("").send().await;
+            loading.set(false);
+            on_refresh.call(());
         });
     };
 
     let tn2 = tunnel_name.clone();
-    let sn2 = service.name.clone();
+    let sn2 = service_name.clone();
 
     // 删除服务
     let delete_service = move |_| {
         let tn = tn2.clone();
         let sn = sn2.clone();
+        let on_refresh = props.on_refresh.clone();
         loading.set(true);
 
-        cx.spawn({
-            let loading = loading.clone();
-            let on_refresh = on_refresh.clone();
-
-            async move {
-                let _ = ApiClient::delete(&format!("/api/tunnels/{}/services/{}", tn, sn)).await;
-                loading.set(false);
-                on_refresh.call(());
-            }
+        spawn(async move {
+            let _ = reqwest::Client::new()
+                .delete(&format!("/api/tunnels/{}/services/{}", tn, sn))
+                .send()
+                .await;
+            loading.set(false);
+            on_refresh.call(());
         });
     };
 
-    cx.render(rsx! {
-        div {
-            class: "flex items-center justify-between p-3 bg-gray-50 rounded",
-            div {
-                class: "flex items-center space-x-3",
+    rsx! {
+        div { class: "flex items-center justify-between p-2.5 bg-[var(--ds-surface)] rounded-md",
+            div { class: "flex items-center space-x-3",
                 div {
-                    class: format_args!("w-2 h-2 rounded-full {}", if service.enabled { "bg-green-500" } else { "bg-gray-400" })
+                    class: "w-2 h-2 rounded-full",
+                    background_color: if props.service.enabled {
+                        "var(--ds-success)"
+                    } else {
+                        "var(--ds-text-tertiary)"
+                    }
                 }
                 div {
-                    p {
-                        class: "font-medium",
-                        "{service.name}"
-                    }
-                    p {
-                        class: "text-sm text-gray-500",
-                        "{service.url}"
-                    }
+                    p { class: "text-sm font-medium text-[var(--ds-text)]", "{props.service.name}" }
+                    p { class: "text-xs text-[var(--ds-text-tertiary)] font-mono", "{props.service.url}" }
                 }
             }
-            div {
-                class: "flex space-x-2",
+            div { class: "flex gap-1.5",
                 button {
-                    class: format_args!("px-2 py-1 rounded text-xs {}",
-                        if service.enabled { "bg-green-100 text-green-700" } else { "bg-gray-100 text-gray-700" }
+                    class: format!("px-2 py-1 rounded text-xs {}",
+                        if props.service.enabled {
+                            "bg-[color-mix(in_srgb,var(--ds-success)_15%,transparent)] text-[var(--ds-success)]"
+                        } else {
+                            "bg-[var(--ds-bg)] text-[var(--ds-text-tertiary)]"
+                        }
                     ),
                     onclick: toggle_service,
-                    disabled: "{loading}",
-                    if service.enabled { "启用" } else { "禁用" }
+                    disabled: *loading.read(),
+                    if props.service.enabled { "启用" } else { "禁用" }
                 }
                 button {
-                    class: "px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200",
+                    class: "px-2 py-1 bg-[color-mix(in_srgb,var(--ds-danger)_15%,transparent)] text-[var(--ds-danger)] rounded text-xs hover:bg-[color-mix(in_srgb,var(--ds-danger)_25%,transparent)]",
                     onclick: delete_service,
-                    disabled: "{loading}",
+                    disabled: *loading.read(),
                     "删除"
                 }
             }
         }
-    })
+    }
 }
 
 /// 添加服务表单
-#[component]
-fn AddServiceForm<'a>(
-    cx: Scope,
+#[derive(Props, PartialEq, Clone)]
+struct AddServiceFormProps {
     tunnel_name: String,
-    on_success: EventHandler<'a, ()>,
-) -> Element {
-    let show_form = use_state(cx, || false);
-    let name = use_state(cx, String::new);
-    let url = use_state(cx, String::new);
-    let loading = use_state(cx, || false);
+    on_success: EventHandler<()>,
+}
 
-    let tn = tunnel_name.clone();
+#[component]
+fn AddServiceForm(props: AddServiceFormProps) -> Element {
+    let mut show_form = use_signal(|| false);
+    let mut name = use_signal(String::new);
+    let mut url = use_signal(String::new);
+    let mut loading = use_signal(|| false);
+
+    let tunnel_name = props.tunnel_name.clone();
 
     let submit = move |_| {
-        let tn = tn.clone();
-        let name = name.get().clone();
-        let url = url.get().clone();
+        let tn = tunnel_name.clone();
+        let n = name.read().clone();
+        let u = url.read().clone();
 
-        if name.is_empty() || url.is_empty() {
+        if n.is_empty() || u.is_empty() {
             return;
         }
 
+        let on_success = props.on_success.clone();
         loading.set(true);
 
-        cx.spawn({
-            let loading = loading.clone();
-            let on_success = on_success.clone();
-            let show_form = show_form.clone();
-
-            async move {
-                let body = serde_json::json!({
-                    "name": name,
-                    "url": url,
-                    "enabled": true
-                });
-                let _ = ApiClient::post(
-                    &format!("/api/tunnels/{}/services", tn),
-                    &body.to_string(),
-                ).await;
-                loading.set(false);
-                show_form.set(false);
-                on_success.call(());
-            }
+        spawn(async move {
+            let body = serde_json::json!({
+                "name": n,
+                "url": u,
+                "enabled": true
+            });
+            let _ = reqwest::Client::new()
+                .post(&format!("/api/tunnels/{}/services", tn))
+                .json(&body)
+                .send()
+                .await;
+            loading.set(false);
+            show_form.set(false);
+            name.set(String::new());
+            url.set(String::new());
+            on_success.call(());
         });
     };
 
-    if *show_form.get() {
-        cx.render(rsx! {
-            div {
-                class: "mt-3 p-3 bg-gray-50 rounded",
-                div {
-                    class: "flex space-x-2 mb-2",
+    if *show_form.read() {
+        rsx! {
+            div { class: "mt-3 p-3 bg-[var(--ds-surface)] rounded-md",
+                div { class: "flex gap-2 mb-2",
                     input {
-                        class: "flex-1 px-3 py-2 border rounded text-sm",
+                        class: "flex-1 px-2.5 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                         placeholder: "服务名称",
                         value: "{name}",
                         oninput: move |e| name.set(e.value.clone()),
                     }
                     input {
-                        class: "flex-1 px-3 py-2 border rounded text-sm",
+                        class: "flex-1 px-2.5 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                         placeholder: "http://localhost:8080",
                         value: "{url}",
                         oninput: move |e| url.set(e.value.clone()),
                     }
                 }
-                div {
-                    class: "flex justify-end space-x-2",
-                    button {
-                        class: "px-3 py-1 bg-gray-200 rounded text-sm",
+                div { class: "flex justify-end gap-2",
+                    EqButton {
+                        variant: EqButtonVariant::Secondary,
+                        size: EqButtonSize::Sm,
                         onclick: move |_| show_form.set(false),
                         "取消"
                     }
-                    button {
-                        class: "px-3 py-1 bg-blue-500 text-white rounded text-sm",
+                    EqButton {
+                        variant: EqButtonVariant::Primary,
+                        size: EqButtonSize::Sm,
                         onclick: submit,
-                        disabled: "{loading}",
+                        disabled: *loading.read(),
                         "添加"
                     }
                 }
             }
-        })
+        }
     } else {
-        cx.render(rsx! {
+        rsx! {
             button {
-                class: "mt-3 text-sm text-blue-500 hover:text-blue-700",
+                class: "mt-3 text-xs text-[var(--ds-blue)] hover:opacity-80",
                 onclick: move |_| show_form.set(true),
                 "+ 添加服务"
             }
-        })
+        }
     }
 }
 
 /// 添加隧道对话框
+#[derive(Props, PartialEq, Clone)]
+struct AddTunnelDialogProps {
+    on_close: EventHandler<()>,
+    on_success: EventHandler<()>,
+}
+
 #[component]
-fn AddTunnelDialog<'a>(
-    cx: Scope,
-    on_close: EventHandler<'a, ()>,
-    on_success: EventHandler<'a, ()>,
-) -> Element {
-    let name = use_state(cx, String::new);
-    let token = use_state(cx, String::new);
-    let loading = use_state(cx, || false);
-    let error = use_state::<Option<String>>(cx, || None);
+fn AddTunnelDialog(props: AddTunnelDialogProps) -> Element {
+    let mut name = use_signal(String::new);
+    let mut token = use_signal(String::new);
+    let mut loading = use_signal(|| false);
+    let mut error = use_signal(|| None::<String>);
 
     let submit = move |_| {
-        let name = name.get().clone();
-        let token = token.get().clone();
+        let n = name.read().clone();
+        let t = token.read().clone();
 
-        if name.is_empty() || token.is_empty() {
+        if n.is_empty() || t.is_empty() {
             error.set(Some("名称和Token不能为空".to_string()));
             return;
         }
 
+        let on_success = props.on_success.clone();
         loading.set(true);
         error.set(None);
 
-        cx.spawn({
-            let loading = loading.clone();
-            let error = error.clone();
-            let on_success = on_success.clone();
-
-            async move {
-                let body = serde_json::json!({
-                    "name": name,
-                    "token": token,
-                    "enabled": true
-                });
-                match ApiClient::post("/api/tunnels", &body.to_string()).await {
-                    Ok(resp) => {
-                        if let Ok(data) = resp.json::<serde_json::Value>().await {
-                            if data["success"].as_bool().unwrap_or(false) {
-                                on_success.call(());
-                            } else {
-                                error.set(Some(
-                                    data["error"].as_str().unwrap_or("添加失败").to_string(),
-                                ));
-                            }
+        spawn(async move {
+            let body = serde_json::json!({
+                "name": n,
+                "token": t,
+                "enabled": true
+            });
+            match reqwest::Client::new().post("/api/tunnels").json(&body).send().await {
+                Ok(resp) => {
+                    if let Ok(data) = resp.json::<serde_json::Value>().await {
+                        if data["success"].as_bool().unwrap_or(false) {
+                            on_success.call(());
+                        } else {
+                            error.set(Some(
+                                data["error"].as_str().unwrap_or("添加失败").to_string(),
+                            ));
                         }
                     }
-                    Err(e) => {
-                        error.set(Some(format!("请求失败: {}", e)));
-                    }
                 }
-                loading.set(false);
+                Err(e) => {
+                    error.set(Some(format!("请求失败: {}", e)));
+                }
             }
+            loading.set(false);
         });
     };
 
-    cx.render(rsx! {
-        div {
-            class: "fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50",
-            div {
-                class: "bg-white rounded-lg p-6 w-full max-w-md",
-                h2 {
-                    class: "text-xl font-bold mb-4",
-                    "添加隧道"
-                }
-                if let Some(err) = error.get() {
-                    rsx! {
-                        div {
-                            class: "bg-red-50 text-red-700 p-3 rounded mb-4 text-sm",
-                            "{err}"
-                        }
+    rsx! {
+        div { class: "fixed inset-0 bg-black/50 flex items-center justify-center z-50",
+            div { class: "bg-[var(--ds-card)] rounded-lg p-6 w-full max-w-md border border-[var(--ds-border)] shadow-xl",
+                h2 { class: "text-lg font-bold mb-4 text-[var(--ds-text)]", "添加隧道" }
+                if let Some(err) = error.read().clone() {
+                    div { class: "p-2.5 border border-[var(--ds-danger)] text-[var(--ds-danger)] rounded-md mb-4 text-sm bg-[color-mix(in_srgb,var(--ds-danger)_10%,transparent)]",
+                        "{err}"
                     }
                 }
-                div {
-                    class: "space-y-4",
+                div { class: "space-y-4",
                     div {
-                        label {
-                            class: "block text-sm font-medium mb-1",
+                        label { class: "block text-[11px] font-bold text-[var(--ds-text)] uppercase tracking-wider mb-1",
                             "隧道名称"
                         }
                         input {
-                            class: "w-full px-3 py-2 border rounded",
+                            class: "w-full px-2.5 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                             placeholder: "my-tunnel",
                             value: "{name}",
                             oninput: move |e| name.set(e.value.clone()),
                         }
                     }
                     div {
-                        label {
-                            class: "block text-sm font-medium mb-1",
+                        label { class: "block text-[11px] font-bold text-[var(--ds-text)] uppercase tracking-wider mb-1",
                             "Tunnel Token"
                         }
                         textarea {
-                            class: "w-full px-3 py-2 border rounded h-24 font-mono text-sm",
+                            class: "w-full px-2.5 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-sm text-[var(--ds-text)] font-mono outline-none focus:border-[var(--ds-blue)] h-24",
                             placeholder: "eyJhIjoixxxxxxxxx...",
                             value: "{token}",
                             oninput: move |e| token.set(e.value.clone()),
                         }
                     }
                 }
-                div {
-                    class: "flex justify-end space-x-2 mt-6",
-                    button {
-                        class: "px-4 py-2 bg-gray-200 rounded hover:bg-gray-300",
-                        onclick: move |_| on_close.call(()),
+                div { class: "flex justify-end gap-2 mt-6",
+                    EqButton {
+                        variant: EqButtonVariant::Secondary,
+                        onclick: move |_| props.on_close.call(()),
                         "取消"
                     }
-                    button {
-                        class: "px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50",
+                    EqButton {
+                        variant: EqButtonVariant::Primary,
                         onclick: submit,
-                        disabled: "{loading}",
-                        if *loading.get() { "添加中..." } else { "添加" }
+                        disabled: *loading.read(),
+                        if *loading.read() { "添加中..." } else { "添加" }
                     }
                 }
             }
         }
-    })
+    }
 }

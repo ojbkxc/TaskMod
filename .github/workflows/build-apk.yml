@@ -27,6 +27,20 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Android targets
+        run: |
+          rustup target add aarch64-linux-android
+          rustup target add armv7-linux-androideabi
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r25c
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
@@ -57,6 +71,32 @@ jobs:
           sed -i "s/versionCode [0-9]*/versionCode $VERSION_CODE/" android/app/build.gradle
 
           echo "Updated to $TAG_VERSION (code: $VERSION_CODE)"
+
+      - name: Build Rust server for Android (arm64)
+        env:
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          TARGET: aarch64-linux-android
+          API_LEVEL: 26
+        run: |
+          # 创建 linker 配置
+          cat > ~/.cargo/config.toml << EOF
+          [target.aarch64-linux-android]
+          linker = "${NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
+          ar = "${NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+          [target.armv7-linux-androideabi]
+          linker = "${NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi26-clang"
+          ar = "${NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+          EOF
+
+          # 编译 arm64 版本
+          cd server
+          cargo build --release --target aarch64-linux-android
+          # 复制到 assets 目录
+          mkdir -p ../android/app/src/main/assets
+          cp ../target/aarch64-linux-android/release/taskmod-server \
+             ../android/app/src/main/assets/taskmod-server || \
+          cp target/aarch64-linux-android/release/taskmod-server \
+             ../android/app/src/main/assets/taskmod-server
 
       - name: Build Release APK
         working-directory: android
