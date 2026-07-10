@@ -36,6 +36,10 @@ pub async fn static_js() -> axum::response::Response {
     ).into_response()
 }
 
+pub async fn api_docs() -> Html<&'static str> {
+    Html(include_str!("../../static/api-docs.html"))
+}
+
 pub async fn get_logs(Query(params): Query<HashMap<String, String>>) -> Json<ApiResponse<Vec<String>>> {
     let limit = params
         .get("limit")

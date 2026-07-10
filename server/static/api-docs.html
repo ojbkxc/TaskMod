@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TaskMod API Documentation</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #1a1a1a; background: #f5f5f5; }
+        .container { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+        h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+        h2 { font-size: 20px; font-weight: 600; margin: 32px 0 12px; padding-bottom: 8px; border-bottom: 2px solid #e5e5e5; }
+        h3 { font-size: 16px; font-weight: 600; margin: 20px 0 8px; }
+        .subtitle { color: #666; margin-bottom: 24px; }
+        .endpoint { background: #fff; border: 1px solid #e5e5e5; border-radius: 8px; margin-bottom: 16px; overflow: hidden; }
+        .endpoint-header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; cursor: pointer; user-select: none; }
+        .endpoint-header:hover { background: #fafafa; }
+        .method { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 700; text-transform: uppercase; min-width: 50px; text-align: center; }
+        .method-get { background: #e8f5e9; color: #2e7d32; }
+        .method-post { background: #e3f2fd; color: #1565c0; }
+        .method-put { background: #fff3e0; color: #e65100; }
+        .method-delete { background: #ffebee; color: #c62828; }
+        .path { font-family: 'SF Mono', Monaco, Consolas, monospace; font-size: 14px; font-weight: 600; }
+        .desc { color: #666; font-size: 13px; margin-left: auto; }
+        .endpoint-body { display: none; padding: 16px; border-top: 1px solid #e5e5e5; background: #fafafa; }
+        .endpoint-body.open { display: block; }
+        .param-table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+        .param-table th, .param-table td { text-align: left; padding: 6px 12px; border-bottom: 1px solid #eee; font-size: 13px; }
+        .param-table th { background: #f0f0f0; font-weight: 600; }
+        .param-name { font-family: 'SF Mono', Monaco, Consolas, monospace; color: #d32f2f; }
+        .param-type { color: #1565c0; font-family: 'SF Mono', Monaco, Consolas, monospace; font-size: 12px; }
+        .required { color: #c62828; font-weight: 600; }
+        pre { background: #1e1e1e; color: #d4d4d4; padding: 12px 16px; border-radius: 6px; overflow-x: auto; font-size: 13px; margin: 8px 0; }
+        pre .comment { color: #6a9955; }
+        pre .string { color: #ce9178; }
+        pre .key { color: #9cdcfe; }
+        pre .number { color: #b5cea8; }
+        .try-btn { display: inline-block; padding: 6px 16px; background: #1976d2; color: #fff; border: none; border-radius: 4px; font-size: 13px; cursor: pointer; margin-top: 8px; }
+        .try-btn:hover { background: #1565c0; }
+        .response-area { margin-top: 8px; }
+        .response-area pre { max-height: 300px; overflow-y: auto; }
+        .input-row { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
+        .input-row input, .input-row select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; }
+        .input-row input[type="text"] { flex: 1; min-width: 200px; }
+        .input-row label { font-size: 13px; font-weight: 500; min-width: 60px; }
+        a { color: #1976d2; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .back-link { display: inline-block; margin-bottom: 16px; font-size: 14px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <a class="back-link" href="/">&larr; 返回 TaskMod</a>
+    <h1>TaskMod API Documentation</h1>
+    <p class="subtitle">TaskMod 设备控制 HTTP API 完整文档 — Base URL: <code>http://&lt;device-ip&gt;:2718</code></p>
+
+    <!-- ==================== TTS ==================== -->
+    <h2 id="tts">TTS 语音合成 API</h2>
+    <p style="margin-bottom:16px;color:#555;">通过 Android 标准的 TextToSpeech 子系统控制设备 TTS。支持 Google TTS、小爱同学、讯飞、百度等任意已安装引擎。</p>
+
+    <!-- GET /api/tts/engines -->
+    <div class="endpoint">
+        <div class="endpoint-header" onclick="this.nextElementSibling.classList.toggle('open')">
+            <span class="method method-get">GET</span>
+            <span class="path">/api/tts/engines</span>
+            <span class="desc">获取设备上所有可用 TTS 引擎列表</span>
+        </div>
+        <div class="endpoint-body">
+            <p style="font-size:13px;margin-bottom:8px;">通过 <code>cmd tts list engines</code>、<code>pm list packages</code>、<code>dumpsys texttospeech</code> 三种方式联合发现引擎，自动去重。默认引擎标记为 <code>[默认]</code> 并排在首位。</p>
+            <h3>响应示例</h3>
+            <pre><span class="comment">// 200 OK</span>
+{
+  <span class="key">"success"</span>: <span class="number">true</span>,
+  <span class="key">"message"</span>: <span class="string">"ok"</span>,
+  <span class="key">"data"</span>: [
+    { <span class="key">"package_name"</span>: <span class="string">"com.google.android.tts"</span>, <span class="key">"label"</span>: <span class="string">"[默认] Google 文字转语音"</span> },
+    { <span class="key">"package_name"</span>: <span class="string">"com.iflytek.tts"</span>, <span class="key">"label"</span>: <span class="string">"讯飞 TTS"</span> },
+    { <span class="key">"package_name"</span>: <span class="string">"com.miui.tts"</span>, <span class="key">"label"</span>: <span class="string">"小米 TTS"</span> }
+  ]
+}</pre>
+            <h3>在线测试</h3>
+            <button class="try-btn" onclick="tryApi('GET', '/api/tts/engines')">发送请求</button>
+            <div class="response-area" id="resp-GET-/api/tts/engines"></div>
+        </div>
+    </div>
+
+    <!-- POST /api/tts/speak -->
+    <div class="endpoint">
+        <div class="endpoint-header" onclick="this.nextElementSibling.classList.toggle('open')">
+            <span class="method method-post">POST</span>
+            <span class="path">/api/tts/speak</span>
+            <span class="desc">朗读指定文本</span>
+        </div>
+        <div class="endpoint-body">
+            <h3>请求体 (JSON)</h3>
+            <table class="param-table">
+                <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
+                <tr><td class="param-name">text</td><td class="param-type">string</td><td class="required">是</td><td>要朗读的文本内容</td></tr>
+                <tr><td class="param-name">engine</td><td class="param-type">string</td><td>否</td><td>TTS 引擎包名，如 <code>com.google.android.tts</code></td></tr>
+                <tr><td class="param-name">language</td><td class="param-type">string</td><td>否</td><td>语言代码，如 <code>zh-CN</code>、<code>en-US</code></td></tr>
+                <tr><td class="param-name">rate</td><td class="param-type">float</td><td>否</td><td>语速，0.5~2.0，默认 1.0</td></tr>
+                <tr><td class="param-name">pitch</td><td class="param-type">float</td><td>否</td><td>音调，0.5~2.0，默认 1.0</td></tr>
+                <tr><td class="param-name">volume</td><td class="param-type">float</td><td>否</td><td>音量，0.0~1.0，默认 1.0（通过系统设置预设）</td></tr>
+            </table>
+            <h3>请求示例</h3>
+            <pre>{
+  <span class="key">"text"</span>: <span class="string">"你好，欢迎使用 TaskMod"</span>,
+  <span class="key">"engine"</span>: <span class="string">"com.google.android.tts"</span>,
+  <span class="key">"rate"</span>: <span class="number">1.2</span>,
+  <span class="key">"pitch"</span>: <span class="number">1.0</span>
+}</pre>
+            <h3>响应示例</h3>
+            <pre><span class="comment">// 成功</span>
+{ <span class="key">"success"</span>: <span class="number">true</span>, <span class="key">"message"</span>: <span class="string">"你好，欢迎使用 TaskMod"</span> }
+<span class="comment">// 失败</span>
+{ <span class="key">"success"</span>: <span class="number">false</span>, <span class="key">"message"</span>: <span class="string">"TTS 播放失败，请确认设备已安装 TTS 引擎..."</span> }</pre>
+            <h3>在线测试</h3>
+            <div class="input-row">
+                <label>文本:</label>
+                <input type="text" id="try-text" value="你好，这是TaskMod语音测试" placeholder="输入要朗读的文本">
+            </div>
+            <div class="input-row">
+                <label>引擎:</label>
+                <select id="try-engine" style="min-width:280px;"><option value="">加载中...</option></select>
+            </div>
+            <button class="try-btn" onclick="trySpeak()">朗读</button>
+            <button class="try-btn" style="background:#c62828;" onclick="tryApi('POST', '/api/tts/stop')">停止</button>
+            <div class="response-area" id="resp-speak"></div>
+        </div>
+    </div>
+
+    <!-- POST /api/tts/stop -->
+    <div class="endpoint">
+        <div class="endpoint-header" onclick="this.nextElementSibling.classList.toggle('open')">
+            <span class="method method-post">POST</span>
+            <span class="path">/api/tts/stop</span>
+            <span class="desc">停止当前正在播放的 TTS</span>
+        </div>
+        <div class="endpoint-body">
+            <p style="font-size:13px;margin-bottom:8px;">先尝试 <code>cmd tts stop</code>，失败则 force-stop 常见 TTS 引擎进程。</p>
+            <h3>响应示例</h3>
+            <pre>{ <span class="key">"success"</span>: <span class="number">true</span>, <span class="key">"message"</span>: <span class="string">"语音播放已停止"</span> }</pre>
+            <button class="try-btn" onclick="tryApi('POST', '/api/tts/stop')">停止 TTS</button>
+            <div class="response-area" id="resp-POST-/api/tts/stop"></div>
+        </div>
+    </div>
+
+    <!-- GET/PUT /api/tts/settings -->
+    <div class="endpoint">
+        <div class="endpoint-header" onclick="this.nextElementSibling.classList.toggle('open')">
+            <span class="method method-get">GET</span>
+            <span class="method method-put">PUT</span>
+            <span class="path">/api/tts/settings</span>
+            <span class="desc">获取 / 更新 TTS 全局设置</span>
+        </div>
+        <div class="endpoint-body">
+            <h3>GET 响应</h3>
+            <pre>{
+  <span class="key">"success"</span>: <span class="number">true</span>,
+  <span class="key">"data"</span>: {
+    <span class="key">"default_engine"</span>: <span class="string">"com.google.android.tts"</span>,
+    <span class="key">"default_rate"</span>: <span class="number">1.0</span>,
+    <span class="key">"default_pitch"</span>: <span class="number">1.0</span>,
+    <span class="key">"default_volume"</span>: <span class="number">1.0</span>,
+    <span class="key">"available_engines"</span>: [ ... ]
+  }
+}</pre>
+            <h3>PUT 请求体</h3>
+            <table class="param-table">
+                <tr><th>字段</th><th>类型</th><th>说明</th></tr>
+                <tr><td class="param-name">rate</td><td class="param-type">float</td><td>语速 0.5~2.0</td></tr>
+                <tr><td class="param-name">pitch</td><td class="param-type">float</td><td>音调 0.5~2.0</td></tr>
+                <tr><td class="param-name">volume</td><td class="param-type">float</td><td>音量 0.0~1.0</td></tr>
+            </table>
+            <button class="try-btn" onclick="tryApi('GET', '/api/tts/settings')">获取设置</button>
+            <div class="response-area" id="resp-GET-/api/tts/settings"></div>
+        </div>
+    </div>
+
+    <!-- POST /api/tts/default-engine -->
+    <div class="endpoint">
+        <div class="endpoint-header" onclick="this.nextElementSibling.classList.toggle('open')">
+            <span class="method method-post">POST</span>
+            <span class="path">/api/tts/default-engine</span>
+            <span class="desc">设置系统默认 TTS 引擎</span>
+        </div>
+        <div class="endpoint-body">
+            <h3>请求体</h3>
+            <pre>{ <span class="key">"engine"</span>: <span class="string">"com.google.android.tts"</span> }</pre>
+            <h3>响应</h3>
+            <pre>{ <span class="key">"success"</span>: <span class="number">true</span>, <span class="key">"message"</span>: <span class="string">"已设置默认TTS引擎为: com.google.android.tts"</span> }</pre>
+            <h3>在线测试</h3>
+            <div class="input-row">
+                <label>引擎:</label>
+                <select id="try-set-engine" style="min-width:280px;"><option value="">加载中...</option></select>
+            </div>
+            <button class="try-btn" onclick="trySetDefault()">设置默认引擎</button>
+            <div class="response-area" id="resp-default-engine"></div>
+        </div>
+    </div>
+
+    <!-- POST /api/tts/test -->
+    <div class="endpoint">
+        <div class="endpoint-header" onclick="this.nextElementSibling.classList.toggle('open')">
+            <span class="method method-post">POST</span>
+            <span class="path">/api/tts/test</span>
+            <span class="desc">快速测试 TTS 功能</span>
+        </div>
+        <div class="endpoint-body">
+            <p style="font-size:13px;margin-bottom:8px;">使用默认参数播放测试语音，适合验证 TTS 是否正常工作。</p>
+            <h3>请求体 (均可选)</h3>
+            <pre>{
+  <span class="key">"text"</span>: <span class="string">"这是一段测试语音"</span>,  <span class="comment">// 可选，默认为内置测试文本</span>
+  <span class="key">"engine"</span>: <span class="string">"com.google.android.tts"</span>  <span class="comment">// 可选，默认使用系统默认引擎</span>
+}</pre>
+            <button class="try-btn" onclick="tryApi('POST', '/api/tts/test', '{}')">测试 TTS</button>
+            <div class="response-area" id="resp-POST-/api/tts/test"></div>
+        </div>
+    </div>
+
+    <!-- ==================== cURL 示例 ==================== -->
+    <h2 id="curl">cURL 调用示例</h2>
+    <pre><span class="comment"># 获取所有 TTS 引擎</span>
+curl http://localhost:2718/api/tts/engines
+
+<span class="comment"># 朗读文本（使用默认引擎）</span>
+curl -X POST http://localhost:2718/api/tts/speak \
+  -H "Content-Type: application/json" \
+  -d '{"text":"你好世界","engine":"com.google.android.tts","rate":1.2}'
+
+<span class="comment"># 停止朗读</span>
+curl -X POST http://localhost:2718/api/tts/stop
+
+<span class="comment"># 获取 TTS 设置</span>
+curl http://localhost:2718/api/tts/settings
+
+<span class="comment"># 更新语速和音调</span>
+curl -X PUT http://localhost:2718/api/tts/settings \
+  -H "Content-Type: application/json" \
+  -d '{"rate":1.5,"pitch":1.2}'
+
+<span class="comment"># 设置默认引擎</span>
+curl -X POST http://localhost:2718/api/tts/default-engine \
+  -H "Content-Type: application/json" \
+  -d '{"engine":"com.google.android.tts"}'
+
+<span class="comment"># 快速测试</span>
+curl -X POST http://localhost:2718/api/tts/test \
+  -H "Content-Type: application/json" \
+  -d '{}'</pre>
+
+    <!-- ==================== 其他 API 概览 ==================== -->
+    <h2 id="other">其他 API 概览</h2>
+    <table class="param-table">
+        <tr><th>方法</th><th>路径</th><th>说明</th></tr>
+        <tr><td>GET</td><td class="param-name">/api/status</td><td>系统状态（电池/CPU/内存/运行时间）</td></tr>
+        <tr><td>POST</td><td class="param-name">/api/command</td><td>执行 ADB shell 命令</td></tr>
+        <tr><td>GET</td><td class="param-name">/api/tasks</td><td>获取定时任务列表</td></tr>
+        <tr><td>POST</td><td class="param-name">/api/tasks</td><td>添加定时任务</td></tr>
+        <tr><td>GET</td><td class="param-name">/api/scripts</td><td>获取脚本列表</td></tr>
+        <tr><td>GET/PUT</td><td class="param-name">/api/config</td><td>获取/更新配置</td></tr>
+        <tr><td>GET</td><td class="param-name">/api/logs</td><td>获取系统日志</td></tr>
+        <tr><td>POST</td><td class="param-name">/api/screenshots/take</td><td>截屏</td></tr>
+        <tr><td>WS</td><td class="param-name">/ws/ai-chat</td><td>AI 对话 WebSocket</td></tr>
+        <tr><td>WS</td><td class="param-name">/ws/mirror</td><td>投屏 WebSocket</td></tr>
+    </table>
+</div>
+
+<script>
+    const BASE = '';
+
+    async function tryApi(method, url, body) {
+        const el = document.getElementById('resp-' + method + '-' + url);
+        if (!el) return;
+        el.innerHTML = '<pre>请求中...</pre>';
+        try {
+            const opts = { method, headers: { 'Content-Type': 'application/json' } };
+            if (body) opts.body = typeof body === 'string' ? body : JSON.stringify(body);
+            const res = await fetch(BASE + url, opts);
+            const json = await res.json();
+            el.innerHTML = '<pre>' + JSON.stringify(json, null, 2) + '</pre>';
+        } catch (e) {
+            el.innerHTML = '<pre style="color:#c62828;">请求失败: ' + e.message + '</pre>';
+        }
+    }
+
+    async function trySpeak() {
+        const text = document.getElementById('try-text').value;
+        const engine = document.getElementById('try-engine').value;
+        if (!text) { alert('请输入文本'); return; }
+        const el = document.getElementById('resp-speak');
+        el.innerHTML = '<pre>请求中...</pre>';
+        try {
+            const res = await fetch(BASE + '/api/tts/speak', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, engine: engine || undefined, rate: 1.0, pitch: 1.0 })
+            });
+            const json = await res.json();
+            el.innerHTML = '<pre>' + JSON.stringify(json, null, 2) + '</pre>';
+        } catch (e) {
+            el.innerHTML = '<pre style="color:#c62828;">请求失败: ' + e.message + '</pre>';
+        }
+    }
+
+    async function trySetDefault() {
+        const engine = document.getElementById('try-set-engine').value;
+        if (!engine) { alert('请选择引擎'); return; }
+        const el = document.getElementById('resp-default-engine');
+        el.innerHTML = '<pre>请求中...</pre>';
+        try {
+            const res = await fetch(BASE + '/api/tts/default-engine', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ engine })
+            });
+            const json = await res.json();
+            el.innerHTML = '<pre>' + JSON.stringify(json, null, 2) + '</pre>';
+        } catch (e) {
+            el.innerHTML = '<pre style="color:#c62828;">请求失败: ' + e.message + '</pre>';
+        }
+    }
+
+    // 加载引擎列表到下拉框
+    async function loadEngines() {
+        try {
+            const res = await fetch(BASE + '/api/tts/engines');
+            const json = await res.json();
+            if (json.success && json.data) {
+                const opts = json.data.map(e =>
+                    '<option value="' + e.package_name + '">' + e.label + '</option>'
+                ).join('');
+                const sel1 = document.getElementById('try-engine');
+                const sel2 = document.getElementById('try-set-engine');
+                if (sel1) sel1.innerHTML = opts;
+                if (sel2) sel2.innerHTML = opts;
+            }
+        } catch (e) {
+            console.error('加载引擎失败:', e);
+        }
+    }
+    loadEngines();
+</script>
+</body>
+</html>

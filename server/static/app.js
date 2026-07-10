@@ -24,7 +24,7 @@
         if (name === 'dashboard') refreshStatus();
         if (name === 'tasks' && !_loaded.tasks) { _loaded.tasks = true; loadTasks(); }
         if (name === 'scripts' && !_loaded.scripts) { _loaded.scripts = true; loadScripts(); }
-        if (name === 'tts' && !_loaded.tts) { _loaded.tts = true; loadTtsEngines(); }
+        if (name === 'tts' && !_loaded.tts) { _loaded.tts = true; loadTtsEngines(); loadTtsSettings(); }
         if (name === 'config' && !_loaded.config) { _loaded.config = true; loadEmailConfig(); loadMqttConfig(); }
         if (name === 'logs') loadLogs();
         if (name === 'chat' && !_loaded.chat) { _loaded.chat = true; loadProviders(); }
@@ -1534,8 +1534,8 @@
         const sel = document.getElementById('tts-engine');
         if (res.ok && res.data && res.data.length > 0) {
             sel.innerHTML = res.data.map(e => {
-                const val = typeof e === 'string' ? e : (e.id || e.name);
-                const label = typeof e === 'string' ? e : (e.name || e.id);
+                const val = typeof e === 'string' ? e : (e.package_name || e.id || '');
+                const label = typeof e === 'string' ? e : (e.label || e.name || val);
                 return '<option value="' + escapeHtml(val) + '">' + escapeHtml(label) + '</option>';
             }).join('');
         } else {
@@ -1547,10 +1547,11 @@
         const text = document.getElementById('tts-text').value.trim();
         if (!text) return showToast('请输入文本', 'error');
         const engine = document.getElementById('tts-engine').value;
+        if (!engine) return showToast('请先选择语音引擎', 'error');
         const res = await apiPost('/api/tts/speak', {
             text,
             engine,
-            speed: parseFloat(document.getElementById('tts-speed').value),
+            rate: parseFloat(document.getElementById('tts-speed').value),
             pitch: parseFloat(document.getElementById('tts-pitch').value),
             volume: parseFloat(document.getElementById('tts-volume').value)
         });
@@ -1562,6 +1563,47 @@
         const res = await apiPost('/api/tts/stop', {});
         if (res.ok) showToast('已停止', 'info');
         else showToast(res.message || '停止失败', 'error');
+    }
+
+    async function loadTtsSettings() {
+        const res = await apiGet('/api/tts/settings');
+        if (res.ok && res.data) {
+            const d = res.data;
+            if (d.default_engine) {
+                const sel = document.getElementById('tts-engine');
+                if (sel.querySelector('option[value="' + d.default_engine + '"]')) {
+                    sel.value = d.default_engine;
+                }
+            }
+            if (d.default_rate) {
+                document.getElementById('tts-speed').value = d.default_rate;
+                document.getElementById('tts-speed-val').textContent = d.default_rate;
+            }
+            if (d.default_pitch) {
+                document.getElementById('tts-pitch').value = d.default_pitch;
+                document.getElementById('tts-pitch-val').textContent = d.default_pitch;
+            }
+        }
+    }
+
+    async function testTTS() {
+        const engine = document.getElementById('tts-engine').value;
+        const res = await apiPost('/api/tts/test', {
+            text: '这是一段测试语音，TaskMod TTS功能正常。',
+            engine: engine || undefined
+        });
+        if (res.ok) showToast('测试语音播放中...', 'success');
+        else showToast(res.message || '测试失败', 'error');
+    }
+
+    async function saveTtsSettings() {
+        const body = {
+            rate: parseFloat(document.getElementById('tts-speed').value),
+            pitch: parseFloat(document.getElementById('tts-pitch').value)
+        };
+        const res = await apiPut('/api/tts/settings', body);
+        if (res.ok) showToast('TTS设置已保存', 'success');
+        else showToast(res.message || '保存失败', 'error');
     }
 
     /* ===== Config ===== */

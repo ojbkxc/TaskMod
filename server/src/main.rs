@@ -248,6 +248,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/", get(api::system::index))
+        .route("/api/docs", get(api::system::api_docs))
         .route("/static/style.css", get(api::system::static_css))
         .route("/static/app.js", get(api::system::static_js))
         .route("/api/tasks", get(api::tasks::list_tasks).post(api::tasks::add_task))
@@ -273,6 +274,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/tts/engines", get(api::tts::get_tts_engines))
         .route("/api/tts/speak", post(api::tts::speak))
         .route("/api/tts/stop", post(api::tts::stop_tts))
+        .route("/api/tts/settings", get(api::tts::get_tts_settings).put(api::tts::update_tts_settings))
+        .route("/api/tts/default-engine", post(api::tts::set_default_engine))
+        .route("/api/tts/test", post(api::tts::test_tts))
         .route("/api/ai/providers", get(api::ai::list_ai_providers).post(api::ai::add_ai_provider))
         .route("/api/ai/providers/:id", get(api::ai::get_ai_provider_api).put(api::ai::update_ai_provider).delete(api::ai::delete_ai_provider))
         .route("/ws/ai-chat", get(api::ai::ai_chat_ws))

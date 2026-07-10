@@ -389,6 +389,11 @@
                         <h1 class="ds-page-intro-title">TTS 语音合成</h1>
                         <p class="ds-page-intro-description">文本转语音控制面板</p>
                     </div>
+                    <div style="display:flex;gap:8px;">
+                        <button class="ds-btn-secondary" onclick="loadTtsSettings()"><i class="fas fa-cog"></i> 加载设置</button>
+                        <button class="ds-btn-secondary" onclick="loadTtsEngines()"><i class="fas fa-sync"></i> 刷新引擎</button>
+                        <a href="/api/docs" target="_blank" class="ds-btn-secondary" style="text-decoration:none;display:inline-flex;align-items:center;gap:4px;"><i class="fas fa-book"></i> API 文档</a>
+                    </div>
                 </div>
                 <div class="tts-control-panel">
                     <div class="form-group">
@@ -415,6 +420,8 @@
                     </div>
                     <div style="display:flex;gap:12px;">
                         <button class="ds-btn-primary" onclick="speakTTS()"><i class="fas fa-play"></i> 朗读</button>
+                        <button class="ds-btn-secondary" onclick="testTTS()"><i class="fas fa-vial"></i> 测试</button>
+                        <button class="ds-btn-secondary" onclick="saveTtsSettings()"><i class="fas fa-save"></i> 保存设置</button>
                         <button class="ds-btn-danger" onclick="stopTTS()"><i class="fas fa-stop"></i> 停止</button>
                     </div>
                 </div>
