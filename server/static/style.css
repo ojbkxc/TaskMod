@@ -1923,6 +1923,39 @@
             display: inline-block;
         }
 
+        .tts-target-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        .tts-target-btn {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 16px;
+            border: 1px solid var(--ds-border);
+            border-radius: var(--radius-ctrl);
+            background: var(--ds-card);
+            color: var(--ds-text-secondary);
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        .tts-target-btn:hover {
+            border-color: var(--ds-border-hover);
+            color: var(--ds-text);
+        }
+
+        .tts-target-active {
+            background: var(--ds-blue) !important;
+            color: var(--ds-text-on-primary) !important;
+            border-color: var(--ds-blue) !important;
+        }
+
         .tts-slider-group {
             display: flex;
             align-items: center;

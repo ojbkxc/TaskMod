@@ -3401,10 +3401,20 @@
     async function speakTTS() {
         const text = document.getElementById('tts-text').value.trim();
         if (!text) return showToast('请输入文本', 'error');
-        const engine = document.getElementById('tts-engine').value;
-        if (!engine) return showToast('请先选择语音引擎', 'error');
         const statusEl = document.getElementById('tts-speaking-status');
         if (statusEl) statusEl.textContent = '朗读中...';
+        if (ttsPlayTarget === 'pc') {
+            ttsSpeakOnPC(text);
+            showToast('电脑端播放中...', 'success');
+            addTtsHistory(text);
+            return;
+        }
+        // 手机端播放
+        const engine = document.getElementById('tts-engine').value;
+        if (!engine) {
+            if (statusEl) statusEl.textContent = '空闲';
+            return showToast('请先选择语音引擎，或切换为电脑播放', 'error');
+        }
         const res = await apiPost('/api/tts/speak', {
             text,
             engine,
@@ -3422,6 +3432,8 @@
     }
 
     async function stopTTS() {
+        // 同时停止电脑端和手机端
+        stopTtsOnPC();
         const statusEl = document.getElementById('tts-speaking-status');
         const res = await apiPost('/api/tts/stop', {});
         if (res.ok) {
@@ -3430,7 +3442,10 @@
             const progressEl = document.getElementById('tts-speaking-progress');
             if (progressEl) progressEl.textContent = '--';
         }
-        else showToast(res.message || '停止失败', 'error');
+        else {
+            showToast('已停止', 'info');
+            if (statusEl) statusEl.textContent = '空闲';
+        }
     }
 
     async function loadTtsSettings() {
@@ -3481,8 +3496,14 @@
 
     /* 试听：用当前选中引擎 + 默认参数播放固定文本 */
     async function auditionTTS() {
+        const testText = '你好，这是TaskMod TTS试听测试。';
+        if (ttsPlayTarget === 'pc') {
+            ttsSpeakOnPC(testText);
+            showToast('电脑端试听中...', 'success');
+            return;
+        }
         const engine = document.getElementById('tts-engine').value;
-        if (!engine) return showToast('请先选择语音引擎', 'error');
+        if (!engine) return showToast('请先选择语音引擎，或切换为电脑播放', 'error');
         const res = await apiPost('/api/tts/test', {
             text: '你好，这是' + engine.split('.').pop() + '引擎的试听测试。',
             engine
@@ -3721,6 +3742,12 @@
         if (ttsAiReplyEl) ttsAiReplyEl.checked = ttsReplyEnabled;
         // 显示/隐藏语音输入按钮
         updateVoiceInputBtn();
+        // 同步TTS播放目标按钮状态
+        const savedTarget = localStorage.getItem('tts_play_target') || 'pc';
+        ttsPlayTarget = savedTarget;
+        document.querySelectorAll('.tts-target-btn').forEach(function(btn) {
+            btn.classList.toggle('tts-target-active', btn.dataset.target === savedTarget);
+        });
     }
 
     function saveVoiceSettings() {
@@ -3804,13 +3831,60 @@
     }
 
     /* 通用TTS朗读函数，供AI对话调用 */
+    /* TTS 播放目标: 'pc' = 浏览器端, 'phone' = 手机设备端 */
+    let ttsPlayTarget = localStorage.getItem('tts_play_target') || 'pc';
+
+    function setTtsPlayTarget(target) {
+        ttsPlayTarget = target;
+        localStorage.setItem('tts_play_target', target);
+        // 更新所有目标切换按钮状态
+        document.querySelectorAll('.tts-target-btn').forEach(function(btn) {
+            btn.classList.toggle('tts-target-active', btn.dataset.target === target);
+        });
+        showToast(target === 'pc' ? '切换为电脑播放' : '切换为手机播放', 'info');
+    }
+
+    /* 浏览器端 TTS (Web Speech API) */
+    let _pcSpeechSynth = null;
+    function ttsSpeakOnPC(text) {
+        if (!('speechSynthesis' in window)) {
+            showToast('浏览器不支持语音合成', 'error');
+            return;
+        }
+        // 取消之前的朗读
+        window.speechSynthesis.cancel();
+        const rate = voiceSettings.rate != null ? voiceSettings.rate : parseFloat(document.getElementById('tts-speed')?.value || '1.0');
+        const pitch = voiceSettings.pitch != null ? voiceSettings.pitch : parseFloat(document.getElementById('tts-pitch')?.value || '1.0');
+        const volume = parseFloat(document.getElementById('tts-volume')?.value || '1.0');
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = 'zh-CN';
+        utter.rate = rate;
+        utter.pitch = pitch;
+        utter.volume = volume;
+        // 优先选择中文语音
+        const voices = window.speechSynthesis.getVoices();
+        const zhVoice = voices.find(function(v) { return v.lang.startsWith('zh'); });
+        if (zhVoice) utter.voice = zhVoice;
+        utter.onerror = function(e) { showToast('语音合成错误: ' + e.error, 'error'); };
+        window.speechSynthesis.speak(utter);
+    }
+
+    function stopTtsOnPC() {
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    }
+
     async function ttsReadText(text) {
         if (!text || !text.trim()) return;
         const maxLen = 2000;
         const speakText = text.length > maxLen ? text.substring(0, maxLen) + '...(已截断)' : text;
+        if (ttsPlayTarget === 'pc') {
+            ttsSpeakOnPC(speakText);
+            return;
+        }
+        // 手机端播放
         const engine = document.getElementById('tts-engine')?.value;
         if (!engine) {
-            showToast('请先在TTS页面选择引擎', 'error');
+            showToast('请先在TTS页面选择引擎，或切换为电脑播放', 'error');
             return;
         }
         try {
@@ -3818,7 +3892,7 @@
                 text: speakText,
                 engine,
                 rate: voiceSettings.rate != null ? voiceSettings.rate : parseFloat(document.getElementById('tts-speed')?.value || '1.0'),
-                 pitch: voiceSettings.pitch != null ? voiceSettings.pitch : parseFloat(document.getElementById('tts-pitch')?.value || '1.0'),
+                pitch: voiceSettings.pitch != null ? voiceSettings.pitch : parseFloat(document.getElementById('tts-pitch')?.value || '1.0'),
                 volume: parseFloat(document.getElementById('tts-volume')?.value || '1.0')
             });
             if (!res.ok) showToast('TTS: ' + (res.message || '朗读失败'), 'error');

@@ -588,6 +588,21 @@
                     </div>
                 </div>
 
+                <!-- 0. 播放目标切换 -->
+                <div class="ds-card tts-card">
+                    <div class="tts-card-header">
+                        <span class="tts-card-title"><i class="fas fa-broadcast-tower"></i> 播放目标</span>
+                    </div>
+                    <div class="tts-target-group">
+                        <button class="tts-target-btn tts-target-active" data-target="pc" onclick="setTtsPlayTarget('pc')">
+                            <i class="fas fa-desktop"></i> 电脑播放
+                        </button>
+                        <button class="tts-target-btn" data-target="phone" onclick="setTtsPlayTarget('phone')">
+                            <i class="fas fa-mobile-alt"></i> 手机播放
+                        </button>
+                    </div>
+                </div>
+
                 <!-- 1. TTS 引擎选择区 -->
                 <div class="ds-card tts-card">
                     <div class="tts-card-header">
