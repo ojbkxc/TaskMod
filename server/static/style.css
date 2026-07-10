@@ -1169,6 +1169,76 @@
             box-shadow: var(--ds-shadow-sm);
         }
 
+        /* 全屏模式 */
+        .mirror-container:fullscreen {
+            background: #000;
+            border: none;
+            border-radius: 0;
+            min-height: auto;
+        }
+
+        .mirror-container:fullscreen #mirror-canvas {
+            width: 100vw;
+            height: 100vh;
+            object-fit: contain;
+        }
+
+        .mirror-container:fullscreen .mirror-status-overlay {
+            bottom: 20px;
+            left: 20px;
+            font-size: 14px;
+        }
+
+        /* 按钮激活状态（如声音开启） */
+        .ds-btn-active {
+            background: var(--ds-blue) !important;
+            color: var(--ds-text-on-primary) !important;
+            border-color: var(--ds-blue) !important;
+        }
+
+        /* 代码编辑器 */
+        .ds-code-editor {
+            flex: 1;
+            width: 100%;
+            padding: 12px 16px;
+            font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            tab-size: 2;
+            white-space: pre;
+            overflow: auto;
+            resize: none;
+            background: var(--ds-bg);
+            color: var(--ds-text);
+            border: 1px solid var(--ds-border);
+            border-radius: var(--radius-ctrl);
+            outline: none;
+            transition: border-color 0.15s ease;
+        }
+
+        .ds-code-editor:focus {
+            border-color: var(--ds-blue);
+            box-shadow: 0 0 0 2px var(--ds-blue-glow);
+        }
+
+        .ds-code-editor::placeholder {
+            color: var(--ds-text-tertiary);
+            font-style: italic;
+        }
+
+        /* Badge 样式 */
+        .ds-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            font-size: 11px;
+            font-weight: 500;
+            border-radius: 10px;
+            background: var(--ds-surface);
+            color: var(--ds-text-secondary);
+            border: 1px solid var(--ds-border);
+        }
+
         .mirror-status-overlay {
             position: absolute;
             bottom: 12px;
@@ -1215,6 +1285,40 @@
             animation: blink 1s infinite;
         }
 
+        /* 投屏控制按钮 */
+        .mirror-ctrl-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            padding: 10px 14px;
+            background: var(--ds-card);
+            border: 1px solid var(--ds-border);
+            border-radius: var(--radius-ctrl);
+            cursor: pointer;
+            transition: all 0.15s ease;
+            color: var(--ds-text-secondary);
+            font-size: 11px;
+            min-width: 56px;
+        }
+
+        .mirror-ctrl-btn i {
+            font-size: 16px;
+        }
+
+        .mirror-ctrl-btn:hover {
+            background: var(--ds-surface-hover);
+            border-color: var(--ds-border-hover);
+            color: var(--ds-text);
+        }
+
+        .mirror-ctrl-btn:active {
+            background: var(--ds-blue-light);
+            border-color: var(--ds-blue);
+            color: var(--ds-blue);
+            transform: scale(0.95);
+        }
+
         .log-viewer {
             background: var(--ds-bg);
             border: 1px solid var(--ds-border);
@@ -1240,20 +1344,18 @@
             background: color-mix(in srgb, var(--ds-card) 94%, var(--ds-surface));
         }
 
-
-
-
-
-        .task-status.active {
-            background: var(--ds-success-bg);
-            color: var(--ds-success);
+        .script-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 14px 16px;
+            background: var(--ds-card);
+            border: 1px solid var(--ds-border);
+            border-radius: var(--radius-ctrl);
+            margin-bottom: 8px;
+            transition: border-color 0.15s ease, background-color 0.15s ease;
         }
-
-        .task-status.inactive {
-            background: var(--ds-surface);
-            color: var(--ds-text-tertiary);
-        }
-
 
         .script-item:hover {
             border-color: var(--ds-border-hover);

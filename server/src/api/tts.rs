@@ -212,21 +212,96 @@ async fn apply_tts_params(rate: f32, pitch: f32, volume: f32) {
     }
 }
 
-/// 执行单次 cmd tts speak
+/// 执行单次 cmd tts speak（带详细日志和多重容错）
 async fn exec_speak(text: &str, engine: Option<&str>, language: Option<&str>) -> bool {
-    let mut cmd = Command::new("/system/bin/cmd");
-    cmd.arg("tts").arg("speak");
-    if let Some(e) = engine {
-        cmd.arg("-e").arg(e);
+    // 尝试多种方式执行 TTS
+    let methods: Vec<(&str, Vec<String>)> = vec![
+        // 方法1: /system/bin/cmd tts speak（标准路径）
+        ("/system/bin/cmd", {
+            let mut args = vec!["tts".to_string(), "speak".to_string()];
+            if let Some(e) = engine {
+                args.push("-e".to_string());
+                args.push(e.to_string());
+            }
+            if let Some(l) = language {
+                args.push("-l".to_string());
+                args.push(l.to_string());
+            }
+            args.push(text.to_string());
+            args
+        }),
+        // 方法2: cmd tts speak（PATH查找）
+        ("cmd", {
+            let mut args = vec!["tts".to_string(), "speak".to_string()];
+            if let Some(e) = engine {
+                args.push("-e".to_string());
+                args.push(e.to_string());
+            }
+            if let Some(l) = language {
+                args.push("-l".to_string());
+                args.push(l.to_string());
+            }
+            args.push(text.to_string());
+            args
+        }),
+    ];
+
+    for (bin, args) in &methods {
+        match Command::new(bin)
+            .args(args)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .await
+        {
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if output.status.success() {
+                    return true;
+                }
+                // 记录失败原因
+                eprintln!("[TTS] {} 返回失败: status={:?}, stdout={}, stderr={}",
+                    bin, output.status.code(), stdout.trim(), stderr.trim());
+            }
+            Err(e) => {
+                eprintln!("[TTS] {} 执行错误: {}", bin, e);
+            }
+        }
     }
-    if let Some(l) = language {
-        cmd.arg("-l").arg(l);
+
+    // 方法3: 通过 sh -c 执行（兼容更多shell环境）
+    let engine_arg = engine.map(|e| format!(" -e {}", e)).unwrap_or_default();
+    let lang_arg = language.map(|l| format!(" -l {}", l)).unwrap_or_default();
+    let sh_cmd = format!("cmd tts speak{}{} '{}'", engine_arg, lang_arg, text.replace('\'', "'\\''"));
+    match Command::new("sh").arg("-c").arg(&sh_cmd)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output().await
+    {
+        Ok(output) => {
+            if output.status.success() {
+                return true;
+            }
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("[TTS] sh -c 返回失败: stderr={}", stderr.trim());
+        }
+        Err(e) => {
+            eprintln!("[TTS] sh -c 执行错误: {}", e);
+        }
     }
-    cmd.arg(text);
-    match cmd.output().await {
-        Ok(output) => output.status.success(),
-        Err(_) => false,
-    }
+
+    false
+}
+
+/// 异步执行TTS（后台播放，不阻塞HTTP请求）
+fn exec_speak_background(text: String, engine: Option<String>, language: Option<String>) {
+    tokio::spawn(async move {
+        let ok = exec_speak(&text, engine.as_deref(), language.as_deref()).await;
+        if !ok {
+            eprintln!("[TTS] 后台播放失败: {}", &text[..text.len().min(50)]);
+        }
+    });
 }
 
 // ==================== API Handlers ====================
@@ -261,48 +336,50 @@ pub async fn speak(Json(req): Json<TtsRequest>) -> Json<ApiResponse<String>> {
     // 3. 预设 TTS 参数到系统 settings
     apply_tts_params(rate, pitch, volume).await;
 
-    // 4. 分句并逐句朗读
+    // 4. 分句后异步播放（后台执行，不阻塞HTTP请求）
     let sentences = config.split_sentences(&processed_text);
-    let total = sentences.len();
-    let mut failed = 0;
+    let engine_owned = req.engine.clone();
+    let language_owned = req.language.clone();
 
-    for (i, sentence) in sentences.iter().enumerate() {
-        let ok = exec_speak(sentence, req.engine.as_deref(), req.language.as_deref()).await;
-        if !ok {
-            eprintln!("[TTS] 第 {}/{} 句朗读失败: {}", i + 1, total, sentence);
-            failed += 1;
-        }
-        // 多句之间暂停 200ms，避免叠音
-        if i < total - 1 {
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        }
-    }
+    tokio::spawn(async move {
+        let total = sentences.len();
+        let mut failed = 0;
 
-    if failed == 0 {
-        Json(ApiResponse::ok_msg("语音播放成功".to_string(), text))
-    } else if failed < total {
-        Json(ApiResponse::ok_msg(
-            format!("部分朗读成功 ({}/{})", total - failed, total),
-            text,
-        ))
-    } else {
-        Json(ApiResponse::err(
-            "TTS 播放失败，请确认设备已安装 TTS 引擎且已在系统设置中配置",
-        ))
-    }
+        for (i, sentence) in sentences.iter().enumerate() {
+            let ok = exec_speak(sentence, engine_owned.as_deref(), language_owned.as_deref()).await;
+            if !ok {
+                eprintln!("[TTS] 第 {}/{} 句朗读失败: {}", i + 1, total, sentence);
+                failed += 1;
+            }
+            // 多句之间暂停 200ms，避免叠音
+            if i < total - 1 {
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            }
+        }
+
+        if failed > 0 {
+            eprintln!("[TTS] 部分朗读失败 ({}/{})", failed, total);
+        }
+    });
+
+    Json(ApiResponse::ok_msg("语音播放已提交".to_string(), text))
 }
 
 pub async fn stop_tts() -> Json<ApiResponse<String>> {
-    let result = Command::new("/system/bin/cmd")
-        .args(["tts", "stop"])
-        .status().await;
-    if let Ok(status) = result {
-        if status.success() {
-            return Json(ApiResponse::ok("语音播放已停止".to_string()));
+    // 尝试多种方式停止 TTS
+    for bin in &["/system/bin/cmd", "cmd"] {
+        let result = Command::new(bin)
+            .args(["tts", "stop"])
+            .output().await;
+        if let Ok(output) = result {
+            if output.status.success() {
+                return Json(ApiResponse::ok("语音播放已停止".to_string()));
+            }
         }
     }
-    for engine in ["com.google.android.tts", "com.miui.tts", "com.iflytek.tts"] {
-        let _ = Command::new("/system/bin/am")
+    // fallback: 强制停止常见 TTS 引擎
+    for engine in ["com.google.android.tts", "com.miui.tts", "com.iflytek.tts", "com.baidu.tts"] {
+        let _ = Command::new("am")
             .args(["force-stop", engine])
             .status().await;
     }

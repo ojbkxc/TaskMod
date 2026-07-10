@@ -8,8 +8,9 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.*
 
-class TaskModService : Service() {
+class TaskModService : Service(), CoroutineScope by CoroutineScope(Dispatchers.Default + SupervisorJob()) {
 
     companion object {
         private const val TAG = "TaskModService"
@@ -65,7 +66,7 @@ class TaskModService : Service() {
         startForeground(NOTIFICATION_ID, buildNotification("启动中…"))
         acquireWakeLock()
 
-        Thread {
+        launch {
             val success = serverManager.start()
             if (success) {
                 updateNotification("运行中 - 端口 ${serverManager.port}")
@@ -74,7 +75,7 @@ class TaskModService : Service() {
                 updateNotification("启动失败: ${serverManager.lastError}")
                 sendBroadcast(Intent("com.taskmod.STATUS_CHANGED").putExtra("running", false))
             }
-        }.start()
+        }
     }
 
     private fun handleStop() {
@@ -86,25 +87,25 @@ class TaskModService : Service() {
     }
 
     private fun handleScreenshot() {
-        Thread {
+        launch(Dispatchers.IO) {
             val (success, _) = serverManager.executeCommand("screencap -p /sdcard/screenshot.png")
             Log.i(TAG, "截屏: ${if (success) "成功" else "失败"}")
-        }.start()
+        }
     }
 
     private fun handleUnlock() {
-        Thread {
+        launch(Dispatchers.IO) {
             serverManager.executeCommand("input keyevent KEYCODE_WAKEUP")
-            Thread.sleep(300)
+            delay(300)
             serverManager.executeCommand("input swipe 540 1800 540 600 300")
             Log.i(TAG, "上滑解锁已执行")
-        }.start()
+        }
     }
 
     private fun handleReboot() {
-        Thread {
+        launch(Dispatchers.IO) {
             serverManager.executeCommand("reboot")
-        }.start()
+        }
     }
 
     private fun buildNotification(text: String): Notification {
@@ -173,6 +174,7 @@ class TaskModService : Service() {
     override fun onDestroy() {
         serverManager.stop()
         releaseWakeLock()
+        cancel() // 取消所有协程
         super.onDestroy()
     }
 }

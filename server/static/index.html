@@ -30,7 +30,7 @@
                 <svg class="side-tab-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                 </svg>
-                <span class="side-tab-label">投屏</span>
+                <span class="side-tab-label">设备</span>
                 <span class="side-tab-indicator"></span>
             </button>
             <button class="side-tab" onclick="showTab('library')">
@@ -125,9 +125,6 @@
                 </div>
                 <div class="quick-actions">
                     <button class="quick-action-btn" onclick="refreshStatus()"><i class="fas fa-sync-alt"></i> 刷新状态</button>
-                    <button class="quick-action-btn" onclick="screenshot()"><i class="fas fa-camera"></i> 截屏</button>
-                    <button class="quick-action-btn" onclick="unlockScreen()"><i class="fas fa-unlock"></i> 上滑解锁</button>
-                    <button class="quick-action-btn" onclick="rebootDevice()"><i class="fas fa-power-off"></i> 重启设备</button>
                     <button class="quick-action-btn" onclick="clearLogs()"><i class="fas fa-broom"></i> 清除日志</button>
                 </div>
             </section>
@@ -294,12 +291,50 @@
             <section id="tab-mirror" class="tab-content page-content" style="display:none;">
                 <div class="ds-page-intro">
                     <div>
-                        <h1 class="ds-page-intro-title">屏幕投屏</h1>
-                        <p class="ds-page-intro-description">实时查看和控制设备屏幕</p>
+                        <h1 class="ds-page-intro-title">设备控制</h1>
+                        <p class="ds-page-intro-description">投屏、设备操控与ADB命令</p>
                     </div>
                     <div class="ds-page-intro-actions">
                         <button class="ds-btn-primary" id="mirror-start-btn" onclick="startMirror()"><i class="fas fa-play"></i> 开始投屏</button>
                         <button class="ds-btn-danger" id="mirror-stop-btn" onclick="stopMirror()" style="display:none;"><i class="fas fa-stop"></i> 停止投屏</button>
+                        <button class="ds-btn-secondary" id="mirror-fullscreen-btn" onclick="toggleMirrorFullscreen()" style="display:none;" title="全屏"><i class="fas fa-expand"></i> 全屏</button>
+                        <button class="ds-btn-secondary" id="mirror-audio-btn" onclick="toggleMirrorAudio()" style="display:none;" title="设备声音"><i class="fas fa-volume-up"></i> 声音</button>
+                    </div>
+                </div>
+
+                <!-- 快捷操作栏 -->
+                <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+                    <button class="ds-btn-secondary" onclick="screenshot()"><i class="fas fa-camera"></i> 截屏</button>
+                    <button class="ds-btn-secondary" onclick="unlockScreen()"><i class="fas fa-unlock"></i> 上滑解锁</button>
+                    <button class="ds-btn-secondary" onclick="rebootDevice()"><i class="fas fa-power-off"></i> 重启设备</button>
+                </div>
+
+                <!-- ADB 命令输入 -->
+                <div class="ds-card" style="padding:14px 16px;margin-bottom:16px;">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                        <i class="fas fa-terminal" style="opacity:0.5;"></i>
+                        <strong style="font-size:14px;">ADB 命令</strong>
+                        <span style="font-size:11px;color:var(--ds-text-tertiary);">发送 shell 命令到设备</span>
+                    </div>
+                    <div style="display:flex;gap:8px;">
+                        <input type="text" id="adb-command-input" class="ds-chat-input" style="flex:1;font-family:monospace;font-size:13px;" placeholder="输入命令，如: input tap 500 500" onkeydown="if(event.key==='Enter')sendAdbCommand()">
+                        <button class="ds-btn-primary" onclick="sendAdbCommand()"><i class="fas fa-paper-plane"></i> 执行</button>
+                    </div>
+                    <div id="adb-command-result" style="margin-top:8px;display:none;">
+                        <pre style="background:var(--ds-bg);border:1px solid var(--ds-border);border-radius:var(--radius-ctrl);padding:10px;font-family:monospace;font-size:12px;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin:0;"></pre>
+                    </div>
+                    <!-- 常用命令快捷按钮 -->
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">
+                        <button class="ds-badge" style="cursor:pointer;" onclick="quickAdb('input keyevent KEYCODE_WAKEUP')">唤醒屏幕</button>
+                        <button class="ds-badge" style="cursor:pointer;" onclick="quickAdb('input keyevent KEYCODE_SLEEP')">息屏</button>
+                        <button class="ds-badge" style="cursor:pointer;" onclick="quickAdb('input swipe 540 1800 540 600 300')">上滑解锁</button>
+                        <button class="ds-badge" style="cursor:pointer;" onclick="quickAdb('input keyevent KEYCODE_HOME')">Home</button>
+                        <button class="ds-badge" style="cursor:pointer;" onclick="quickAdb('input keyevent KEYCODE_BACK')">返回</button>
+                        <button class="ds-badge" style="cursor:pointer;" onclick="quickAdb('dumpsys battery')">电池信息</button>
+                        <button class="ds-badge" style="cursor:pointer;" onclick="quickAdb('getprop ro.product.model')">设备型号</button>
+                        <button class="ds-badge" style="cursor:pointer;" onclick="quickAdb('settings get system screen_brightness')">屏幕亮度</button>
+                        <button class="ds-badge" style="cursor:pointer;" onclick="quickAdb('wm size')">屏幕分辨率</button>
+                        <button class="ds-badge" style="cursor:pointer;" onclick="quickAdb('cat /proc/cpuinfo | head -5')">CPU信息</button>
                     </div>
                 </div>
                 <div class="mirror-container" id="mirror-container">
@@ -313,6 +348,43 @@
                     </div>
                     <div class="mirror-recording-indicator" id="mirror-recording" style="display:none;">
                         <span class="recording-dot"></span> 录制中
+                    </div>
+                </div>
+
+                <!-- 设备控制按钮 -->
+                <div id="mirror-controls" style="display:none;margin-top:16px;">
+                    <!-- 导航栏 -->
+                    <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:12px;">
+                        <button class="mirror-ctrl-btn" onclick="mirrorKey('BACK')" title="返回">
+                            <i class="fas fa-arrow-left"></i>
+                            <span>返回</span>
+                        </button>
+                        <button class="mirror-ctrl-btn" onclick="mirrorKey('HOME')" title="桌面">
+                            <i class="fas fa-circle"></i>
+                            <span>桌面</span>
+                        </button>
+                        <button class="mirror-ctrl-btn" onclick="mirrorKey('APP_SWITCH')" title="最近任务">
+                            <i class="fas fa-square"></i>
+                            <span>任务</span>
+                        </button>
+                        <div style="width:1px;height:36px;background:var(--ds-border);margin:0 4px;"></div>
+                        <button class="mirror-ctrl-btn" onclick="mirrorKey('MENU')" title="菜单">
+                            <i class="fas fa-bars"></i>
+                            <span>菜单</span>
+                        </button>
+                        <button class="mirror-ctrl-btn" onclick="mirrorKey('POWER')" title="电源">
+                            <i class="fas fa-power-off"></i>
+                            <span>电源</span>
+                        </button>
+                        <div style="width:1px;height:36px;background:var(--ds-border);margin:0 4px;"></div>
+                        <button class="mirror-ctrl-btn" onclick="mirrorVolumeDown()" title="音量-">
+                            <i class="fas fa-volume-down"></i>
+                            <span>音量-</span>
+                        </button>
+                        <button class="mirror-ctrl-btn" onclick="mirrorVolumeUp()" title="音量+">
+                            <i class="fas fa-volume-up"></i>
+                            <span>音量+</span>
+                        </button>
                     </div>
                 </div>
 
@@ -359,6 +431,7 @@
                         <p class="ds-page-intro-description">管理定时任务与命令</p>
                     </div>
                     <div class="ds-page-intro-actions">
+                        <button class="ds-btn-secondary" onclick="loadTasks()"><i class="fas fa-sync-alt"></i> 刷新</button>
                         <button class="ds-btn-primary" onclick="openTaskModal()"><i class="fas fa-plus"></i> 添加任务</button>
                     </div>
                 </div>
@@ -376,14 +449,18 @@
                 <div class="ds-page-intro">
                     <div>
                         <h1 class="ds-page-intro-title">脚本管理</h1>
-                        <p class="ds-page-intro-description">管理与运行自定义脚本</p>
+                        <p class="ds-page-intro-description">管理与运行自定义 Shell 脚本</p>
+                    </div>
+                    <div class="ds-page-intro-actions">
+                        <button class="ds-btn-secondary" onclick="loadScripts()"><i class="fas fa-sync-alt"></i> 刷新</button>
+                        <button class="ds-btn-primary" onclick="openNewScriptModal()"><i class="fas fa-plus"></i> 新建脚本</button>
                     </div>
                 </div>
                 <div id="script-list">
                     <div class="ds-empty-state">
                         <div class="ds-empty-state-icon"><i class="fas fa-code"></i></div>
                         <div class="ds-empty-state-title">暂无脚本</div>
-                        <div class="ds-empty-state-description">通过配置页面或文件管理添加脚本</div>
+                        <div class="ds-empty-state-description">点击"新建脚本"创建 Shell 脚本</div>
                     </div>
                 </div>
             </section>
@@ -606,39 +683,67 @@
 
     <!-- Task Modal -->
     <div class="ds-modal-overlay" id="task-modal" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
-        <div class="ds-modal-card">
+        <div class="ds-modal-card" style="width:90vw;max-width:700px;">
             <h3 style="font-weight:700;font-size:1.1rem;margin-bottom:16px;" id="task-modal-title">添加任务</h3>
-            <div class="form-group">
-                <label>任务名称</label>
-                <input type="text" id="task-name" class="ds-chat-input" placeholder="任务名称">
+            <div style="display:flex;gap:12px;margin-bottom:12px;">
+                <div class="form-group" style="flex:1;">
+                    <label>任务名称</label>
+                    <input type="text" id="task-name" class="ds-chat-input" placeholder="任务名称">
+                </div>
+                <div class="form-group" style="width:160px;">
+                    <label>任务类型</label>
+                    <select id="task-type" class="ds-chat-input" style="padding:8px 12px;">
+                        <option value="custom">自定义命令</option>
+                        <option value="script">执行脚本</option>
+                    </select>
+                </div>
             </div>
             <div class="form-group">
                 <label>执行命令</label>
-                <input type="text" id="task-command" class="ds-chat-input" placeholder="shell 命令">
+                <textarea id="task-command" class="ds-chat-input" rows="5" style="font-family:monospace;font-size:0.85rem;resize:vertical;" placeholder="# 输入 Shell 命令，每行一条&#10;echo 'Hello TaskMod'&#10;input tap 500 500"></textarea>
             </div>
             <div class="form-group">
-                <label>调度 (cron 表达式)</label>
-                <input type="text" id="task-schedule" class="ds-chat-input" placeholder="0 */6 * * *">
+                <label>调度时间 (cron 表达式)</label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <input type="text" id="task-schedule" class="ds-chat-input" style="flex:1;" placeholder="0 */6 * * *">
+                    <select class="ds-chat-input" style="width:180px;padding:8px 12px;" onchange="document.getElementById('task-schedule').value=this.value">
+                        <option value="">选择预设...</option>
+                        <option value="* * * * *">每分钟</option>
+                        <option value="*/5 * * * *">每5分钟</option>
+                        <option value="0 * * * *">每小时</option>
+                        <option value="0 */6 * * *">每6小时</option>
+                        <option value="0 0 * * *">每天午夜</option>
+                        <option value="0 9 * * 1-5">工作日9点</option>
+                    </select>
+                </div>
             </div>
             <input type="hidden" id="task-edit-id">
             <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:16px;">
                 <button class="ds-btn-secondary" onclick="document.getElementById('task-modal').style.display='none'">取消</button>
-                <button class="ds-btn-primary" onclick="saveTask()">保存</button>
+                <button class="ds-btn-primary" onclick="saveTask()"><i class="fas fa-save"></i> 保存</button>
             </div>
         </div>
     </div>
 
     <!-- Script Editor Modal -->
     <div class="ds-modal-overlay" id="script-modal" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
-        <div class="ds-modal-card" style="width:90vw;max-width:800px;height:80vh;">
-            <h3 style="font-weight:700;font-size:1.1rem;margin-bottom:16px;" id="script-modal-title">编辑脚本</h3>
+        <div class="ds-modal-card" style="width:92vw;max-width:900px;height:85vh;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <h3 style="font-weight:700;font-size:1.1rem;" id="script-modal-title">编辑脚本</h3>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <span id="script-line-info" style="font-size:12px;color:var(--ds-text-secondary);">行 1, 列 1</span>
+                    <button class="ds-btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="formatScript()"><i class="fas fa-indent"></i> 格式化</button>
+                </div>
+            </div>
             <div class="form-group" style="flex:1;display:flex;flex-direction:column;">
-                <label>脚本内容</label>
-                <textarea id="script-editor" class="ds-chat-input" style="flex:1;font-family:monospace;font-size:0.85rem;resize:none;" placeholder="# 在此编写脚本..."></textarea>
+                <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+                    <span style="font-size:11px;color:var(--ds-text-tertiary);padding:4px 0;">快捷键: Tab=缩进 | Shift+Tab=取消缩进 | Ctrl+S=保存</span>
+                </div>
+                <textarea id="script-editor" class="ds-code-editor" placeholder="#!/bin/bash&#10;# 在此编写 Shell 脚本...&#10;&#10;echo 'Hello TaskMod'"></textarea>
             </div>
             <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:12px;">
                 <button class="ds-btn-secondary" onclick="document.getElementById('script-modal').style.display='none'">取消</button>
-                <button class="ds-btn-primary" onclick="saveScript()">保存</button>
+                <button class="ds-btn-primary" onclick="saveScript()"><i class="fas fa-save"></i> 保存</button>
             </div>
         </div>
     </div>

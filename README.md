@@ -541,9 +541,20 @@ POST /api/service/unload - 手动卸载服务
 - **ADB 文本输入转义顺序错误** - 单引号/双引号转义应在反斜杠转义之后执行，导致双重转义问题，影响投屏和 AI 工具的文本输入
 - **AI截图分析API路径错误** - `call_ai_image_analyze` 缺少 `/v1` 前缀，导致截图+AI视觉分析功能无法正常工作
 - **文件上传命令注入风险** - `upload_file_to_device` 未校验文件名，添加路径穿越和特殊字符过滤
+- **TTS播放无声音** - `cmd tts speak` 只尝试单一路径且同步阻塞，改为多路径容错 + 异步后台播放 + 详细错误日志
+- **PCM音频录制无限重试** - `tinycap` 在设备无麦克风时无限刷屏，改为3次失败后停止并记录详细错误
+- **Build版本号不同步** - `build.yml` 的 APK 构建未同步版本号，现已统一从 tag/workflow_dispatch 获取
 
 **功能补充：**
 - **工作流节点类型扩展** - 新增 `ai_generate`（AI生成）、`condition`（条件分支）、`mqtt_publish`（MQTT发布）节点类型
+- **APK现代化重构** - 参照 ClashMetaForAndroid，全部 `Thread` 替换为 Kotlin 协程，Service 实现 `CoroutineScope` 自动管理生命周期
+- **APK WebView缓存优化** - 本地服务器使用 `LOAD_NO_CACHE` 策略，确保每次加载最新UI
+- **APK版本号显示** - WebView User-Agent 包含版本号便于调试
+- **投屏全屏支持** - 新增全屏按钮，全屏时隐藏侧边栏，纯黑背景沉浸式显示
+- **投屏声音同步** - 通过 Web Audio API + AudioWorklet 实时播放设备音频（48kHz 16-bit mono PCM）
+- **投屏鼠标滚轮** - 鼠标滚轮上下滚动映射为设备上下滑动手势
+- **任务/脚本页面重构** - 统一卡片式布局，任务支持编辑/类型选择/cron预设，脚本支持新建/代码编辑器(Tab缩进/Ctrl+S保存/行号显示)
+- **设备控制页面整合** - 主菜单"投屏"改为"设备"，截图/解锁/重启移入设备页面，新增ADB命令输入框+常用命令快捷按钮
 
 ## 许可证
 

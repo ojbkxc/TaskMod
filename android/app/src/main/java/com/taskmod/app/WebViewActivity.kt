@@ -33,7 +33,10 @@ class WebViewActivity : AppCompatActivity() {
             setSupportZoom(true)
             builtInZoomControls = true
             displayZoomControls = false
-            cacheMode = WebSettings.LOAD_DEFAULT
+            // 本地服务器不使用缓存，确保每次加载最新UI
+            cacheMode = WebSettings.LOAD_NO_CACHE
+            // 设置 User-Agent 便于服务端识别
+            userAgentString = "TaskMod-Android/${getVersionName()}"
         }
 
         webView.webChromeClient = object : WebChromeClient() {
@@ -66,6 +69,14 @@ class WebViewActivity : AppCompatActivity() {
             webView.goBack()
         } else {
             super.onBackPressed()
+        }
+    }
+
+    private fun getVersionName(): String {
+        return try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0.0"
+        } catch (e: Exception) {
+            "1.0.0"
         }
     }
 }

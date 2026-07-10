@@ -14,10 +14,15 @@ import android.webkit.*
 import android.widget.*
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
@@ -132,23 +137,23 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "服务未运行", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            Thread {
+            lifecycleScope.launch(Dispatchers.IO) {
                 val (success, _) = serverManager.executeCommand("screencap -p /sdcard/screenshot.png")
-                handler.post {
-                    Toast.makeText(this, if (success) "截屏成功" else "截屏失败", Toast.LENGTH_SHORT).show()
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, if (success) "截屏成功" else "截屏失败", Toast.LENGTH_SHORT).show()
                 }
-            }.start()
+            }
         }
 
         btnUnlock.setOnClickListener {
-            Thread {
+            lifecycleScope.launch(Dispatchers.IO) {
                 serverManager.executeCommand("input keyevent KEYCODE_WAKEUP")
-                Thread.sleep(300)
+                delay(300)
                 val (success, _) = serverManager.executeRoot("input swipe 540 1800 540 600 300")
-                handler.post {
-                    Toast.makeText(this, if (success) "上滑解锁已执行" else "解锁失败", Toast.LENGTH_SHORT).show()
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, if (success) "上滑解锁已执行" else "解锁失败", Toast.LENGTH_SHORT).show()
                 }
-            }.start()
+            }
         }
 
         btnReboot.setOnClickListener {
@@ -156,7 +161,7 @@ class MainActivity : AppCompatActivity() {
                 .setTitle("重启设备")
                 .setMessage("确定要重启设备吗？")
                 .setPositiveButton("重启") { _, _ ->
-                    Thread { serverManager.executeRoot("reboot") }.start()
+                    lifecycleScope.launch(Dispatchers.IO) { serverManager.executeRoot("reboot") }
                 }
                 .setNegativeButton("取消", null)
                 .show()
@@ -186,10 +191,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun checkRootStatus() {
-        Thread {
+        lifecycleScope.launch(Dispatchers.IO) {
             val result = RootHelper.checkRoot()
             val moduleInstalled = RootHelper.isMagiskModuleInstalled()
-            handler.post {
+            withContext(Dispatchers.Main) {
                 when {
                     result.hasRoot && result.method == "magisk" -> {
                         if (moduleInstalled) {
@@ -201,11 +206,10 @@ class MainActivity : AppCompatActivity() {
                             tvRootStatus.setTextColor(getColor(R.color.warning))
                             btnMagiskGuide.text = "安装模块（推荐）"
                             btnMagiskGuide.visibility = View.VISIBLE
-                            // 首次启动自动弹出引导
                             val prefs = getSharedPreferences("taskmod", MODE_PRIVATE)
                             if (prefs.getBoolean("show_guide_first", true)) {
                                 prefs.edit().putBoolean("show_guide_first", false).apply()
-                                startActivity(Intent(this, MagiskGuideActivity::class.java))
+                                startActivity(Intent(this@MainActivity, MagiskGuideActivity::class.java))
                             }
                         }
                     }
@@ -221,7 +225,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
-        }.start()
+        }
     }
 
     private fun updateUI() {

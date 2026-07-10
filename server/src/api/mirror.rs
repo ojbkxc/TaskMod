@@ -188,7 +188,16 @@ pub async fn start_mirror(
     let audio_tx_clone = audio_tx.clone();
     let is_running_clone2 = is_running.clone();
     tokio::spawn(async move {
+        let mut consecutive_failures = 0u32;
+        const MAX_FAILURES: u32 = 3;
+
         while is_running_clone2.load(Ordering::Relaxed) {
+            // 连续失败超过阈值后停止重试，等待下次手动触发
+            if consecutive_failures >= MAX_FAILURES {
+                eprintln!("[mirror] tinycap 连续失败{}次，音频录制已停止（设备可能无麦克风或权限不足）", MAX_FAILURES);
+                break;
+            }
+
             let mut cmd = Command::new("tinycap");
             cmd.arg("/dev/stdout")
                 .arg("-r")
@@ -197,24 +206,48 @@ pub async fn start_mirror(
                 .arg("16")
                 .arg("-c")
                 .arg("1")
-                .stdout(Stdio::piped());
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
 
             let mut process = match cmd.spawn() {
                 Ok(p) => p,
-                Err(_) => {
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                Err(e) => {
+                    consecutive_failures += 1;
+                    eprintln!("[mirror] tinycap 启动失败 ({}): {}", consecutive_failures, e);
+                    tokio::time::sleep(Duration::from_secs(2)).await;
                     continue;
                 }
             };
+
+            // 检查 tinycap 是否立即退出（PCM设备不存在）
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            if let Ok(Some(status)) = process.try_wait() {
+                consecutive_failures += 1;
+                let stderr = process.stderr.take();
+                if let Some(mut stderr) = stderr {
+                    let mut err_msg = String::new();
+                    use tokio::io::AsyncReadExt;
+                    let _ = stderr.read_to_string(&mut err_msg).await;
+                    eprintln!("[mirror] tinycap 退出 ({}): {} - {}", consecutive_failures, status, err_msg.trim());
+                } else {
+                    eprintln!("[mirror] tinycap 退出 ({}): {}", consecutive_failures, status);
+                }
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
+            }
 
             let stdout = match process.stdout.take() {
                 Some(s) => s,
                 None => {
                     let _ = process.kill().await;
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    consecutive_failures += 1;
+                    tokio::time::sleep(Duration::from_secs(2)).await;
                     continue;
                 }
             };
+
+            // 成功启动，重置失败计数
+            consecutive_failures = 0;
             let mut reader = tokio::io::BufReader::new(stdout);
             let mut buf = [0u8; 4096];
             let mut header_buf = Vec::new();

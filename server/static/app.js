@@ -175,6 +175,35 @@
         else showToast(res.message || '解锁失败', 'error');
     }
 
+    /* ===== ADB 命令 ===== */
+    async function sendAdbCommand() {
+        const input = document.getElementById('adb-command-input');
+        const cmd = input.value.trim();
+        if (!cmd) return showToast('请输入命令', 'error');
+
+        const resultDiv = document.getElementById('adb-command-result');
+        const pre = resultDiv.querySelector('pre');
+        resultDiv.style.display = 'block';
+        pre.textContent = '执行中...';
+
+        try {
+            const res = await apiPost('/api/command', { command: cmd });
+            if (res.ok) {
+                const output = res.data || res.message || '(无输出)';
+                pre.textContent = '$ ' + cmd + '\n' + output;
+            } else {
+                pre.textContent = '$ ' + cmd + '\n错误: ' + (res.message || '执行失败');
+            }
+        } catch (e) {
+            pre.textContent = '$ ' + cmd + '\n请求异常: ' + e.message;
+        }
+    }
+
+    function quickAdb(cmd) {
+        document.getElementById('adb-command-input').value = cmd;
+        sendAdbCommand();
+    }
+
     /* ===== 设备工具 (剪贴板/上传/设备信息) ===== */
     async function loadDeviceInfo() {
         const container = document.getElementById('device-info-container');
@@ -1157,6 +1186,9 @@
 
         document.getElementById('mirror-start-btn').style.display = 'none';
         document.getElementById('mirror-stop-btn').style.display = '';
+        document.getElementById('mirror-fullscreen-btn').style.display = '';
+        document.getElementById('mirror-audio-btn').style.display = '';
+        document.getElementById('mirror-controls').style.display = '';
         document.getElementById('mirror-placeholder').style.display = 'none';
         document.getElementById('mirror-canvas').style.display = 'block';
         document.getElementById('mirror-status-text').textContent = '连接中...';
@@ -1168,9 +1200,15 @@
         if (mirrorWs) { mirrorWs.close(); mirrorWs = null; }
         if (mirrorDecoder) { try { mirrorDecoder.close(); } catch(e) {} mirrorDecoder = null; }
         if (mirrorFallbackTimer) { clearInterval(mirrorFallbackTimer); mirrorFallbackTimer = null; }
+        stopMirrorAudio();
+        // 退出全屏
+        if (document.fullscreenElement) document.exitFullscreen();
         await apiPost('/api/mirror/stop', {});
         document.getElementById('mirror-start-btn').style.display = '';
         document.getElementById('mirror-stop-btn').style.display = 'none';
+        document.getElementById('mirror-fullscreen-btn').style.display = 'none';
+        document.getElementById('mirror-audio-btn').style.display = 'none';
+        document.getElementById('mirror-controls').style.display = 'none';
         document.getElementById('mirror-placeholder').style.display = '';
         document.getElementById('mirror-canvas').style.display = 'none';
         document.getElementById('mirror-status').style.display = 'none';
@@ -1409,7 +1447,205 @@
             }
             touchStart = null;
         });
+
+        // 鼠标滚轮 → 设备上下滑动
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const cx = Math.round((e.clientX - rect.left) / rect.width * mirrorWidth);
+            const cy = Math.round((e.clientY - rect.top) / rect.height * mirrorHeight);
+            // 向上滚 = 屏幕上滑（内容下移），向下滚 = 屏幕下滑
+            const dist = 300;
+            const dy = e.deltaY > 0 ? -dist : dist; // deltaY>0=向下滚=屏幕上滑
+            apiPost('/api/mirror/control', { action: 'swipe', x: cx, y: cy, x2: cx, y2: cy + dy, duration: 200 });
+        }, { passive: false });
     });
+
+    /* ===== Mirror Fullscreen ===== */
+    function toggleMirrorFullscreen() {
+        const container = document.getElementById('mirror-container');
+        if (!document.fullscreenElement) {
+            container.requestFullscreen().then(() => {
+                document.getElementById('mirror-fullscreen-btn').innerHTML = '<i class="fas fa-compress"></i> 退出全屏';
+                // 全屏时隐藏侧边栏
+                document.querySelector('.side-tabs').style.display = 'none';
+            }).catch(e => showToast('无法进入全屏: ' + e.message, 'error'));
+        } else {
+            document.exitFullscreen().then(() => {
+                document.getElementById('mirror-fullscreen-btn').innerHTML = '<i class="fas fa-expand"></i> 全屏';
+                document.querySelector('.side-tabs').style.display = '';
+            });
+        }
+    }
+
+    // 监听全屏变化（按Esc退出时恢复按钮文字）
+    document.addEventListener('fullscreenchange', () => {
+        if (!document.fullscreenElement) {
+            document.getElementById('mirror-fullscreen-btn').innerHTML = '<i class="fas fa-expand"></i> 全屏';
+            document.querySelector('.side-tabs').style.display = '';
+        }
+    });
+
+    // 键盘快捷键（投屏激活时）
+    document.addEventListener('keydown', (e) => {
+        // 只在投屏运行中且不是输入框时响应
+        if (currentTab !== 'mirror' || !mirrorWs || mirrorWs.readyState > 1) return;
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+        switch (e.key) {
+            case 'Escape':
+                // 全屏时按Esc由浏览器处理，非全屏时按Esc = 返回
+                if (!document.fullscreenElement) { e.preventDefault(); mirrorKey('BACK'); }
+                break;
+            case 'ArrowUp':
+                e.preventDefault();
+                mirrorVolumeUp();
+                break;
+            case 'ArrowDown':
+                e.preventDefault();
+                mirrorVolumeDown();
+                break;
+            case 'Home':
+                e.preventDefault();
+                mirrorKey('HOME');
+                break;
+            case 'F11':
+                e.preventDefault();
+                toggleMirrorFullscreen();
+                break;
+        }
+    });
+
+    /* ===== Mirror Device Controls ===== */
+    const KEY_MAP = {
+        'BACK': 4,
+        'HOME': 3,
+        'APP_SWITCH': 187,
+        'MENU': 82,
+        'POWER': 26,
+        'VOLUME_UP': 24,
+        'VOLUME_DOWN': 25
+    };
+
+    function mirrorKey(name) {
+        const code = KEY_MAP[name];
+        if (code !== undefined) {
+            apiPost('/api/command', { command: 'input keyevent ' + code });
+        }
+    }
+
+    function mirrorVolumeUp() {
+        apiPost('/api/command', { command: 'input keyevent 24' });
+    }
+
+    function mirrorVolumeDown() {
+        apiPost('/api/command', { command: 'input keyevent 25' });
+    }
+
+    /* ===== Mirror Audio (Web Audio API) ===== */
+    let mirrorAudioWs = null;
+    let mirrorAudioCtx = null;
+    let mirrorAudioNode = null;
+    let mirrorAudioEnabled = false;
+
+    function toggleMirrorAudio() {
+        if (mirrorAudioEnabled) {
+            stopMirrorAudio();
+        } else {
+            startMirrorAudio();
+        }
+    }
+
+    function startMirrorAudio() {
+        try {
+            // 创建 AudioContext: 48000Hz, 16-bit mono PCM
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            mirrorAudioCtx = new AudioCtx({ sampleRate: 48000 });
+
+            // 使用 AudioWorklet 播放 PCM 数据
+            const workletCode = `
+                class PCMPlayerProcessor extends AudioWorkletProcessor {
+                    constructor() {
+                        super();
+                        this._buffer = new Float32Array(0);
+                        this.port.onmessage = (e) => {
+                            const pcm16 = e.data; // Int16Array
+                            const float32 = new Float32Array(pcm16.length);
+                            for (let i = 0; i < pcm16.length; i++) {
+                                float32[i] = pcm16[i] / 32768.0;
+                            }
+                            // 追加到缓冲区
+                            const newBuf = new Float32Array(this._buffer.length + float32.length);
+                            newBuf.set(this._buffer, 0);
+                            newBuf.set(float32, this._buffer.length);
+                            this._buffer = newBuf;
+                        };
+                    }
+                    process(inputs, outputs) {
+                        const output = outputs[0][0]; // mono
+                        if (this._buffer.length >= output.length) {
+                            output.set(this._buffer.subarray(0, output.length));
+                            this._buffer = this._buffer.subarray(output.length);
+                        } else {
+                            // 缓冲不足时填充静音
+                            output.fill(0);
+                            if (this._buffer.length > 0) {
+                                output.set(this._buffer, 0);
+                                this._buffer = new Float32Array(0);
+                            }
+                        }
+                        return true;
+                    }
+                }
+                registerProcessor('pcm-player', PCMPlayerProcessor);
+            `;
+            const blob = new Blob([workletCode], { type: 'application/javascript' });
+            const url = URL.createObjectURL(blob);
+
+            mirrorAudioCtx.audioWorklet.addModule(url).then(() => {
+                mirrorAudioNode = new AudioWorkletNode(mirrorAudioCtx, 'pcm-player');
+                mirrorAudioNode.connect(mirrorAudioCtx.destination);
+                URL.revokeObjectURL(url);
+
+                // 连接音频 WebSocket
+                const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                mirrorAudioWs = new WebSocket(proto + '//' + location.host + '/ws/mirror/audio');
+                mirrorAudioWs.binaryType = 'arraybuffer';
+
+                mirrorAudioWs.onmessage = (evt) => {
+                    if (evt.data instanceof ArrayBuffer && mirrorAudioNode) {
+                        // 后端发送原始 PCM 16-bit mono 数据
+                        const pcm16 = new Int16Array(evt.data);
+                        mirrorAudioNode.port.postMessage(pcm16);
+                    }
+                };
+
+                mirrorAudioWs.onclose = () => {
+                    if (mirrorAudioEnabled) stopMirrorAudio();
+                };
+
+                mirrorAudioEnabled = true;
+                const btn = document.getElementById('mirror-audio-btn');
+                btn.innerHTML = '<i class="fas fa-volume-mute"></i> 静音';
+                btn.classList.add('ds-btn-active');
+                showToast('设备声音已开启', 'success');
+            }).catch(e => {
+                showToast('AudioWorklet 加载失败: ' + e.message, 'error');
+            });
+        } catch (e) {
+            showToast('音频初始化失败: ' + e.message, 'error');
+        }
+    }
+
+    function stopMirrorAudio() {
+        mirrorAudioEnabled = false;
+        if (mirrorAudioWs) { mirrorAudioWs.close(); mirrorAudioWs = null; }
+        if (mirrorAudioNode) { mirrorAudioNode.disconnect(); mirrorAudioNode = null; }
+        if (mirrorAudioCtx) { mirrorAudioCtx.close(); mirrorAudioCtx = null; }
+        const btn = document.getElementById('mirror-audio-btn');
+        btn.innerHTML = '<i class="fas fa-volume-up"></i> 声音';
+        btn.classList.remove('ds-btn-active');
+    }
 
     /* ===== Tasks ===== */
     async function loadTasks() {
@@ -1420,13 +1656,25 @@
             return;
         }
         list.innerHTML = res.data.map(t => {
-            return '<div class="task-item">' +
-                '<div style="flex:1;"><strong>' + escapeHtml(t.task_type || t.script || '未命名') + '</strong><br>' +
-                '<code style="font-size:0.75rem;opacity:0.6;">' + escapeHtml(t.script || '') + '</code><br>' +
-                '<span style="font-size:0.7rem;opacity:0.5;">' + escapeHtml(t.time || '手动') + ' ' + escapeHtml(t.weeks || '') + '</span></div>' +
-                '<div style="display:flex;gap:6px;">' +
-                '<button class="ds-btn-primary" style="font-size:0.7rem;padding:4px 8px;" onclick="triggerTask(\'' + t.id + '\')"><i class="fas fa-play"></i></button>' +
-                '<button class="ds-btn-danger" style="font-size:0.7rem;padding:4px 8px;" onclick="deleteTask(\'' + t.id + '\')"><i class="fas fa-trash"></i></button>' +
+            const name = escapeHtml(t.task_type || t.script || '未命名');
+            const cmd = escapeHtml(t.script || '');
+            const schedule = escapeHtml(t.time || '');
+            const weeks = escapeHtml(t.weeks || '');
+            const typeIcon = t.task_type === 'script' ? 'fa-scroll' : 'fa-terminal';
+            const scheduleText = schedule ? (schedule + (weeks ? ' ' + weeks : '')) : '手动触发';
+            return '<div class="script-item">' +
+                '<div style="flex:1;min-width:0;">' +
+                '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
+                '<i class="fas ' + typeIcon + '" style="opacity:0.5;font-size:14px;"></i>' +
+                '<strong style="font-size:14px;">' + name + '</strong>' +
+                '<span class="ds-badge" style="font-size:10px;">' + scheduleText + '</span>' +
+                '</div>' +
+                '<code style="font-size:12px;opacity:0.6;display:block;white-space:pre-wrap;word-break:break-all;max-height:60px;overflow:hidden;">' + cmd + '</code>' +
+                '</div>' +
+                '<div style="display:flex;gap:6px;flex-shrink:0;">' +
+                '<button class="ds-btn-primary" style="font-size:12px;padding:6px 12px;" onclick="triggerTask(\'' + t.id + '\')" title="立即执行"><i class="fas fa-play"></i></button>' +
+                '<button class="ds-btn-secondary" style="font-size:12px;padding:6px 12px;" onclick="editTask(\'' + t.id + '\')" title="编辑"><i class="fas fa-edit"></i></button>' +
+                '<button class="ds-btn-danger" style="font-size:12px;padding:6px 12px;" onclick="deleteTask(\'' + t.id + '\')" title="删除"><i class="fas fa-trash"></i></button>' +
                 '</div></div>';
         }).join('');
     }
@@ -1436,15 +1684,21 @@
         document.getElementById('task-name').value = '';
         document.getElementById('task-command').value = '';
         document.getElementById('task-schedule').value = '';
+        document.getElementById('task-type').value = 'custom';
         document.getElementById('task-edit-id').value = '';
         document.getElementById('task-modal').style.display = 'flex';
     }
 
-    function editTask(id, name, command, schedule) {
+    async function editTask(id) {
+        const res = await apiGet('/api/tasks');
+        if (!res.ok) return showToast('获取任务失败', 'error');
+        const t = (res.data || []).find(x => x.id == id);
+        if (!t) return showToast('任务不存在', 'error');
         document.getElementById('task-modal-title').textContent = '编辑任务';
-        document.getElementById('task-name').value = name;
-        document.getElementById('task-command').value = command;
-        document.getElementById('task-schedule').value = schedule;
+        document.getElementById('task-name').value = t.task_type || '';
+        document.getElementById('task-command').value = t.script || '';
+        document.getElementById('task-schedule').value = t.time || '';
+        document.getElementById('task-type').value = 'custom';
         document.getElementById('task-edit-id').value = id;
         document.getElementById('task-modal').style.display = 'flex';
     }
@@ -1453,6 +1707,7 @@
         const name = document.getElementById('task-name').value.trim();
         const command = document.getElementById('task-command').value.trim();
         const schedule = document.getElementById('task-schedule').value.trim();
+        const taskType = document.getElementById('task-type').value;
         if (!command) return showToast('命令为必填', 'error');
 
         const editId = document.getElementById('task-edit-id').value;
@@ -1462,7 +1717,7 @@
         const res = await apiPost('/api/tasks', { 
             time: schedule || '* * * * *', 
             script: command, 
-            task_type: name || 'custom'
+            task_type: name || taskType || 'custom'
         });
         if (res.ok) {
             showToast('任务已保存', 'success');
@@ -1501,13 +1756,29 @@
         list.innerHTML = res.data.map(s => {
             const name = typeof s === 'string' ? s : s.name;
             return '<div class="script-item">' +
-                '<div style="flex:1;"><i class="fas fa-file-code" style="margin-right:8px;opacity:0.5;"></i><strong>' + escapeHtml(name) + '</strong></div>' +
-                '<div style="display:flex;gap:6px;">' +
-                '<button class="ds-btn-primary" style="font-size:0.7rem;padding:4px 8px;" onclick="runScript(\'' + escapeHtml(name) + '\')"><i class="fas fa-play"></i> 运行</button>' +
-                '<button class="ds-btn-secondary" style="font-size:0.7rem;padding:4px 8px;" onclick="openScriptEditor(\'' + escapeHtml(name) + '\')"><i class="fas fa-edit"></i> 编辑</button>' +
-                '<button class="ds-btn-danger" style="font-size:0.7rem;padding:4px 8px;" onclick="deleteScript(\'' + escapeHtml(name) + '\')"><i class="fas fa-trash"></i></button>' +
+                '<div style="flex:1;min-width:0;">' +
+                '<div style="display:flex;align-items:center;gap:8px;">' +
+                '<i class="fas fa-file-code" style="opacity:0.5;font-size:14px;"></i>' +
+                '<strong style="font-size:14px;">' + escapeHtml(name) + '</strong>' +
+                '<span class="ds-badge" style="font-size:10px;">Shell</span>' +
+                '</div>' +
+                '</div>' +
+                '<div style="display:flex;gap:6px;flex-shrink:0;">' +
+                '<button class="ds-btn-primary" style="font-size:12px;padding:6px 12px;" onclick="runScript(\'' + escapeHtml(name) + '\')" title="运行"><i class="fas fa-play"></i> 运行</button>' +
+                '<button class="ds-btn-secondary" style="font-size:12px;padding:6px 12px;" onclick="openScriptEditor(\'' + escapeHtml(name) + '\')" title="编辑"><i class="fas fa-edit"></i> 编辑</button>' +
+                '<button class="ds-btn-danger" style="font-size:12px;padding:6px 12px;" onclick="deleteScript(\'' + escapeHtml(name) + '\')" title="删除"><i class="fas fa-trash"></i></button>' +
                 '</div></div>';
         }).join('');
+    }
+
+    function openNewScriptModal() {
+        document.getElementById('script-modal-title').textContent = '新建脚本';
+        document.getElementById('script-editor').value = '#!/bin/bash\n# TaskMod 脚本\n\n';
+        document.getElementById('script-modal').style.display = 'flex';
+        document.getElementById('script-modal').dataset.name = '';
+        document.getElementById('script-modal').dataset.isNew = 'true';
+        document.getElementById('script-editor').focus();
+        updateLineInfo();
     }
 
     async function runScript(name) {
@@ -1520,22 +1791,39 @@
         document.getElementById('script-modal-title').textContent = '编辑脚本: ' + name;
         document.getElementById('script-editor').value = '加载中...';
         document.getElementById('script-modal').style.display = 'flex';
+        document.getElementById('script-modal').dataset.name = name;
+        document.getElementById('script-modal').dataset.isNew = 'false';
         const res = await apiGet('/api/scripts/' + encodeURIComponent(name));
         if (res.ok) {
             document.getElementById('script-editor').value = typeof res.data === 'string' ? res.data : (res.data?.content || JSON.stringify(res.data, null, 2));
         } else {
-            document.getElementById('script-editor').value = '# 新脚本';
+            document.getElementById('script-editor').value = '#!/bin/bash\n';
         }
-        document.getElementById('script-modal').dataset.name = name;
+        updateLineInfo();
     }
 
     async function saveScript() {
-        const name = document.getElementById('script-modal').dataset.name;
+        const modal = document.getElementById('script-modal');
+        let name = modal.dataset.name;
+        const isNew = modal.dataset.isNew === 'true';
+
+        if (isNew && !name) {
+            name = prompt('请输入脚本文件名 (以 .sh 结尾):', 'script_' + Date.now() + '.sh');
+            if (!name) return;
+            if (!name.endsWith('.sh')) name += '.sh';
+            modal.dataset.name = name;
+        }
         if (!name) return showToast('未知脚本名', 'error');
+
         const content = document.getElementById('script-editor').value;
         const res = await apiPut('/api/scripts/' + encodeURIComponent(name), { content });
-        if (res.ok) { showToast('脚本已保存', 'success'); document.getElementById('script-modal').style.display = 'none'; }
-        else showToast(res.message || '保存失败', 'error');
+        if (res.ok) {
+            showToast('脚本已保存', 'success');
+            modal.style.display = 'none';
+            loadScripts();
+        } else {
+            showToast(res.message || '保存失败', 'error');
+        }
     }
 
     async function deleteScript(name) {
@@ -1543,6 +1831,68 @@
         const res = await apiDelete('/api/scripts/' + encodeURIComponent(name));
         if (res.ok) { showToast('已删除', 'success'); loadScripts(); }
         else showToast(res.message || '删除失败', 'error');
+    }
+
+    // 脚本编辑器增强：Tab缩进、Ctrl+S保存、行号显示
+    document.addEventListener('DOMContentLoaded', () => {
+        const editor = document.getElementById('script-editor');
+        if (!editor) return;
+
+        // Tab 键缩进
+        editor.addEventListener('keydown', (e) => {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = editor.selectionStart;
+                const end = editor.selectionEnd;
+                if (e.shiftKey) {
+                    // Shift+Tab: 取消缩进
+                    const lineStart = editor.value.lastIndexOf('\n', start - 1) + 1;
+                    const lineText = editor.value.substring(lineStart, start);
+                    if (lineText.startsWith('  ')) {
+                        editor.value = editor.value.substring(0, lineStart) + editor.value.substring(lineStart + 2);
+                        editor.selectionStart = editor.selectionEnd = start - 2;
+                    } else if (lineText.startsWith('\t')) {
+                        editor.value = editor.value.substring(0, lineStart) + editor.value.substring(lineStart + 1);
+                        editor.selectionStart = editor.selectionEnd = start - 1;
+                    }
+                } else {
+                    // Tab: 插入2个空格
+                    editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
+                    editor.selectionStart = editor.selectionEnd = start + 2;
+                }
+                updateLineInfo();
+            }
+
+            // Ctrl+S 保存
+            if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                saveScript();
+            }
+        });
+
+        // 光标位置更新
+        editor.addEventListener('click', updateLineInfo);
+        editor.addEventListener('keyup', updateLineInfo);
+        editor.addEventListener('input', updateLineInfo);
+    });
+
+    function updateLineInfo() {
+        const editor = document.getElementById('script-editor');
+        if (!editor) return;
+        const text = editor.value.substring(0, editor.selectionStart);
+        const lines = text.split('\n');
+        const line = lines.length;
+        const col = lines[lines.length - 1].length + 1;
+        const info = document.getElementById('script-line-info');
+        if (info) info.textContent = '行 ' + line + ', 列 ' + col;
+    }
+
+    function formatScript() {
+        const editor = document.getElementById('script-editor');
+        if (!editor) return;
+        // 简单格式化：去除行尾空格，确保末尾有换行
+        editor.value = editor.value.replace(/[ \t]+$/gm, '').replace(/\n*$/, '\n');
+        showToast('已格式化', 'info');
     }
 
     /* ===== TTS ===== */
