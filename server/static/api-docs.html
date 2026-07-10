@@ -111,9 +111,9 @@
 }</pre>
             <h3>响应示例</h3>
             <pre><span class="comment">// 成功</span>
-{ <span class="key">"success"</span>: <span class="number">true</span>, <span class="key">"message"</span>: <span class="string">"你好，欢迎使用 TaskMod"</span> }
+{ <span class="key">"success"</span>: <span class="number">true</span>, <span class="key">"data"</span>: <span class="string">"语音播放成功"</span>, <span class="key">"message"</span>: <span class="string">"你好，欢迎使用 TaskMod"</span> }
 <span class="comment">// 失败</span>
-{ <span class="key">"success"</span>: <span class="number">false</span>, <span class="key">"message"</span>: <span class="string">"TTS 播放失败，请确认设备已安装 TTS 引擎..."</span> }</pre>
+{ <span class="key">"success"</span>: <span class="number">false</span>, <span class="key">"data"</span>: <span class="number">null</span>, <span class="key">"message"</span>: <span class="string">"TTS 播放失败，请确认设备已安装 TTS 引擎..."</span> }</pre>
             <h3>在线测试</h3>
             <div class="input-row">
                 <label>文本:</label>
@@ -294,7 +294,7 @@ curl -X POST http://localhost:2718/api/tts/test \
             const res = await fetch(BASE + '/api/tts/speak', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text, engine: engine || undefined, rate: 1.0, pitch: 1.0 })
+                body: JSON.stringify({ text, engine: engine || undefined, rate: 1.0, pitch: 1.0, volume: 1.0 })
             });
             const json = await res.json();
             el.innerHTML = '<pre>' + JSON.stringify(json, null, 2) + '</pre>';

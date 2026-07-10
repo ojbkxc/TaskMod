@@ -1583,6 +1583,10 @@
                 document.getElementById('tts-pitch').value = d.default_pitch;
                 document.getElementById('tts-pitch-val').textContent = d.default_pitch;
             }
+            if (d.default_volume) {
+                document.getElementById('tts-volume').value = d.default_volume;
+                document.getElementById('tts-volume-val').textContent = d.default_volume;
+            }
         }
     }
 
@@ -1599,7 +1603,8 @@
     async function saveTtsSettings() {
         const body = {
             rate: parseFloat(document.getElementById('tts-speed').value),
-            pitch: parseFloat(document.getElementById('tts-pitch').value)
+            pitch: parseFloat(document.getElementById('tts-pitch').value),
+            volume: parseFloat(document.getElementById('tts-volume').value)
         };
         const res = await apiPut('/api/tts/settings', body);
         if (res.ok) showToast('TTS设置已保存', 'success');

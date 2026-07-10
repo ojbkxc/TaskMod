@@ -81,6 +81,21 @@ async fn get_default_engine() -> Option<String> {
     None
 }
 
+/// 从 Android settings 读取一个 f32 值
+async fn get_system_setting(key: &str) -> Option<f32> {
+    if let Ok(output) = Command::new("/system/bin/settings")
+        .args(["get", "system", key])
+        .output()
+        .await
+    {
+        let val = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !val.is_empty() && val != "null" {
+            return val.parse::<f32>().ok();
+        }
+    }
+    None
+}
+
 /// 通过 `cmd tts list engines` 获取引擎列表
 async fn list_engines_cmd() -> Vec<String> {
     let mut engines = Vec::new();
@@ -292,34 +307,9 @@ pub async fn speak(Json(req): Json<TtsRequest>) -> Json<ApiResponse<String>> {
         }
     }
 
-    // 方法2: 通过 am startservice 启动系统 TTS 服务朗读
-    // 使用 android.speech.tts.engine.TTS_SPEAK 隐式 Intent
-    let engine = req.engine.as_deref().unwrap_or("com.google.android.tts");
-    let escaped_text = text.replace('\'', "'\\''");
-    let speak_cmd = format!(
-        "am startservice -a android.speech.tts.engine.TTS_SPEAK -e text '{}' {}",
-        escaped_text,
-        if engine.is_empty() { String::new() } else { format!("-n {}/.SpeakService", engine) }
-    );
-
-    match Command::new("/system/bin/sh")
-        .args(["-c", &speak_cmd])
-        .output()
-        .await
-    {
-        Ok(output) => {
-            if output.status.success() {
-                return Json(ApiResponse::ok_msg("语音播放成功".to_string(), text));
-            }
-        }
-        Err(_) => {}
-    }
-
-    // 方法3: 通过 input 命令间接调用 TTS（最后的备用方案）
-    // 写入临时脚本并用 am broadcast 触发
+    // 方法1 失败，返回错误提示
     Json(ApiResponse::err(&format!(
-        "TTS 播放失败，请确认设备已安装 TTS 引擎({})且已在系统设置中配置",
-        engine
+        "TTS 播放失败，请确认设备已安装 TTS 引擎且已在系统设置中配置"
     )))
 }
 
@@ -368,49 +358,24 @@ pub struct TtsSettings {
 pub async fn get_tts_settings() -> Json<ApiResponse<TtsSettings>> {
     let default_engine = get_default_engine().await;
     
-    // 获取当前设置的语速、音调、音量
-    let mut rate = 1.0;
-    let mut pitch = 1.0;
-    let mut volume = 1.0;
+    // 从系统 settings 读取当前 TTS 参数
+    let rate = get_system_setting("tts_default_rate").await.unwrap_or(1.0);
+    let pitch = get_system_setting("tts_default_pitch").await.unwrap_or(1.0);
+    let volume = get_system_setting("tts_default_volume").await.unwrap_or(1.0);
     
-    // 从settings获取当前TTS设置
-    if let Ok(output) = Command::new("/system/bin/settings")
-        .args(["get", "system", "tts_default_rate"])
-        .output()
-        .await
-    {
-        let val = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !val.is_empty() && val != "null" {
-            if let Ok(r) = val.parse::<f32>() {
-                rate = r;
-            }
-        }
-    }
-    
-    if let Ok(output) = Command::new("/system/bin/settings")
-        .args(["get", "system", "tts_default_pitch"])
-        .output()
-        .await
-    {
-        let val = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !val.is_empty() && val != "null" {
-            if let Ok(p) = val.parse::<f32>() {
-                pitch = p;
-            }
-        }
-    }
-    
-    // 获取可用引擎列表
-    let mut engines = Vec::new();
+    // 获取可用引擎列表（使用 HashSet 去重）
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut engines: Vec<TtsEngineInfo> = Vec::new();
     for pkg in list_engines_cmd().await {
-        engines.push(TtsEngineInfo {
-            label: label_for_engine(&pkg),
-            package_name: pkg,
-        });
+        if seen.insert(pkg.clone()) {
+            engines.push(TtsEngineInfo {
+                label: label_for_engine(&pkg),
+                package_name: pkg,
+            });
+        }
     }
-    
     for pkg in list_engines_pm().await {
-        if !engines.iter().any(|e| e.package_name == pkg) {
+        if seen.insert(pkg.clone()) {
             engines.push(TtsEngineInfo {
                 label: label_for_engine(&pkg),
                 package_name: pkg,
@@ -446,6 +411,13 @@ pub async fn update_tts_settings(Json(req): Json<TtsSettingsRequest>) -> Json<Ap
     if let Some(pitch) = req.pitch {
         let _ = Command::new("/system/bin/settings")
             .args(["put", "system", "tts_default_pitch", &format!("{:.1}", pitch)])
+            .output()
+            .await;
+    }
+
+    if let Some(volume) = req.volume {
+        let _ = Command::new("/system/bin/settings")
+            .args(["put", "system", "tts_default_volume", &format!("{:.1}", volume)])
             .output()
             .await;
     }
