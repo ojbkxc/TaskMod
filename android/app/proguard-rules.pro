@@ -1,0 +1,3 @@
+-keep class com.taskmod.app.** { *; }
+-keepclassmembers class com.taskmod.app.** { *; }
+-dontwarn org.jetbrains.**

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TaskMod</string>
+    <string name="tile_server">TaskMod 服务</string>
+    <string name="tile_screenshot">TaskMod 截屏</string>
+    <string name="tile_unlock">TaskMod 解锁</string>
+    <string name="widget_name">TaskMod 状态</string>
+    <string name="widget_description">显示 TaskMod 服务状态</string>
+    <string name="notification_channel">TaskMod 服务</string>
+    <string name="notification_channel_desc">TaskMod 后台服务通知</string>
+    <string name="notification_title">TaskMod 运行中</string>
+    <string name="notification_text">服务已启动 - 端口 9527</string>
+    <string name="action_screenshot">截屏</string>
+    <string name="action_unlock">解锁</string>
+    <string name="action_reboot">重启</string>
+    <string name="action_open">打开面板</string>
+    <string name="action_stop">停止服务</string>
+    <string name="status_running">运行中</string>
+    <string name="status_stopped">已停止</string>
+    <string name="status_starting">启动中…</string>
+    <string name="status_error">启动失败</string>
+    <string name="btn_start">启动服务</string>
+    <string name="btn_stop">停止服务</string>
+    <string name="btn_open_panel">打开管理面板</string>
+    <string name="btn_magisk_guide">安装 Magisk 模块（完整功能）</string>
+    <string name="dialog_root_title">需要 Root 权限</string>
+    <string name="dialog_root_msg">设备控制功能（ADB命令、截屏、触控）需要 Root 权限。\n\n您可以：\n1. 安装 Magisk 模块获得完整功能\n2. 继续使用 AI 聊天功能（无需 Root）</string>
+    <string name="dialog_root_ok">我知道了</string>
+    <string name="dialog_root_magisk">安装 Magisk 模块</string>
+    <string name="update_available">发现新版本 %1$s</string>
+    <string name="update_download">下载更新</string>
+    <string name="update_skip">跳过</string>
+</resources>
