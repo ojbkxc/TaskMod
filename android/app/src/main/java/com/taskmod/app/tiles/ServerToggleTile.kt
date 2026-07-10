@@ -21,7 +21,7 @@ class ServerToggleTile : TileService() {
 
     override fun onClick() {
         super.onClick()
-        val manager = ServerManager(this)
+        val manager = ServerManager.getInstance(this)
         if (manager.isRunning()) {
             TaskModService.stop(this)
             qsTile?.let {

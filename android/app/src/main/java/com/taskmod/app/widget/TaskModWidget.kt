@@ -34,7 +34,7 @@ class TaskModWidget : AppWidgetProvider() {
     companion object {
         fun updateAppWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int) {
             val views = RemoteViews(context.packageName, R.layout.widget_layout)
-            val manager = ServerManager(context)
+            val manager = ServerManager.getInstance(context)
             val running = manager.isRunning()
 
             views.setTextViewText(R.id.widget_status_text, if (running) "运行中" else "已停止")
