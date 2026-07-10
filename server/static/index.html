@@ -208,6 +208,17 @@
             100% { background-position: -200% 0; }
         }
 
+        /* Utility classes */
+        .flex { display: flex; }
+        .items-center { align-items: center; }
+        .gap-2 { gap: 8px; }
+        .min-w-0 { min-width: 0; }
+        .text-sm { font-size: 13px; }
+        .font-semibold { font-weight: 600; }
+        .w-6 { width: 24px; }
+        .h-6 { height: 24px; }
+        .whitespace-pre-wrap { white-space: pre-wrap; }
+
         .animate-fade-in {
             animation: fadeIn 0.2s ease-out;
         }
@@ -1703,6 +1714,42 @@
             height: 13px;
         }
 
+        /* Chat message styling - aligned with deepseek-pp-main */
+        .ds-chat-message-row {
+            display: flex;
+            margin-bottom: 16px;
+            animation: fadeIn 0.2s ease-out;
+        }
+
+        .ds-chat-message-row-user {
+            justify-content: flex-end;
+        }
+
+        .ds-chat-message-row-assistant {
+            justify-content: flex-start;
+        }
+
+        .ds-chat-message {
+            font-size: 13px;
+            line-height: 1.72;
+        }
+
+        .ds-chat-message-user {
+            max-width: min(86%, 420px);
+            border-radius: 2px 14px 14px 14px;
+            background: var(--ds-surface);
+            color: var(--ds-text);
+            padding: 8px 12px;
+            box-shadow: var(--ds-shadow-sm);
+            border: 1px solid var(--ds-border);
+        }
+
+        .ds-chat-message-assistant {
+            width: 100%;
+            max-width: 100%;
+            color: var(--ds-text);
+        }
+
         .ds-badge-success {
             color: var(--ds-success);
             background: var(--ds-success-bg);
@@ -1874,32 +1921,46 @@
             <section id="tab-chat" class="tab-content" style="display:none;">
                 <div class="ds-chat-page">
                 <div class="ds-chat-header">
-                    <div class="ds-page-intro" style="flex:1;">
-                        <h1 style="font-size:1.25rem;font-weight:700;">AI 助手</h1>
-                    </div>
-                    <div class="provider-selector" id="provider-selector">
-                        <div class="ds-chat-current-config">
-                            <span id="current-provider-name">未选择</span>
-                            <span id="current-model-name" class="ds-badge-success">--</span>
+                    <div class="ds-chat-header-top">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm font-semibold" style="color:var(--ds-text);">AI 助手</span>
+                                <span class="ds-chat-provider-badge" id="current-provider-name">未选择</span>
+                            </div>
+                            <p class="ds-chat-subtitle">通过AI控制Android设备，执行ADB命令和脚本</p>
                         </div>
-                        <button class="ds-btn-secondary" style="font-size:0.75rem;padding:4px 10px;" onclick="openProviderModal()">管理</button>
+                        <div class="ds-chat-header-actions">
+                            <button class="ds-chat-icon-button" onclick="clearChat()" title="新对话">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M5 12h14"/></svg>
+                            </button>
+                            <button class="ds-chat-text-button" onclick="openProviderModal()">管理</button>
+                        </div>
                     </div>
                 </div>
                 <div class="ds-chat-messages" id="chat-messages">
-                    <div class="ds-empty-state">
-                        <i class="fas fa-robot" style="font-size:2.5rem;opacity:0.3;"></i>
-                        <p>开始与 AI 对话吧</p>
-                        <p style="font-size:0.8rem;opacity:0.5;">选择一个提供商并输入消息</p>
+                    <div class="ds-chat-empty">
+                        <div class="ds-empty-state-icon">
+                            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                            </svg>
+                        </div>
+                        <div class="ds-empty-state-title">开始与 AI 对话</div>
+                        <div class="ds-empty-state-description">选择一个AI提供商，然后输入消息控制设备</div>
                     </div>
                 </div>
-                <div class="ds-chat-composer-wrap">
+                <footer class="ds-chat-composer-wrap">
                     <div class="ds-chat-composer">
                         <textarea class="ds-chat-input" id="chat-input" placeholder="输入消息..." rows="1"></textarea>
-                        <button class="ds-chat-send-button" id="chat-send-btn" onclick="sendChatMessage()">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m0 0l-7 7m7-7l7 7"/></svg>
-                        </button>
+                        <div class="ds-chat-composer-actions">
+                            <span class="ds-chat-current-config" id="current-model-name">--</span>
+                            <div class="ds-chat-composer-buttons">
+                                <button class="ds-chat-send-button" id="chat-send-btn" onclick="sendChatMessage()" title="发送">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m0 0l-6 6m6-6l6 6"/></svg>
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                </div>
+                </footer>
                 </div>
             </section>
 
@@ -2320,7 +2381,6 @@
     }
 
     function updateProviderSelector(providers) {
-        const sel = document.getElementById('provider-selector');
         if (!providers || providers.length === 0) {
             document.getElementById('current-provider-name').textContent = '未配置';
             document.getElementById('current-model-name').textContent = '--';
@@ -2335,6 +2395,18 @@
         currentModel = p.model || '';
         document.getElementById('current-provider-name').textContent = p.name || '未知';
         document.getElementById('current-model-name').textContent = currentModel || '--';
+    }
+
+    function clearChat() {
+        const container = document.getElementById('chat-messages');
+        container.innerHTML = '<div class="ds-chat-empty"><div class="ds-empty-state-icon"><svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg></div><div class="ds-empty-state-title">开始与 AI 对话</div><div class="ds-empty-state-description">选择一个AI提供商，然后输入消息控制设备</div></div>';
+        currentAssistantEl = null;
+        isChatStreaming = false;
+        if (chatWs && chatWs.readyState === WebSocket.OPEN) {
+            chatWs.close();
+            chatWs = null;
+        }
+        showToast('已开始新对话', 'info');
     }
 
     function openProviderModal() {
@@ -2367,6 +2439,7 @@
         document.getElementById('current-model-name').textContent = model || '--';
         loadProviders();
         showToast('已切换提供商', 'success');
+        document.getElementById('provider-modal').style.display = 'none';
     }
 
     async function editProvider(id) {
@@ -2450,23 +2523,58 @@
             const body = currentAssistantEl.querySelector('.ds-chat-message-content') || currentAssistantEl.querySelector('.markdown-body');
             if (body) body.innerHTML += escapeHtml(msg.content);
             scrollChatToBottom();
-        } else if (msg.type === 'tool_call') {
-            const row = createMessageRow('assistant', '');
-            const body = row.querySelector('.ds-chat-message-content') || row.querySelector('.markdown-body');
+        } else if (msg.type === 'thinking') {
+            if (!currentAssistantEl) {
+                currentAssistantEl = createMessageRow('assistant', '');
+                container.appendChild(currentAssistantEl);
+            }
+            const body = currentAssistantEl.querySelector('.ds-chat-message-content') || currentAssistantEl.querySelector('.markdown-body');
             if (body) {
-                body.innerHTML = '<div class="ds-chat-thinking"><i class="fas fa-cog fa-spin"></i> <strong>工具调用:</strong> ' + escapeHtml(msg.name) + '<br><code>' + escapeHtml(JSON.stringify(msg.args || {})) + '</code></div>';
+                let thinkingEl = body.querySelector('.ds-chat-thinking');
+                if (!thinkingEl) {
+                    thinkingEl = document.createElement('details');
+                    thinkingEl.className = 'ds-chat-thinking';
+                    thinkingEl.open = true;
+                    thinkingEl.innerHTML = '<summary>思考中...</summary><div></div>';
+                    body.prepend(thinkingEl);
+                }
+                const content = thinkingEl.querySelector('div');
+                if (content) content.innerHTML += escapeHtml(msg.content);
+            }
+            scrollChatToBottom();
+        } else if (msg.type === 'tool_call') {
+            // 兼容旧格式：单个tool_call
+            const row = createMessageRow('assistant', '');
+            const body = row.querySelector('.markdown-body');
+            if (body) {
+                body.innerHTML = '<div class="chat-tool-call"><div class="tool-name"><i class="fas fa-cog fa-spin"></i> ' + escapeHtml(msg.name) + '</div><div class="tool-args">' + escapeHtml(typeof msg.arguments === 'string' ? msg.arguments : JSON.stringify(msg.arguments || {})) + '</div></div>';
             }
             container.appendChild(row);
             scrollChatToBottom();
         } else if (msg.type === 'tool_result') {
-            const row = createMessageRow('assistant', '');
-            const body = row.querySelector('.ds-chat-message-content') || row.querySelector('.markdown-body');
-            if (body) {
-                body.innerHTML = '<div class="ds-chat-thinking"><i class="fas fa-check-circle"></i> <strong>工具结果 [' + escapeHtml(msg.name) + ']:</strong><br><code>' + escapeHtml(typeof msg.result === 'string' ? msg.result : JSON.stringify(msg.result)) + '</code></div>';
+            // 新格式：批量results数组
+            if (msg.results && Array.isArray(msg.results)) {
+                msg.results.forEach(function(tr) {
+                    const name = tr.name || '工具';
+                    const result = tr.content || tr.result || '';
+                    const row = createMessageRow('assistant', '');
+                    const body = row.querySelector('.markdown-body');
+                    if (body) {
+                        body.innerHTML = '<div class="chat-tool-result"><div class="tool-name"><i class="fas fa-check-circle"></i> ' + escapeHtml(name) + '</div><div class="tool-output">' + escapeHtml(typeof result === 'string' ? result : JSON.stringify(result)) + '</div></div>';
+                    }
+                    container.appendChild(row);
+                });
+            } else {
+                // 兼容旧格式：单个tool_result
+                const row = createMessageRow('assistant', '');
+                const body = row.querySelector('.markdown-body');
+                if (body) {
+                    body.innerHTML = '<div class="chat-tool-result"><div class="tool-name"><i class="fas fa-check-circle"></i> ' + escapeHtml(msg.name || '工具') + '</div><div class="tool-output">' + escapeHtml(typeof msg.result === 'string' ? msg.result : JSON.stringify(msg.result || '')) + '</div></div>';
+                }
+                container.appendChild(row);
             }
-            container.appendChild(row);
             scrollChatToBottom();
-        } else if (msg.type === 'done') {
+        } else if (msg.type === 'done' || msg.type === 'stream_end') {
             if (currentAssistantEl) {
                 const body = currentAssistantEl.querySelector('.ds-chat-message-content') || currentAssistantEl.querySelector('.markdown-body');
                 if (body && typeof marked !== 'undefined') {
@@ -2475,6 +2583,22 @@
             }
             currentAssistantEl = null;
             isChatStreaming = false;
+        } else if (msg.type === 'title') {
+            // 对话标题自动生成
+            if (msg.title) {
+                console.log('对话标题:', msg.title);
+            }
+        } else if (msg.type === 'image') {
+            // 图片消息
+            if (msg.url) {
+                const row = createMessageRow('assistant', '');
+                const body = row.querySelector('.markdown-body');
+                if (body) {
+                    body.innerHTML = '<img src="' + escapeHtml(msg.url) + '" style="max-width:100%;border-radius:8px;">';
+                }
+                container.appendChild(row);
+                scrollChatToBottom();
+            }
         } else if (msg.type === 'error') {
             const row = document.createElement('div');
             row.className = 'ds-chat-message-row';
@@ -2488,10 +2612,13 @@
 
     function createMessageRow(role, content) {
         const row = document.createElement('div');
-        row.className = 'ds-chat-message-row ds-chat-message-' + role;
+        row.className = 'ds-chat-message-row ds-chat-message-row-' + role;
         const bubble = document.createElement('div');
-        bubble.className = 'markdown-body';
-        bubble.textContent = content;
+        bubble.className = 'ds-chat-message ds-chat-message-' + role;
+        const body = document.createElement('div');
+        body.className = 'markdown-body';
+        body.textContent = content;
+        bubble.appendChild(body);
         row.appendChild(bubble);
         return row;
     }
@@ -2526,10 +2653,8 @@
         setTimeout(() => {
             if (chatWs && chatWs.readyState === WebSocket.OPEN) {
                 chatWs.send(JSON.stringify({
-                    type: 'chat',
-                    content: text,
                     provider_id: currentProviderId,
-                    model: currentModel
+                    message: text
                 }));
             }
         }, 100);
