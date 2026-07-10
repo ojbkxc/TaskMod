@@ -1,7 +1,7 @@
 id=TaskMod
 name=AI TaskMod 引擎
-version=1.0.1
-versionCode=1000001
+version=1.0.3
+versionCode=1000003
 author=ojbkxc
 description=Android设备AI自动化引擎：实时投屏、AI对话控制、脚本调度、设备监控，一站式Web管理
 updateJson=https://github.com/ojbkxc/TaskMod
