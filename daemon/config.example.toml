@@ -1,0 +1,25 @@
+# TaskMod 配置文件示例
+# 放置位置: ~/.taskmod/config.toml
+# 或通过环境变量 TASKMOD_CONFIG 指定路径
+
+[tunnel]
+# Cloudflare Tunnel Token (必填)
+# 从 Cloudflare Zero Trust Dashboard 获取
+token = "eyJhIjoixxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# 隧道指向的本地服务 URL
+url = "http://localhost:8080"
+
+# cloudflared 二进制版本号
+# 会自动从 GitHub Releases 下载
+version = "2024.10.1"
+
+# 子进程崩溃后重试间隔（秒）
+retry_interval_secs = 5
+
+# 最大重试次数（0 表示无限重试）
+max_retries = 10
+
+# 优雅关闭超时（秒）
+# 超过此时间会发送 SIGKILL 强制终止
+shutdown_timeout_secs = 10
