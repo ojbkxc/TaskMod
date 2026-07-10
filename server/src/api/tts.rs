@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use tokio::process::Command;
 
 use crate::data::response::ApiResponse;
+use crate::data::tts_config::{EngineParams, ReplaceRule, TtsConfig};
 
 #[derive(Debug, Deserialize)]
 pub struct TtsRequest {
@@ -40,12 +41,10 @@ fn known_engine_label(pkg: &str) -> Option<&'static str> {
     }
 }
 
-/// 标签化引擎包名：优先使用已知名称，否则取最后一段作为标签
 fn label_for_engine(pkg: &str) -> String {
     if let Some(label) = known_engine_label(pkg) {
         return label.to_string();
     }
-    // 取包名最后一段作为可读标签
     let short = pkg.rsplit('.').next().unwrap_or(pkg);
     if short.to_lowercase().contains("tts") {
         format!("{} ({})", short.to_uppercase(), pkg)
@@ -54,9 +53,7 @@ fn label_for_engine(pkg: &str) -> String {
     }
 }
 
-/// 获取默认 TTS 引擎包名
 async fn get_default_engine() -> Option<String> {
-    // 方法1: settings get secure tts_default_synth
     if let Ok(output) = Command::new("/system/bin/settings")
         .args(["get", "secure", "tts_default_synth"])
         .output()
@@ -67,7 +64,6 @@ async fn get_default_engine() -> Option<String> {
             return Some(val);
         }
     }
-    // 方法2: settings get system tts_default_synth
     if let Ok(output) = Command::new("/system/bin/settings")
         .args(["get", "system", "tts_default_synth"])
         .output()
@@ -81,22 +77,6 @@ async fn get_default_engine() -> Option<String> {
     None
 }
 
-/// 从 Android settings 读取一个 f32 值
-async fn get_system_setting(key: &str) -> Option<f32> {
-    if let Ok(output) = Command::new("/system/bin/settings")
-        .args(["get", "system", key])
-        .output()
-        .await
-    {
-        let val = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !val.is_empty() && val != "null" {
-            return val.parse::<f32>().ok();
-        }
-    }
-    None
-}
-
-/// 通过 `cmd tts list engines` 获取引擎列表
 async fn list_engines_cmd() -> Vec<String> {
     let mut engines = Vec::new();
     if let Ok(output) = Command::new("/system/bin/cmd")
@@ -110,12 +90,7 @@ async fn list_engines_cmd() -> Vec<String> {
             if trimmed.is_empty() || trimmed.starts_with("Engines:") || trimmed.starts_with('-') {
                 continue;
             }
-            // cmd tts list engines 每行格式可能是：
-            //   "com.google.android.tts"
-            //   "com.google.android.tts Google TTS"
-            //   "  com.google.android.tts"
             let pkg = trimmed.split_whitespace().next().unwrap_or("");
-            // 验证是否是合法包名格式 (至少包含一个'.')
             if pkg.contains('.') && !pkg.starts_with('#') {
                 engines.push(pkg.to_string());
             }
@@ -124,7 +99,6 @@ async fn list_engines_cmd() -> Vec<String> {
     engines
 }
 
-/// 通过 `pm list packages` 搜索 TTS 相关包
 async fn list_engines_pm() -> Vec<String> {
     let mut engines = Vec::new();
     if let Ok(output) = Command::new("/system/bin/pm")
@@ -151,7 +125,6 @@ async fn list_engines_pm() -> Vec<String> {
     engines
 }
 
-/// 通过 `dumpsys texttospeech` 获取已注册引擎
 async fn list_engines_dumpsys() -> Vec<String> {
     let mut engines = Vec::new();
     if let Ok(output) = Command::new("/system/bin/dumpsys")
@@ -162,7 +135,6 @@ async fn list_engines_dumpsys() -> Vec<String> {
         let stdout = String::from_utf8_lossy(&output.stdout);
         for line in stdout.lines() {
             let trimmed = line.trim();
-            // 匹配 "Engine: com.xxx.yyy" 或类似格式
             if trimmed.starts_with("Engine:") || trimmed.starts_with("engine:") {
                 let pkg = trimmed.split_whitespace().nth(1).unwrap_or("");
                 if pkg.contains('.') {
@@ -174,170 +146,371 @@ async fn list_engines_dumpsys() -> Vec<String> {
     engines
 }
 
-pub async fn get_tts_engines() -> Json<ApiResponse<Vec<TtsEngineInfo>>> {
+async fn discover_engines() -> Vec<TtsEngineInfo> {
     let mut seen: HashSet<String> = HashSet::new();
     let mut engines: Vec<TtsEngineInfo> = Vec::new();
-
-    // 1. 获取默认引擎（优先显示）
     let default_engine = get_default_engine().await;
 
-    // 2. 通过 cmd tts list engines 获取
     for pkg in list_engines_cmd().await {
         if seen.insert(pkg.clone()) {
-            engines.push(TtsEngineInfo {
-                label: label_for_engine(&pkg),
-                package_name: pkg,
-            });
+            engines.push(TtsEngineInfo { label: label_for_engine(&pkg), package_name: pkg });
         }
     }
-
-    // 3. 通过 pm list packages 补充
     for pkg in list_engines_pm().await {
         if seen.insert(pkg.clone()) {
-            engines.push(TtsEngineInfo {
-                label: label_for_engine(&pkg),
-                package_name: pkg,
-            });
+            engines.push(TtsEngineInfo { label: label_for_engine(&pkg), package_name: pkg });
         }
     }
-
-    // 4. 通过 dumpsys texttospeech 补充
     for pkg in list_engines_dumpsys().await {
         if seen.insert(pkg.clone()) {
-            engines.push(TtsEngineInfo {
-                label: label_for_engine(&pkg),
-                package_name: pkg,
-            });
+            engines.push(TtsEngineInfo { label: label_for_engine(&pkg), package_name: pkg });
         }
     }
 
-    // 5. 如果仍然为空，添加常见的默认引擎
     if engines.is_empty() {
         let defaults = [
-            "com.google.android.tts",
-            "com.android.tts",
-            "com.svox.pico",
-            "com.miui.tts",
-            "com.iflytek.tts",
-            "com.baidu.tts",
+            "com.google.android.tts", "com.android.tts", "com.svox.pico",
+            "com.miui.tts", "com.iflytek.tts", "com.baidu.tts",
         ];
         for pkg in defaults {
             if seen.insert(pkg.to_string()) {
-                engines.push(TtsEngineInfo {
-                    label: label_for_engine(pkg),
-                    package_name: pkg.to_string(),
-                });
+                engines.push(TtsEngineInfo { label: label_for_engine(pkg), package_name: pkg.to_string() });
             }
         }
     }
 
-    // 将默认引擎排到第一位
     if let Some(ref default_pkg) = default_engine {
         if let Some(pos) = engines.iter().position(|e| &e.package_name == default_pkg) {
             let item = engines.remove(pos);
             engines.insert(0, item);
         }
-        // 标记默认引擎
         if let Some(first) = engines.first_mut() {
             if &first.package_name == default_pkg {
                 first.label = format!("[默认] {}", first.label);
             }
         }
     }
-
-    Json(ApiResponse::ok(engines))
+    engines
 }
 
+/// 通过 Android settings 预设 TTS 参数
+async fn apply_tts_params(rate: f32, pitch: f32, volume: f32) {
+    if rate != 1.0 {
+        let _ = Command::new("/system/bin/settings")
+            .args(["put", "system", "tts_default_rate", &format!("{:.1}", rate)])
+            .output().await;
+    }
+    if pitch != 1.0 {
+        let _ = Command::new("/system/bin/settings")
+            .args(["put", "system", "tts_default_pitch", &format!("{:.1}", pitch)])
+            .output().await;
+    }
+    if volume != 1.0 {
+        let _ = Command::new("/system/bin/settings")
+            .args(["put", "system", "tts_default_volume", &format!("{:.1}", volume)])
+            .output().await;
+    }
+}
+
+/// 执行单次 cmd tts speak
+async fn exec_speak(text: &str, engine: Option<&str>, language: Option<&str>) -> bool {
+    let mut cmd = Command::new("/system/bin/cmd");
+    cmd.arg("tts").arg("speak");
+    if let Some(e) = engine {
+        cmd.arg("-e").arg(e);
+    }
+    if let Some(l) = language {
+        cmd.arg("-l").arg(l);
+    }
+    cmd.arg(text);
+    match cmd.output().await {
+        Ok(output) => output.status.success(),
+        Err(_) => false,
+    }
+}
+
+// ==================== API Handlers ====================
+
+pub async fn get_tts_engines() -> Json<ApiResponse<Vec<TtsEngineInfo>>> {
+    Json(ApiResponse::ok(discover_engines().await))
+}
+
+/// 朗读文本（集成替换规则 + 分句 + 按引擎参数）
 pub async fn speak(Json(req): Json<TtsRequest>) -> Json<ApiResponse<String>> {
     let text = req.text.trim();
     if text.is_empty() {
         return Json(ApiResponse::err("文本内容不能为空"));
     }
 
-    // 通过 settings 预设 TTS 参数（cmd tts speak 不支持 -r/-p/-v 标志）
-    if let Some(rate) = req.rate {
-        if rate != 1.0 {
-            let _ = Command::new("/system/bin/settings")
-                .args(["put", "system", "tts_default_rate", &format!("{:.1}", rate)])
-                .output()
-                .await;
+    let config = TtsConfig::load().await;
+
+    // 1. 应用文本替换规则
+    let processed_text = config.apply_replace_rules(text);
+
+    // 2. 获取引擎参数（请求参数 > 配置中按引擎参数 > 全局参数）
+    let engine = req.engine.as_deref().unwrap_or("");
+    let (cfg_rate, cfg_pitch, cfg_volume) = if !engine.is_empty() {
+        config.get_engine_params(engine)
+    } else {
+        (config.global_rate, config.global_pitch, config.global_volume)
+    };
+    let rate = req.rate.unwrap_or(cfg_rate);
+    let pitch = req.pitch.unwrap_or(cfg_pitch);
+    let volume = req.volume.unwrap_or(cfg_volume);
+
+    // 3. 预设 TTS 参数到系统 settings
+    apply_tts_params(rate, pitch, volume).await;
+
+    // 4. 分句并逐句朗读
+    let sentences = config.split_sentences(&processed_text);
+    let total = sentences.len();
+    let mut failed = 0;
+
+    for (i, sentence) in sentences.iter().enumerate() {
+        let ok = exec_speak(sentence, req.engine.as_deref(), req.language.as_deref()).await;
+        if !ok {
+            eprintln!("[TTS] 第 {}/{} 句朗读失败: {}", i + 1, total, sentence);
+            failed += 1;
         }
-    }
-    if let Some(pitch) = req.pitch {
-        if pitch != 1.0 {
-            let _ = Command::new("/system/bin/settings")
-                .args(["put", "system", "tts_default_pitch", &format!("{:.1}", pitch)])
-                .output()
-                .await;
-        }
-    }
-    if let Some(volume) = req.volume {
-        if volume != 1.0 {
-            let _ = Command::new("/system/bin/settings")
-                .args(["put", "system", "tts_default_volume", &format!("{:.1}", volume)])
-                .output()
-                .await;
+        // 多句之间暂停 200ms，避免叠音
+        if i < total - 1 {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         }
     }
 
-    // 方法1: 使用 cmd tts speak（标准 Android 方式）
-    // 注意: cmd tts speak 只支持 -e (引擎) 和 -l (语言) 标志
-    // 不支持 -r/-p/-v 等参数（那些通过 settings 预设）
-    let mut cmd = Command::new("/system/bin/cmd");
-    cmd.arg("tts").arg("speak");
-    if let Some(ref engine) = req.engine {
-        cmd.arg("-e").arg(engine);
+    if failed == 0 {
+        Json(ApiResponse::ok_msg("语音播放成功".to_string(), text))
+    } else if failed < total {
+        Json(ApiResponse::ok_msg(
+            format!("部分朗读成功 ({}/{})", total - failed, total),
+            text,
+        ))
+    } else {
+        Json(ApiResponse::err(
+            "TTS 播放失败，请确认设备已安装 TTS 引擎且已在系统设置中配置",
+        ))
     }
-    if let Some(ref lang) = req.language {
-        cmd.arg("-l").arg(lang);
-    }
-    cmd.arg(text);
-
-    match cmd.output().await {
-        Ok(output) => {
-            if output.status.success() {
-                return Json(ApiResponse::ok_msg("语音播放成功".to_string(), text));
-            }
-            // cmd tts speak 失败，尝试备用方案
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            eprintln!("[TTS] cmd tts speak failed: {}", stderr);
-        }
-        Err(e) => {
-            eprintln!("[TTS] cmd tts speak error: {}", e);
-        }
-    }
-
-    // 方法1 失败，返回错误提示
-    Json(ApiResponse::err(&format!(
-        "TTS 播放失败，请确认设备已安装 TTS 引擎且已在系统设置中配置"
-    )))
 }
 
 pub async fn stop_tts() -> Json<ApiResponse<String>> {
-    // 方法1: cmd tts stop
     let result = Command::new("/system/bin/cmd")
         .args(["tts", "stop"])
-        .status()
-        .await;
-
-    match result {
-        Ok(status) if status.success() => {
+        .status().await;
+    if let Ok(status) = result {
+        if status.success() {
             return Json(ApiResponse::ok("语音播放已停止".to_string()));
         }
-        _ => {}
     }
-
-    // 方法2: 强制停止所有 TTS 进程
-    let engines = ["com.google.android.tts", "com.miui.tts", "com.iflytek.tts"];
-    for engine in engines {
+    for engine in ["com.google.android.tts", "com.miui.tts", "com.iflytek.tts"] {
         let _ = Command::new("/system/bin/am")
             .args(["force-stop", engine])
-            .status()
-            .await;
+            .status().await;
     }
-
     Json(ApiResponse::ok("语音播放已停止".to_string()))
 }
+
+/// 获取 TTS 设置（合并系统设置 + 本地配置）
+pub async fn get_tts_settings() -> Json<ApiResponse<TtsSettings>> {
+    let config = TtsConfig::load().await;
+    let default_engine = get_default_engine().await
+        .unwrap_or_else(|| config.default_engine.clone());
+    let engines = discover_engines().await;
+
+    Json(ApiResponse::ok(TtsSettings {
+        default_engine: if default_engine.is_empty() { None } else { Some(default_engine) },
+        default_rate: config.global_rate,
+        default_pitch: config.global_pitch,
+        default_volume: config.global_volume,
+        replace_enabled: config.replace_enabled,
+        split_enabled: config.split_enabled,
+        engine_params: config.engine_params,
+        available_engines: engines,
+    }))
+}
+
+/// 更新全局 TTS 设置
+#[derive(Debug, Deserialize)]
+pub struct TtsSettingsRequest {
+    pub rate: Option<f32>,
+    pub pitch: Option<f32>,
+    pub volume: Option<f32>,
+    pub replace_enabled: Option<bool>,
+    pub split_enabled: Option<bool>,
+}
+
+pub async fn update_tts_settings(Json(req): Json<TtsSettingsRequest>) -> Json<ApiResponse<String>> {
+    let mut config = TtsConfig::load().await;
+
+    if let Some(rate) = req.rate {
+        config.global_rate = rate;
+        let _ = Command::new("/system/bin/settings")
+            .args(["put", "system", "tts_default_rate", &format!("{:.1}", rate)])
+            .output().await;
+    }
+    if let Some(pitch) = req.pitch {
+        config.global_pitch = pitch;
+        let _ = Command::new("/system/bin/settings")
+            .args(["put", "system", "tts_default_pitch", &format!("{:.1}", pitch)])
+            .output().await;
+    }
+    if let Some(volume) = req.volume {
+        config.global_volume = volume;
+        let _ = Command::new("/system/bin/settings")
+            .args(["put", "system", "tts_default_volume", &format!("{:.1}", volume)])
+            .output().await;
+    }
+    if let Some(enabled) = req.replace_enabled {
+        config.replace_enabled = enabled;
+    }
+    if let Some(enabled) = req.split_enabled {
+        config.split_enabled = enabled;
+    }
+
+    match config.save().await {
+        Ok(_) => Json(ApiResponse::ok("TTS设置已保存".to_string())),
+        Err(e) => Json(ApiResponse::err(&e)),
+    }
+}
+
+/// 设置默认引擎
+#[derive(Debug, Deserialize)]
+pub struct SetDefaultEngineRequest {
+    pub engine: String,
+}
+
+pub async fn set_default_engine(Json(req): Json<SetDefaultEngineRequest>) -> Json<ApiResponse<String>> {
+    if req.engine.is_empty() {
+        return Json(ApiResponse::err("引擎包名不能为空"));
+    }
+    let _ = Command::new("/system/bin/settings")
+        .args(["put", "secure", "tts_default_synth", &req.engine])
+        .output().await;
+    // 同步到本地配置
+    let mut config = TtsConfig::load().await;
+    config.default_engine = req.engine.clone();
+    let _ = config.save().await;
+    Json(ApiResponse::ok(format!("已设置默认TTS引擎为: {}", req.engine)))
+}
+
+/// 测试/试听 TTS
+#[derive(Debug, Deserialize)]
+pub struct TtsTestRequest {
+    pub text: Option<String>,
+    pub engine: Option<String>,
+}
+
+pub async fn test_tts(Json(req): Json<TtsTestRequest>) -> Json<ApiResponse<String>> {
+    let text = req.text.unwrap_or_else(|| "这是一段测试语音，TaskMod TTS功能正常。".to_string());
+    let tts_req = TtsRequest {
+        text,
+        engine: req.engine,
+        language: None,
+        pitch: None,
+        rate: None,
+        volume: None,
+    };
+    speak(Json(tts_req)).await
+}
+
+// ==================== 按引擎参数 CRUD ====================
+
+/// 获取所有引擎参数列表
+pub async fn get_engine_params() -> Json<ApiResponse<Vec<EngineParams>>> {
+    let config = TtsConfig::load().await;
+    Json(ApiResponse::ok(config.engine_params))
+}
+
+/// 添加/更新引擎参数
+pub async fn upsert_engine_params(Json(req): Json<EngineParams>) -> Json<ApiResponse<String>> {
+    let mut config = TtsConfig::load().await;
+    if let Some(existing) = config.engine_params.iter_mut().find(|p| p.engine == req.engine) {
+        existing.rate = req.rate;
+        existing.pitch = req.pitch;
+        existing.volume = req.volume;
+    } else {
+        config.engine_params.push(req);
+    }
+    match config.save().await {
+        Ok(_) => Json(ApiResponse::ok("引擎参数已保存".to_string())),
+        Err(e) => Json(ApiResponse::err(&e)),
+    }
+}
+
+/// 删除引擎参数
+pub async fn delete_engine_params(axum::extract::Path(engine): axum::extract::Path<String>) -> Json<ApiResponse<String>> {
+    let mut config = TtsConfig::load().await;
+    config.engine_params.retain(|p| p.engine != engine);
+    match config.save().await {
+        Ok(_) => Json(ApiResponse::ok("引擎参数已删除".to_string())),
+        Err(e) => Json(ApiResponse::err(&e)),
+    }
+}
+
+// ==================== 替换规则 CRUD ====================
+
+/// 获取所有替换规则
+pub async fn get_replace_rules() -> Json<ApiResponse<Vec<ReplaceRule>>> {
+    let config = TtsConfig::load().await;
+    Json(ApiResponse::ok(config.replace_rules))
+}
+
+/// 添加替换规则
+pub async fn add_replace_rule(Json(req): Json<ReplaceRule>) -> Json<ApiResponse<String>> {
+    let mut config = TtsConfig::load().await;
+    config.replace_rules.push(req);
+    match config.save().await {
+        Ok(_) => Json(ApiResponse::ok("替换规则已添加".to_string())),
+        Err(e) => Json(ApiResponse::err(&e)),
+    }
+}
+
+/// 更新替换规则
+pub async fn update_replace_rule(
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Json(req): Json<ReplaceRule>,
+) -> Json<ApiResponse<String>> {
+    let mut config = TtsConfig::load().await;
+    if let Some(existing) = config.replace_rules.iter_mut().find(|r| r.id == id) {
+        *existing = req;
+    } else {
+        return Json(ApiResponse::err("规则不存在"));
+    }
+    match config.save().await {
+        Ok(_) => Json(ApiResponse::ok("替换规则已更新".to_string())),
+        Err(e) => Json(ApiResponse::err(&e)),
+    }
+}
+
+/// 删除替换规则
+pub async fn delete_replace_rule(axum::extract::Path(id): axum::extract::Path<String>) -> Json<ApiResponse<String>> {
+    let mut config = TtsConfig::load().await;
+    config.replace_rules.retain(|r| r.id != id);
+    match config.save().await {
+        Ok(_) => Json(ApiResponse::ok("替换规则已删除".to_string())),
+        Err(e) => Json(ApiResponse::err(&e)),
+    }
+}
+
+/// 批量更新替换规则顺序
+#[derive(Debug, Deserialize)]
+pub struct ReorderRequest {
+    pub ids: Vec<String>,
+}
+
+pub async fn reorder_replace_rules(Json(req): Json<ReorderRequest>) -> Json<ApiResponse<String>> {
+    let mut config = TtsConfig::load().await;
+    for (i, id) in req.ids.iter().enumerate() {
+        if let Some(rule) = config.replace_rules.iter_mut().find(|r| &r.id == id) {
+            rule.order = i as i32;
+        }
+    }
+    match config.save().await {
+        Ok(_) => Json(ApiResponse::ok("规则顺序已更新".to_string())),
+        Err(e) => Json(ApiResponse::err(&e)),
+    }
+}
+
+// ==================== 响应结构体 ====================
 
 #[derive(Debug, serde::Serialize)]
 pub struct TtsEngineInfo {
@@ -351,120 +524,8 @@ pub struct TtsSettings {
     pub default_rate: f32,
     pub default_pitch: f32,
     pub default_volume: f32,
+    pub replace_enabled: bool,
+    pub split_enabled: bool,
+    pub engine_params: Vec<EngineParams>,
     pub available_engines: Vec<TtsEngineInfo>,
-}
-
-/// 获取当前TTS设置
-pub async fn get_tts_settings() -> Json<ApiResponse<TtsSettings>> {
-    let default_engine = get_default_engine().await;
-    
-    // 从系统 settings 读取当前 TTS 参数
-    let rate = get_system_setting("tts_default_rate").await.unwrap_or(1.0);
-    let pitch = get_system_setting("tts_default_pitch").await.unwrap_or(1.0);
-    let volume = get_system_setting("tts_default_volume").await.unwrap_or(1.0);
-    
-    // 获取可用引擎列表（使用 HashSet 去重）
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut engines: Vec<TtsEngineInfo> = Vec::new();
-    for pkg in list_engines_cmd().await {
-        if seen.insert(pkg.clone()) {
-            engines.push(TtsEngineInfo {
-                label: label_for_engine(&pkg),
-                package_name: pkg,
-            });
-        }
-    }
-    for pkg in list_engines_pm().await {
-        if seen.insert(pkg.clone()) {
-            engines.push(TtsEngineInfo {
-                label: label_for_engine(&pkg),
-                package_name: pkg,
-            });
-        }
-    }
-    
-    Json(ApiResponse::ok(TtsSettings {
-        default_engine,
-        default_rate: rate,
-        default_pitch: pitch,
-        default_volume: volume,
-        available_engines: engines,
-    }))
-}
-
-/// 设置TTS参数
-#[derive(Debug, Deserialize)]
-pub struct TtsSettingsRequest {
-    pub rate: Option<f32>,
-    pub pitch: Option<f32>,
-    pub volume: Option<f32>,
-}
-
-pub async fn update_tts_settings(Json(req): Json<TtsSettingsRequest>) -> Json<ApiResponse<String>> {
-    if let Some(rate) = req.rate {
-        let _ = Command::new("/system/bin/settings")
-            .args(["put", "system", "tts_default_rate", &format!("{:.1}", rate)])
-            .output()
-            .await;
-    }
-    
-    if let Some(pitch) = req.pitch {
-        let _ = Command::new("/system/bin/settings")
-            .args(["put", "system", "tts_default_pitch", &format!("{:.1}", pitch)])
-            .output()
-            .await;
-    }
-
-    if let Some(volume) = req.volume {
-        let _ = Command::new("/system/bin/settings")
-            .args(["put", "system", "tts_default_volume", &format!("{:.1}", volume)])
-            .output()
-            .await;
-    }
-    
-    Json(ApiResponse::ok("TTS设置已更新".to_string()))
-}
-
-/// 设置默认TTS引擎
-#[derive(Debug, Deserialize)]
-pub struct SetDefaultEngineRequest {
-    pub engine: String,
-}
-
-pub async fn set_default_engine(Json(req): Json<SetDefaultEngineRequest>) -> Json<ApiResponse<String>> {
-    if req.engine.is_empty() {
-        return Json(ApiResponse::err("引擎包名不能为空"));
-    }
-    
-    // 设置默认引擎
-    let _ = Command::new("/system/bin/settings")
-        .args(["put", "secure", "tts_default_synth", &req.engine])
-        .output()
-        .await;
-    
-    Json(ApiResponse::ok(format!("已设置默认TTS引擎为: {}", req.engine)))
-}
-
-/// 测试TTS功能
-#[derive(Debug, Deserialize)]
-pub struct TtsTestRequest {
-    pub text: Option<String>,
-    pub engine: Option<String>,
-}
-
-pub async fn test_tts(Json(req): Json<TtsTestRequest>) -> Json<ApiResponse<String>> {
-    let text = req.text.unwrap_or_else(|| "这是一段测试语音，TaskMod TTS功能正常。".to_string());
-    let engine = req.engine.unwrap_or_else(|| "com.google.android.tts".to_string());
-    
-    // 调用speak功能
-    let tts_req = TtsRequest {
-        text,
-        engine: Some(engine),
-        language: None,
-        pitch: Some(1.0),
-        rate: Some(1.0),
-        volume: Some(1.0),
-    };
-    
-    speak(Json(tts_req)).await
 }

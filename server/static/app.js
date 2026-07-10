@@ -7,6 +7,7 @@
     let currentProviderId = '';
     let currentModel = '';
     let isChatStreaming = false;
+    let ttsReplyEnabled = false; // 朗读AI回复开关
     const _loaded = {}; // 懒加载标记，避免重复请求
 
     /* ===== Tab Switching ===== */
@@ -1011,6 +1012,22 @@
                 if (body && typeof marked !== 'undefined') {
                     try { body.innerHTML = marked.parse(body.textContent); } catch (e) { /* keep raw */ }
                 }
+                // 自动朗读AI回复
+                if (ttsReplyEnabled && body) {
+                    const text = body.textContent.trim();
+                    if (text) ttsReadText(text);
+                }
+                // 添加朗读按钮到消息气泡
+                if (body) {
+                    const readBtn = document.createElement('button');
+                    readBtn.className = 'ds-msg-read-btn';
+                    readBtn.innerHTML = '<i class="fas fa-volume-up"></i>';
+                    readBtn.title = '朗读此回复';
+                    readBtn.style.cssText = 'position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.05);border:none;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:11px;color:#888;display:flex;align-items:center;justify-content:center;';
+                    readBtn.onclick = function() { ttsReadText(body.textContent.trim()); };
+                    const bubble = body.closest('.ds-chat-message');
+                    if (bubble) { bubble.style.position = 'relative'; bubble.appendChild(readBtn); }
+                }
             }
             currentAssistantEl = null;
             isChatStreaming = false;
@@ -1555,7 +1572,7 @@
             pitch: parseFloat(document.getElementById('tts-pitch').value),
             volume: parseFloat(document.getElementById('tts-volume').value)
         });
-        if (res.ok) showToast('朗读中...', 'success');
+        if (res.ok) showToast(res.message || '朗读中...', 'success');
         else showToast(res.message || '朗读失败', 'error');
     }
 
@@ -1587,6 +1604,12 @@
                 document.getElementById('tts-volume').value = d.default_volume;
                 document.getElementById('tts-volume-val').textContent = d.default_volume;
             }
+            document.getElementById('tts-replace-enabled').checked = !!d.replace_enabled;
+            document.getElementById('tts-split-enabled').checked = d.split_enabled !== false;
+            // 加载引擎参数列表
+            renderEngineParams(d.engine_params || []);
+            // 加载替换规则列表
+            loadReplaceRules();
         }
     }
 
@@ -1600,16 +1623,288 @@
         else showToast(res.message || '测试失败', 'error');
     }
 
+    /* 试听：用当前选中引擎 + 默认参数播放固定文本 */
+    async function auditionTTS() {
+        const engine = document.getElementById('tts-engine').value;
+        if (!engine) return showToast('请先选择语音引擎', 'error');
+        const res = await apiPost('/api/tts/test', {
+            text: '你好，这是' + engine.split('.').pop() + '引擎的试听测试。',
+            engine
+        });
+        if (res.ok) showToast('试听中...', 'success');
+        else showToast(res.message || '试听失败', 'error');
+    }
+
     async function saveTtsSettings() {
         const body = {
             rate: parseFloat(document.getElementById('tts-speed').value),
             pitch: parseFloat(document.getElementById('tts-pitch').value),
-            volume: parseFloat(document.getElementById('tts-volume').value)
+            volume: parseFloat(document.getElementById('tts-volume').value),
+            replace_enabled: document.getElementById('tts-replace-enabled').checked,
+            split_enabled: document.getElementById('tts-split-enabled').checked
         };
         const res = await apiPut('/api/tts/settings', body);
         if (res.ok) showToast('TTS设置已保存', 'success');
         else showToast(res.message || '保存失败', 'error');
     }
+
+    /* ===== 按引擎独立参数 ===== */
+    function renderEngineParams(list) {
+        const el = document.getElementById('engine-params-list');
+        if (!list || list.length === 0) {
+            el.innerHTML = '<div style="color:#999;padding:8px 0;">暂无引擎独立参数，点击"添加"为特定引擎配置参数</div>';
+            return;
+        }
+        el.innerHTML = list.map(p =>
+            '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f0f0f0;">' +
+            '<span style="flex:1;font-family:monospace;font-size:12px;">' + escapeHtml(p.engine) + '</span>' +
+            '<span style="font-size:12px;color:#666;">语速:' + p.rate + ' 音调:' + p.pitch + ' 音量:' + p.volume + '</span>' +
+            '<button class="ds-btn-danger" style="padding:2px 8px;font-size:11px;" onclick="deleteEngineParam(\'' + escapeHtml(p.engine) + '\')"><i class="fas fa-trash"></i></button>' +
+            '</div>'
+        ).join('');
+    }
+
+    function showAddEngineParamDialog() {
+        const engine = prompt('输入引擎包名 (如 com.iflytek.tts):');
+        if (!engine) return;
+        const rate = parseFloat(prompt('语速 (默认1.0):', '1.0')) || 1.0;
+        const pitch = parseFloat(prompt('音调 (默认1.0):', '1.0')) || 1.0;
+        const volume = parseFloat(prompt('音量 (默认1.0):', '1.0')) || 1.0;
+        apiPost('/api/tts/engine-params', { engine, rate, pitch, volume }).then(res => {
+            if (res.ok) { showToast('已保存', 'success'); loadTtsSettings(); }
+            else showToast(res.message || '保存失败', 'error');
+        });
+    }
+
+    async function deleteEngineParam(engine) {
+        if (!confirm('删除引擎 ' + engine + ' 的独立参数？')) return;
+        const res = await apiDelete('/api/tts/engine-params/' + encodeURIComponent(engine));
+        if (res.ok) { showToast('已删除', 'info'); loadTtsSettings(); }
+        else showToast(res.message || '删除失败', 'error');
+    }
+
+    /* ===== 文本替换规则 ===== */
+    async function loadReplaceRules() {
+        const res = await apiGet('/api/tts/replace-rules');
+        renderReplaceRules(res.ok ? res.data : []);
+    }
+
+    function renderReplaceRules(list) {
+        const el = document.getElementById('replace-rules-list');
+        if (!list || list.length === 0) {
+            el.innerHTML = '<div style="color:#999;padding:8px 0;">暂无替换规则，点击"添加规则"创建</div>';
+            return;
+        }
+        list.sort((a, b) => a.order - b.order);
+        el.innerHTML = list.map(r =>
+            '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f0f0f0;">' +
+            '<input type="checkbox" ' + (r.enabled ? 'checked' : '') + ' onchange="toggleReplaceRule(\'' + r.id + '\',this.checked)" title="启用/禁用">' +
+            '<span style="flex:1;font-size:12px;">' + escapeHtml(r.name) + '</span>' +
+            '<span style="font-size:11px;color:#888;font-family:monospace;">' + escapeHtml(r.pattern) + ' → ' + escapeHtml(r.replacement) + '</span>' +
+            '<span style="font-size:10px;color:#aaa;">' + (r.is_regex ? '正则' : '文本') + '</span>' +
+            '<button class="ds-btn-danger" style="padding:2px 8px;font-size:11px;" onclick="deleteReplaceRule(\'' + r.id + '\')"><i class="fas fa-trash"></i></button>' +
+            '</div>'
+        ).join('');
+    }
+
+    function showAddReplaceRuleDialog() {
+        const name = prompt('规则名称:');
+        if (!name) return;
+        const pattern = prompt('匹配文本 (支持正则):');
+        if (pattern === null) return;
+        const replacement = prompt('替换为:');
+        if (replacement === null) return;
+        const isRegex = confirm('是否使用正则表达式？\n确定=正则，取消=纯文本');
+        const id = 'rule_' + Date.now();
+        apiPost('/api/tts/replace-rules', { id, name, pattern, replacement, is_regex: isRegex, enabled: true, order: 0 }).then(res => {
+            if (res.ok) { showToast('已添加', 'success'); loadReplaceRules(); }
+            else showToast(res.message || '添加失败', 'error');
+        });
+    }
+
+    async function toggleReplaceRule(id, enabled) {
+        // 简单实现：获取规则列表，修改enabled，PUT回去
+        const res = await apiGet('/api/tts/replace-rules');
+        if (!res.ok) return;
+        const rule = res.data.find(r => r.id === id);
+        if (!rule) return;
+        rule.enabled = enabled;
+        await apiPut('/api/tts/replace-rules/' + id, rule);
+    }
+
+    async function deleteReplaceRule(id) {
+        if (!confirm('删除此替换规则？')) return;
+        const res = await apiDelete('/api/tts/replace-rules/' + id);
+        if (res.ok) { showToast('已删除', 'info'); loadReplaceRules(); }
+        else showToast(res.message || '删除失败', 'error');
+    }
+
+    /* ===== 语音设置（朗读回复 + 语音输入） ===== */
+    const VOICE_STORAGE_KEY = 'taskmod_voice_settings';
+    let voiceSettings = { inputEnabled: false, readAloudEnabled: false, rate: 1.0, pitch: 1.0 };
+    let voiceRecognition = null;
+    let isVoiceListening = false;
+
+    function loadVoiceSettings() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(VOICE_STORAGE_KEY));
+            if (saved && typeof saved === 'object') {
+                voiceSettings = { ...voiceSettings, ...saved };
+            }
+        } catch (e) { /* ignore */ }
+        // 同步到UI
+        const inputEl = document.getElementById('voice-input-enabled');
+        const readEl = document.getElementById('voice-read-aloud');
+        const rateEl = document.getElementById('voice-rate');
+        const pitchEl = document.getElementById('voice-pitch');
+        if (inputEl) inputEl.checked = voiceSettings.inputEnabled;
+        if (readEl) readEl.checked = voiceSettings.readAloudEnabled;
+        if (rateEl) { rateEl.value = voiceSettings.rate; document.getElementById('voice-rate-val').textContent = voiceSettings.rate; }
+        if (pitchEl) { pitchEl.value = voiceSettings.pitch; document.getElementById('voice-pitch-val').textContent = voiceSettings.pitch; }
+        // 同步朗读回复按钮状态
+        ttsReplyEnabled = voiceSettings.readAloudEnabled;
+        updateTtsReplyBtn();
+        // 显示/隐藏语音输入按钮
+        updateVoiceInputBtn();
+    }
+
+    function saveVoiceSettings() {
+        voiceSettings.inputEnabled = document.getElementById('voice-input-enabled')?.checked || false;
+        voiceSettings.readAloudEnabled = document.getElementById('voice-read-aloud')?.checked || false;
+        voiceSettings.rate = parseFloat(document.getElementById('voice-rate')?.value || '1.0');
+        voiceSettings.pitch = parseFloat(document.getElementById('voice-pitch')?.value || '1.0');
+        localStorage.setItem(VOICE_STORAGE_KEY, JSON.stringify(voiceSettings));
+        // 同步朗读回复开关
+        ttsReplyEnabled = voiceSettings.readAloudEnabled;
+        updateTtsReplyBtn();
+        updateVoiceInputBtn();
+    }
+
+    function updateVoiceInputBtn() {
+        const btn = document.getElementById('voice-input-btn');
+        if (!btn) return;
+        // 检查浏览器是否支持语音识别
+        const hasSpeechRecognition = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+        btn.style.display = (voiceSettings.inputEnabled && hasSpeechRecognition) ? '' : 'none';
+    }
+
+    /* 语音输入 */
+    function toggleVoiceInput() {
+        if (isVoiceListening) {
+            stopVoiceInput();
+        } else {
+            startVoiceInput();
+        }
+    }
+
+    function startVoiceInput() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            showToast('当前浏览器不支持语音识别', 'error');
+            return;
+        }
+        const recognition = new SpeechRecognition();
+        recognition.lang = navigator.language || 'zh-CN';
+        recognition.interimResults = true;
+        recognition.continuous = false;
+
+        recognition.onresult = function(event) {
+            const transcript = Array.from(event.results)
+                .map(function(result) { return result[0] ? result[0].transcript : ''; })
+                .join('')
+                .trim();
+            if (transcript) {
+                document.getElementById('chat-input').value = transcript;
+            }
+        };
+        recognition.onstart = function() {
+            isVoiceListening = true;
+            const btn = document.getElementById('voice-input-btn');
+            if (btn) { btn.style.color = '#ef4444'; btn.title = '停止语音输入'; }
+            showToast('正在听...', 'info');
+        };
+        recognition.onend = function() {
+            isVoiceListening = false;
+            const btn = document.getElementById('voice-input-btn');
+            if (btn) { btn.style.color = '#666'; btn.title = '语音输入'; }
+        };
+        recognition.onerror = function(e) {
+            isVoiceListening = false;
+            const btn = document.getElementById('voice-input-btn');
+            if (btn) { btn.style.color = '#666'; btn.title = '语音输入'; }
+            if (e.error !== 'no-speech') {
+                showToast('语音识别错误: ' + e.error, 'error');
+            }
+        };
+        voiceRecognition = recognition;
+        recognition.start();
+    }
+
+    function stopVoiceInput() {
+        if (voiceRecognition) {
+            voiceRecognition.stop();
+            voiceRecognition = null;
+        }
+        isVoiceListening = false;
+    }
+
+    /* 通用TTS朗读函数，供AI对话调用 */
+    async function ttsReadText(text) {
+        if (!text || !text.trim()) return;
+        const maxLen = 2000;
+        const speakText = text.length > maxLen ? text.substring(0, maxLen) + '...(已截断)' : text;
+        const engine = document.getElementById('tts-engine')?.value;
+        if (!engine) {
+            showToast('请先在TTS页面选择引擎', 'error');
+            return;
+        }
+        try {
+            const res = await apiPost('/api/tts/speak', {
+                text: speakText,
+                engine,
+                rate: voiceSettings.rate || parseFloat(document.getElementById('tts-speed')?.value || '1.0'),
+                pitch: voiceSettings.pitch || parseFloat(document.getElementById('tts-pitch')?.value || '1.0'),
+                volume: parseFloat(document.getElementById('tts-volume')?.value || '1.0')
+            });
+            if (!res.ok) showToast('TTS: ' + (res.message || '朗读失败'), 'error');
+        } catch (e) {
+            showToast('TTS请求失败: ' + e.message, 'error');
+        }
+    }
+
+    /* 切换朗读AI回复开关 */
+    function toggleTtsReply() {
+        ttsReplyEnabled = !ttsReplyEnabled;
+        voiceSettings.readAloudEnabled = ttsReplyEnabled;
+        localStorage.setItem(VOICE_STORAGE_KEY, JSON.stringify(voiceSettings));
+        // 同步配置页面的开关
+        const readEl = document.getElementById('voice-read-aloud');
+        if (readEl) readEl.checked = ttsReplyEnabled;
+        updateTtsReplyBtn();
+        showToast(ttsReplyEnabled ? 'AI回复朗读已开启' : 'AI回复朗读已关闭', ttsReplyEnabled ? 'success' : 'info');
+    }
+
+    function updateTtsReplyBtn() {
+        const btn = document.getElementById('tts-reply-toggle');
+        if (!btn) return;
+        if (ttsReplyEnabled) {
+            btn.style.background = '#10b981';
+            btn.style.color = '#fff';
+            btn.title = '朗读AI回复: 已开启';
+        } else {
+            btn.style.background = '';
+            btn.style.color = '';
+            btn.title = '朗读AI回复: 已关闭';
+        }
+    }
+
+    /* 页面加载时恢复语音设置 */
+    (function() {
+        loadVoiceSettings();
+        document.addEventListener('DOMContentLoaded', function() {
+            loadVoiceSettings();
+        });
+    })();
 
     /* ===== Config ===== */
     async function loadEmailConfig() {

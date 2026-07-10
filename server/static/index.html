@@ -175,6 +175,12 @@
                         <div class="ds-chat-composer-actions">
                             <span class="ds-chat-current-config" id="current-model-name">--</span>
                             <div class="ds-chat-composer-buttons">
+                                <button class="ds-chat-text-button" id="tts-reply-toggle" onclick="toggleTtsReply()" title="朗读AI回复" style="font-size:12px;padding:4px 8px;border-radius:12px;cursor:pointer;">
+                                    <i class="fas fa-volume-up"></i>
+                                </button>
+                                <button class="ds-chat-mic-button" id="voice-input-btn" onclick="toggleVoiceInput()" title="语音输入" style="display:none;font-size:14px;padding:4px 8px;border-radius:50%;cursor:pointer;border:none;background:transparent;color:#666;">
+                                    <i class="fas fa-microphone"></i>
+                                </button>
                                 <button class="ds-chat-send-button" id="chat-send-btn" onclick="sendChatMessage()" title="发送">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m0 0l-6 6m6-6l6 6"/></svg>
                                 </button>
@@ -387,7 +393,7 @@
                 <div class="ds-page-intro">
                     <div>
                         <h1 class="ds-page-intro-title">TTS 语音合成</h1>
-                        <p class="ds-page-intro-description">文本转语音控制面板</p>
+                        <p class="ds-page-intro-description">文本转语音控制面板 · 配置持久化到设备</p>
                     </div>
                     <div style="display:flex;gap:8px;">
                         <button class="ds-btn-secondary" onclick="loadTtsSettings()"><i class="fas fa-cog"></i> 加载设置</button>
@@ -395,20 +401,24 @@
                         <a href="/api/docs" target="_blank" class="ds-btn-secondary" style="text-decoration:none;display:inline-flex;align-items:center;gap:4px;"><i class="fas fa-book"></i> API 文档</a>
                     </div>
                 </div>
+
+                <!-- 核心控制面板 -->
                 <div class="tts-control-panel">
                     <div class="form-group">
-                        <label>语音引擎</label>
+                        <label>语音引擎
+                            <button class="ds-btn-secondary" style="padding:2px 8px;font-size:12px;margin-left:8px;" onclick="auditionTTS()"><i class="fas fa-headphones"></i> 试听</button>
+                        </label>
                         <select id="tts-engine" class="ds-chat-input">
                             <option value="">加载中...</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label>文本内容</label>
-                        <textarea id="tts-text" class="ds-chat-input" rows="4" placeholder="输入要朗读的文本..."></textarea>
+                        <textarea id="tts-text" class="ds-chat-input" rows="4" placeholder="输入要朗读的文本...长文本会自动分句朗读"></textarea>
                     </div>
                     <div class="form-group">
                         <label>语速 <span id="tts-speed-val">1.0</span></label>
-                        <input type="range" id="tts-speed" min="0.5" max="2.0" step="0.1" value="1.0" oninput="document.getElementById('tts-speed-val').textContent=this.value">
+                        <input type="range" id="tts-speed" min="0.1" max="3.0" step="0.1" value="1.0" oninput="document.getElementById('tts-speed-val').textContent=this.value">
                     </div>
                     <div class="form-group">
                         <label>音调 <span id="tts-pitch-val">1.0</span></label>
@@ -418,12 +428,41 @@
                         <label>音量 <span id="tts-volume-val">1.0</span></label>
                         <input type="range" id="tts-volume" min="0.0" max="1.0" step="0.1" value="1.0" oninput="document.getElementById('tts-volume-val').textContent=this.value">
                     </div>
+                    <!-- 功能开关 -->
+                    <div style="display:flex;gap:24px;margin:4px 0;">
+                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                            <input type="checkbox" id="tts-replace-enabled" onchange="saveTtsSettings()"> 启用文本替换
+                        </label>
+                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                            <input type="checkbox" id="tts-split-enabled" checked onchange="saveTtsSettings()"> 启用智能分句
+                        </label>
+                    </div>
                     <div style="display:flex;gap:12px;">
                         <button class="ds-btn-primary" onclick="speakTTS()"><i class="fas fa-play"></i> 朗读</button>
                         <button class="ds-btn-secondary" onclick="testTTS()"><i class="fas fa-vial"></i> 测试</button>
                         <button class="ds-btn-secondary" onclick="saveTtsSettings()"><i class="fas fa-save"></i> 保存设置</button>
                         <button class="ds-btn-danger" onclick="stopTTS()"><i class="fas fa-stop"></i> 停止</button>
                     </div>
+                </div>
+
+                <!-- 按引擎独立参数 -->
+                <div class="tts-control-panel" style="margin-top:16px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <label style="font-weight:600;">按引擎独立参数</label>
+                        <button class="ds-btn-secondary" style="padding:4px 12px;font-size:12px;" onclick="showAddEngineParamDialog()"><i class="fas fa-plus"></i> 添加</button>
+                    </div>
+                    <p style="font-size:12px;color:#888;margin:4px 0 8px;">为不同引擎设置独立的语速/音调/音量，未配置的引擎使用全局参数</p>
+                    <div id="engine-params-list" style="font-size:13px;color:#666;">加载中...</div>
+                </div>
+
+                <!-- 文本替换规则 -->
+                <div class="tts-control-panel" style="margin-top:16px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <label style="font-weight:600;">文本替换规则</label>
+                        <button class="ds-btn-secondary" style="padding:4px 12px;font-size:12px;" onclick="showAddReplaceRuleDialog()"><i class="fas fa-plus"></i> 添加规则</button>
+                    </div>
+                    <p style="font-size:12px;color:#888;margin:4px 0 8px;">朗读前自动替换文本（支持正则），用于处理特殊字符、敏感词等</p>
+                    <div id="replace-rules-list" style="font-size:13px;color:#666;">加载中...</div>
                 </div>
             </section>
 
@@ -436,6 +475,39 @@
                     </div>
                 </div>
                 <div style="display:flex;flex-direction:column;gap:16px;">
+                    <!-- Voice Settings -->
+                    <div class="ds-card" style="padding:20px;">
+                        <h3 style="font-weight:600;margin-bottom:16px;"><i class="fas fa-microphone-alt"></i> 语音</h3>
+                        <p style="font-size:12px;color:#888;margin:-8px 0 12px;">语音输入与回复朗读</p>
+                        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;">
+                            <div>
+                                <div style="font-size:13px;font-weight:500;">语音输入</div>
+                                <div style="font-size:11px;color:#888;margin-top:2px;">在对话中使用浏览器语音识别输入文本</div>
+                            </div>
+                            <label class="ds-switch">
+                                <input type="checkbox" id="voice-input-enabled" onchange="saveVoiceSettings()">
+                                <span class="ds-slider"></span>
+                            </label>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid #f0f0f0;">
+                            <div>
+                                <div style="font-size:13px;font-weight:500;">朗读回复</div>
+                                <div style="font-size:11px;color:#888;margin-top:2px;">AI回复后自动使用TTS朗读</div>
+                            </div>
+                            <label class="ds-switch">
+                                <input type="checkbox" id="voice-read-aloud" onchange="saveVoiceSettings()">
+                                <span class="ds-slider"></span>
+                            </label>
+                        </div>
+                        <div class="form-group" style="margin-top:8px;">
+                            <label>朗读语速 <span id="voice-rate-val">1.0</span></label>
+                            <input type="range" id="voice-rate" min="0.5" max="2.0" step="0.1" value="1.0" oninput="document.getElementById('voice-rate-val').textContent=this.value;saveVoiceSettings()">
+                        </div>
+                        <div class="form-group">
+                            <label>朗读音调 <span id="voice-pitch-val">1.0</span></label>
+                            <input type="range" id="voice-pitch" min="0.5" max="2.0" step="0.1" value="1.0" oninput="document.getElementById('voice-pitch-val').textContent=this.value;saveVoiceSettings()">
+                        </div>
+                    </div>
                     <!-- Email Config -->
                     <div class="ds-card" style="padding:20px;">
                         <h3 style="font-weight:600;margin-bottom:16px;"><i class="fas fa-envelope"></i> 邮件配置 (SMTP)</h3>
