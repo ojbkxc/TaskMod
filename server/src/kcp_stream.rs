@@ -8,12 +8,32 @@
 //! 4. 可配置：可以调整 nodelay 参数实现极低延迟
 
 use std::collections::HashMap;
+use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
 use tokio::sync::{broadcast, RwLock};
 
 use crate::state::SharedMirrorState;
+
+/// KCP 输出适配器：实现 `std::io::Write`，将数据通过 UDP socket 发送到指定地址
+struct UdpOutput {
+    socket: Arc<UdpSocket>,
+    addr: SocketAddr,
+}
+
+impl Write for UdpOutput {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self.socket.try_send_to(buf, self.addr) {
+            Ok(n) => Ok(n),
+            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
 
 /// KCP 服务端口（HTTP 端口 + 1）
 const KCP_PORT_OFFSET: u16 = 1;
@@ -32,7 +52,7 @@ const FEC_GROUP_SIZE: usize = 5;
 
 /// KCP 客户端会话
 struct KcpSession {
-    kcp: kcp::Kcp<UdpSocket>,
+    kcp: kcp::Kcp<UdpOutput>,
     addr: SocketAddr,
     last_active: std::time::Instant,
     /// FEC 组缓冲区：累积帧数据用于 XOR 纠错
@@ -95,14 +115,11 @@ impl KcpServer {
                                 let conv = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
                                 if conv == KCP_VIDEO_CONV && sessions.len() < MAX_KCP_CLIENTS {
                                     tracing::info!("[KCP] 新客户端连接: {}", addr);
-                                    let output_fn = {
-                                        let socket = recv_socket.clone();
-                                        let addr = addr;
-                                        move |data: &[u8]| -> std::io::Result<()> {
-                                            socket.try_send_to(data, addr).map(|_| ())
-                                        }
+                                    let output = UdpOutput {
+                                        socket: recv_socket.clone(),
+                                        addr,
                                     };
-                                    let mut kcp = kcp::Kcp::new(conv, output_fn);
+                                    let mut kcp = kcp::Kcp::new(conv, output);
                                     // 设置极低延迟模式（借鉴 RustDesk 的 KCP 配置）
                                     // nodelay: 1 = 启用 nodelay
                                     // interval: 5ms 更新间隔
@@ -192,10 +209,12 @@ impl KcpServer {
         let update_sessions = sessions.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_millis(KCP_UPDATE_INTERVAL_MS));
+            let start = std::time::Instant::now();
             loop {
                 interval.tick().await;
                 let mut sessions = update_sessions.write().await;
                 let now = std::time::Instant::now();
+                let current_ms = now.duration_since(start).as_millis() as u32;
                 let mut dead_addrs = Vec::new();
 
                 for (addr, session) in sessions.iter_mut() {
@@ -204,7 +223,7 @@ impl KcpServer {
                         dead_addrs.push(*addr);
                         continue;
                     }
-                    if let Err(e) = session.kcp.update(std::time::Instant::now()) {
+                    if let Err(e) = session.kcp.update(current_ms) {
                         tracing::warn!("[KCP] update error for {}: {}", addr, e);
                     }
                 }

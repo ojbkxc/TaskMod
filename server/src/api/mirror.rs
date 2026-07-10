@@ -184,7 +184,7 @@ pub async fn start_mirror(
                                 }
                             }
                             // 非 IDR 帧
-                            1 | HEVC_NAL_TRAIL_N | HEVC_NAL_TRAIL_R => {
+                            HEVC_NAL_TRAIL_N | HEVC_NAL_TRAIL_R => {
                                 // 帧差检测：静止画面跳过
                                 if nalu_data.len() < STATIC_FRAME_SIZE_THRESHOLD {
                                     consecutive_static_frames += 1;

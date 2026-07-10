@@ -60,7 +60,7 @@ impl ScreenCapture for AndroidScreenCapture {
         };
 
         let bitrate_str = format!("{}", self.bitrate);
-        let fps_str = format!("{}", self.fps);
+        let _fps_str = format!("{}", self.fps);
 
         let handle = tokio::spawn(async move {
             let mut child = match tokio::process::Command::new("screenrecord")
