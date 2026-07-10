@@ -62,8 +62,7 @@ class MainActivity : AppCompatActivity() {
         startStatusCheck()
 
         // 检查是否需要自动启动
-        val prefs = getSharedPreferences("taskmod", MODE_PRIVATE)
-        if (prefs.getBoolean("auto_start", true)) {
+        if (ConfigManager.load().autoStart) {
             TaskModService.start(this)
         }
 
@@ -164,10 +163,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         btnShare.setOnClickListener {
-            val url = serverManager.getLanUrl()
+            val urls = serverManager.getAllAccessUrls()
+            val text = "TaskMod 管理面板:\n${urls.joinToString("\n")}"
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
-                putExtra(Intent.EXTRA_TEXT, "TaskMod 管理面板: $url")
+                putExtra(Intent.EXTRA_TEXT, text)
             }
             startActivity(Intent.createChooser(intent, "分享面板地址"))
         }
@@ -230,7 +230,13 @@ class MainActivity : AppCompatActivity() {
         statusDot.setBackgroundResource(
             if (running) R.drawable.status_dot_running else R.drawable.status_dot_stopped
         )
-        tvAddress.text = if (running) serverManager.getLanUrl() else "http://--:${TaskModApp.PORT}"
+        if (running) {
+            // 显示所有可用地址
+            val urls = serverManager.getAllAccessUrls()
+            tvAddress.text = urls.joinToString("\n")
+        } else {
+            tvAddress.text = "http://--:${serverManager.port}"
+        }
         btnToggle.text = if (running) "停止服务" else "启动服务"
         btnToggle.setBackgroundColor(getColor(if (running) R.color.error else R.color.primary))
     }

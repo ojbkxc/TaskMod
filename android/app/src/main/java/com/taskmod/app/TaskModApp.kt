@@ -10,13 +10,15 @@ class TaskModApp : Application() {
     companion object {
         const val CHANNEL_ID = "taskmod_service"
         const val CHANNEL_NAME = "TaskMod 服务"
-        const val PORT = 9527
+        const val DEFAULT_PORT = 9527
         const val GITHUB_REPO = "ojbkxc/TaskMod"
     }
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        // 初始化配置目录
+        ConfigManager.ensureDir()
     }
 
     private fun createNotificationChannel() {

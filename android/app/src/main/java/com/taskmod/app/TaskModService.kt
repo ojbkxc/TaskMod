@@ -68,7 +68,7 @@ class TaskModService : Service() {
         Thread {
             val success = serverManager.start()
             if (success) {
-                updateNotification("运行中 - 端口 ${TaskModApp.PORT}")
+                updateNotification("运行中 - 端口 ${serverManager.port}")
                 sendBroadcast(Intent("com.taskmod.STATUS_CHANGED").putExtra("running", true))
             } else {
                 updateNotification("启动失败: ${serverManager.lastError}")

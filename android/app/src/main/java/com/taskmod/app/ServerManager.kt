@@ -17,6 +17,9 @@ class ServerManager(private val context: Context) {
     private val binaryFile: File
         get() = File(context.filesDir, BINARY_NAME)
 
+    /** 获取当前配置的端口 */
+    val port: Int get() = ConfigManager.getPort()
+
     enum class ServerState {
         STOPPED, STARTING, RUNNING, ERROR
     }
@@ -70,6 +73,9 @@ class ServerManager(private val context: Context) {
             builder.environment()["TMPDIR"] = context.cacheDir.absolutePath
             builder.redirectErrorStream(true)
 
+            // 通过环境变量传递端口给服务端
+            builder.environment()["TASKMOD_PORT"] = port.toString()
+
             process = builder.start()
 
             // 等待启动
@@ -77,7 +83,7 @@ class ServerManager(private val context: Context) {
 
             if (isRunning()) {
                 state = ServerState.RUNNING
-                Log.i(TAG, "服务已启动，端口: ${TaskModApp.PORT}")
+                Log.i(TAG, "服务已启动，端口: $port")
                 return true
             } else {
                 lastError = "进程启动后立即退出"
@@ -121,7 +127,7 @@ class ServerManager(private val context: Context) {
 
         // 通过 HTTP 检查服务是否响应
         return try {
-            val url = URL("http://127.0.0.1:${TaskModApp.PORT}/api/status")
+            val url = URL("http://127.0.0.1:$port/api/status")
             val conn = url.openConnection() as HttpURLConnection
             conn.connectTimeout = 2000
             conn.readTimeout = 2000
@@ -137,12 +143,26 @@ class ServerManager(private val context: Context) {
     }
 
     fun getLocalUrl(): String {
-        return "http://127.0.0.1:${TaskModApp.PORT}"
+        return "http://127.0.0.1:$port"
     }
 
     fun getLanUrl(): String {
-        val ip = NetworkHelper.getLocalIpAddress()
-        return "http://$ip:${TaskModApp.PORT}"
+        return ConfigManager.getAccessUrl()
+    }
+
+    fun getAllAccessUrls(): List<String> {
+        val urls = mutableListOf<String>()
+        urls.add("本地: http://127.0.0.1:$port")
+        for (info in NetworkHelper.getAllIps()) {
+            urls.add("${info.type}: http://${info.ip}:$port")
+        }
+        val config = ConfigManager.load()
+        if (config.customUrl.isNotBlank()) {
+            urls.add("自定义: ${config.customUrl}")
+        } else if (config.customIp.isNotBlank()) {
+            urls.add("自定义: http://${config.customIp}:$port")
+        }
+        return urls
     }
 
     fun executeCommand(command: String): Pair<Boolean, String> {

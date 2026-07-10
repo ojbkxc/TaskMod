@@ -3,6 +3,7 @@ package com.taskmod.app
 import android.app.DownloadManager
 import android.content.*
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
@@ -84,7 +85,11 @@ class MagiskGuideActivity : AppCompatActivity() {
 
         // 注册下载完成广播
         val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
-        registerReceiver(downloadReceiver, filter)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(downloadReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(downloadReceiver, filter)
+        }
     }
 
     private fun initViews() {

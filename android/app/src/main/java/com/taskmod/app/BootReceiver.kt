@@ -17,8 +17,8 @@ class BootReceiver : BroadcastReceiver() {
 
             Log.i(TAG, "设备启动完成，检查是否需要自动启动服务")
 
-            val prefs = context.getSharedPreferences("taskmod", Context.MODE_PRIVATE)
-            if (prefs.getBoolean("auto_start", true)) {
+            val config = ConfigManager.load()
+            if (config.autoStart) {
                 Log.i(TAG, "自动启动 TaskMod 服务")
                 TaskModService.start(context)
             }

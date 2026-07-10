@@ -41,7 +41,7 @@ class TaskModWidget : AppWidgetProvider() {
             views.setInt(R.id.widget_status_dot, "setBackgroundResource",
                 if (running) R.drawable.status_dot_running else R.drawable.status_dot_stopped)
             views.setTextViewText(R.id.widget_address,
-                if (running) manager.getLanUrl() else "http://--:${TaskModApp.PORT}")
+                if (running) manager.getLanUrl() else "http://--:${manager.port}")
 
             // 点击打开主界面
             val intent = Intent(context, MainActivity::class.java)

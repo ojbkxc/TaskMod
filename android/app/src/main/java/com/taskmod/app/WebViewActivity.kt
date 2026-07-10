@@ -20,7 +20,7 @@ class WebViewActivity : AppCompatActivity() {
         webView = findViewById(R.id.webview)
         progressBar = findViewById(R.id.progress_bar)
 
-        val url = intent.getStringExtra("url") ?: "http://127.0.0.1:${TaskModApp.PORT}"
+        val url = intent.getStringExtra("url") ?: "http://127.0.0.1:${ConfigManager.getPort()}"
 
         webView.settings.apply {
             javaScriptEnabled = true

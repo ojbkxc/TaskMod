@@ -99,13 +99,17 @@ https://github.com/ojbkxc/TaskMod
 - **引用计数** - 智能管理服务生命周期
 - **自动清理** - 空闲服务自动卸载释放内存
 
-## 目录结构
+## 项目结构
 
 ```
 TaskMod/
 ├── .github/workflows/     # CI/CD 配置
+│   ├── build.yml          # 主构建（服务端 + Magisk模块 + APK）
+│   ├── build-apk.yml      # APK 独立构建
+│   └── ci.yml             # 代码检查
 ├── META-INF/              # Magisk 模块配置
-├── sdcard/TaskMod/        # 用户数据目录
+├── sdcard/TaskMod/        # 用户数据目录（APK 与模块共享）
+│   ├── app_settings.json  # APK 统一配置（端口、IP、域名、自启动）
 │   ├── scripts/           # 脚本目录
 │   ├── screenshots/       # 截图目录
 │   ├── workflows/         # 工作流目录
@@ -116,8 +120,8 @@ TaskMod/
 │   ├── projects/          # AI项目上下文
 │   ├── mcp/               # MCP服务器配置（热加载）
 │   ├── presets.json       # Prompt预设
-│   ├── prompt_settings.json # Prompt注入设置（频率、语言、开关）
-│   ├── scenarios.json     # 场景模板（内置+自定义）
+│   ├── prompt_settings.json # Prompt注入设置
+│   ├── scenarios.json     # 场景模板
 │   ├── schedule.conf      # 定时任务配置
 │   ├── email.conf         # 邮件配置
 │   ├── ai.conf            # AI 供应商配置
@@ -125,35 +129,39 @@ TaskMod/
 ├── server/                # Rust 服务器源码
 │   ├── src/               # 源代码
 │   │   ├── api/           # API 路由
-│   │   │   ├── ai.rs      # AI对话核心（Tool Calling、Provider回退）
-│   │   │   ├── ai_hub.rs  # AI Hub（历史、预设、记忆、Skill、MCP等）
+│   │   │   ├── ai.rs      # AI对话核心
+│   │   │   ├── ai_hub.rs  # AI Hub
 │   │   │   ├── mirror.rs  # 投屏控制
-│   │   │   ├── system.rs  # 系统管理、工作流
+│   │   │   ├── system.rs  # 系统管理
 │   │   │   ├── tasks.rs   # 定时任务
 │   │   │   ├── scripts.rs # 脚本管理
 │   │   │   └── tts.rs     # 语音播报
-│   │   ├── tools/         # AI Tool Calling 工具注册
-│   │   │   ├── mod.rs     # ToolRegistry 和 AiTool trait
-│   │   │   ├── adb_tools.rs  # 16个ADB操作工具
-│   │   │   ├── script_tools.rs # 6个脚本管理工具
-│   │   │   └── task_tools.rs  # 5个定时任务控制工具
-│   │   ├── data/          # 数据模型
+│   │   ├── tools/         # AI Tool Calling
 │   │   ├── utils/         # 工具模块
-│   │   │   ├── email.rs   # 邮件功能（指数退避重试）
-│   │   │   ├── mqtt.rs    # MQTT功能（条件编译）
-│   │   │   ├── adb.rs     # ADB命令封装
-│   │   │   └── event_monitor.rs  # 系统事件监控
-│   │   └── main.rs        # 入口文件（看门狗、Dead Man Switch）
+│   │   ├── config.rs      # 路径常量
+│   │   └── main.rs        # 入口
 │   ├── static/            # Web 静态资源
-│   └── Cargo.toml         # 依赖配置
+│   │   ├── index.html     # HTML 结构
+│   │   ├── style.css      # 样式
+│   │   └── app.js         # JavaScript 逻辑
+│   └── Cargo.toml
 ├── android/               # Android APK 源码
-│   ├── app/               # 应用模块
-│   │   ├── src/main/
-│   │   │   ├── java/com/taskmod/app/  # Kotlin 源码
-│   │   │   └── res/       # 资源文件
-│   │   └── build.gradle   # 应用构建配置
-│   ├── build.gradle       # 项目构建配置
-│   └── settings.gradle    # 项目设置
+│   ├── app/src/main/java/com/taskmod/app/
+│   │   ├── ConfigManager.kt    # 统一配置（/sdcard/TaskMod/app_settings.json）
+│   │   ├── NetworkHelper.kt    # 多网卡 IP 检测
+│   │   ├── ServerManager.kt    # 服务进程管理
+│   │   ├── MainActivity.kt     # 主界面
+│   │   ├── WebViewActivity.kt  # 内嵌浏览器
+│   │   ├── SettingsActivity.kt # 设置页
+│   │   ├── MagiskGuideActivity.kt # 模块安装引导
+│   │   ├── TaskModService.kt   # 前台服务
+│   │   ├── TaskModApp.kt       # Application
+│   │   ├── RootHelper.kt       # Root 命令执行
+│   │   ├── UpdateChecker.kt    # 自动更新
+│   │   ├── BootReceiver.kt     # 开机启动
+│   │   ├── widget/             # 桌面小组件
+│   │   └── tiles/              # Quick Settings 磁贴
+│   └── build.gradle
 ├── customize.sh           # Magisk 安装脚本
 ├── service.sh             # 服务启动脚本
 └── module.prop            # Magisk 模块属性
@@ -205,10 +213,22 @@ TaskMod/
 - 内置 WebView 管理面板
 - 自动更新检测
 - Root 检测与 Magisk 模块引导
+- 统一配置管理（与 Magisk 模块共享 `/sdcard/TaskMod/`）
+- 多网卡 IP 自动检测（WiFi/以太网/蜂窝/VPN）
+- 自定义端口（默认 9527，可修改）
+- 自定义 IP 和域名支持（DDNS 等场景）
+
+**APK 设置页：**
+- 开机自启动开关
+- 服务端口配置（1024-65535）
+- 自定义 IP 地址
+- 自定义域名/完整 URL（如 `http://myphone.ddns.net`）
+- 实时显示所有可用访问地址
 
 **APK 注意事项：**
 - 设备控制功能（ADB 命令、截屏、触控）需要 Root 权限
 - AI 聊天功能无需 Root
+- 配置文件存储在 `/sdcard/TaskMod/app_settings.json`，与 Magisk 模块共享
 - 建议同时安装 Magisk 模块获得完整功能
 
 ### 方式三：APK + Magisk 模块组合（最佳体验）
@@ -238,7 +258,7 @@ every 5 check.sh
 
 ### Web 管理面板
 
-启动后访问: http://设备IP:9527
+启动后访问: http://设备IP:9527（端口可在 APK 设置中修改）
 
 **侧边栏导航:**
 - 仪表盘 - 系统状态概览与快捷操作
@@ -316,6 +336,31 @@ every 5 check.sh
 | email_attachment | 带附件邮件 | 收件人、主题、内容、附件列表 |
 | tts | 语音播报 | 文本内容、TTS引擎 |
 | end | 结束节点 | 无 |
+
+## APK 配置文件
+
+APK 与 Magisk 模块共享同一份配置，存储在 `/sdcard/TaskMod/app_settings.json`：
+
+```json
+{
+  "port": 9527,
+  "customUrl": "",
+  "customIp": "",
+  "autoStart": true
+}
+```
+
+| 字段 | 说明 | 默认值 |
+|------|------|--------|
+| port | 服务端口 | 9527 |
+| customUrl | 自定义域名/完整URL（优先级最高） | 空 |
+| customIp | 自定义IP地址（配合端口使用） | 空 |
+| autoStart | 开机自动启动 | true |
+
+**地址解析优先级：**
+1. `customUrl` → 直接使用（如 `http://myphone.ddns.net`），端口可选
+2. `customIp` + `port` → `http://{ip}:{port}`
+3. 自动检测 → `http://{WiFi/以太网IP}:{port}`
 
 ## 常用 ADB 命令
 
