@@ -1,0 +1,10 @@
+pub mod dashboard;
+pub mod chat;
+pub mod mirror;
+pub mod library;
+pub mod tasks;
+pub mod scripts;
+pub mod files;
+pub mod tts;
+pub mod config;
+pub mod logs;

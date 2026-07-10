@@ -14,28 +14,6 @@ use crate::utils::mqtt;
 
 
 
-pub async fn index() -> Html<&'static str> {
-    Html(include_str!("../../static/index.html"))
-}
-
-pub async fn static_css() -> axum::response::Response {
-    use axum::http::header;
-    (
-        [(header::CONTENT_TYPE, "text/css; charset=utf-8"),
-         (header::CACHE_CONTROL, "public, max-age=3600")],
-        include_str!("../../static/style.css"),
-    ).into_response()
-}
-
-pub async fn static_js() -> axum::response::Response {
-    use axum::http::header;
-    (
-        [(header::CONTENT_TYPE, "application/javascript; charset=utf-8"),
-         (header::CACHE_CONTROL, "public, max-age=3600")],
-        include_str!("../../static/app.js"),
-    ).into_response()
-}
-
 pub async fn api_docs() -> Html<&'static str> {
     Html(include_str!("../../static/api-docs.html"))
 }

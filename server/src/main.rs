@@ -251,10 +251,7 @@ async fn main() -> anyhow::Result<()> {
         .with_state(mirror_state);
 
     let app = Router::new()
-        .route("/", get(api::system::index))
         .route("/api/docs", get(api::system::api_docs))
-        .route("/static/style.css", get(api::system::static_css))
-        .route("/static/app.js", get(api::system::static_js))
         .route("/api/tasks", get(api::tasks::list_tasks).post(api::tasks::add_task))
         .route("/api/tasks/:id", delete(api::tasks::delete_task))
         .route("/api/logs", get(api::system::get_logs))
@@ -346,6 +343,14 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/files/dir-size", get(api::files::dir_size))
         .merge(mirror_routes)
         .layer(CorsLayer::permissive());
+
+    // 添加静态文件服务（支持 Dioxus 前端）
+    let static_dir = std::path::Path::new("static");
+    let app = if static_dir.exists() {
+        app.fallback(tower_http::services::ServeDir::new("static"))
+    } else {
+        app
+    };
 
     let addr = SocketAddr::from(([0, 0, 0, 0], WEB_PORT));
     println!("TaskMod Web 管理服务已启动: http://0.0.0.0:{}", WEB_PORT);
