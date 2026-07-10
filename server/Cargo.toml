@@ -45,6 +45,10 @@ bytes = "1"
 # --- KCP 可靠 UDP（借鉴 RustDesk 的低延迟传输方案）---
 kcp = "0.5"
 
+# --- 跨平台支持 ---
+async-trait = "0.1"
+dirs-next = "2.0"
+
 # --- AI API ---
 reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"] }
 regex = "1.10"

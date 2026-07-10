@@ -1644,6 +1644,13 @@
     let mirrorFecGroup = {};
     // requestVideoFrameCallback 句柄（比 requestAnimationFrame 延迟更低）
     let mirrorRvfcHandle = null;
+    // 连接类型检测（本地局域网 vs Cloudflare Tunnel 远程）
+    // 高延迟连接使用更激进的丢帧策略
+    let mirrorIsTunnel = false;
+    let mirrorDropThreshold = 6; // 解码队列丢帧阈值（本地=6，Tunnel=3）
+    // 帧间隔追踪（预测性丢帧：检测解码器是否正在追赶）
+    let mirrorLastFrameTime = 0;
+    let mirrorFrameIntervals = []; // 滑动窗口，最近10帧的间隔
 
     /// 检测浏览器是否支持 H.265 解码
     function supportsH265() {
@@ -1661,6 +1668,14 @@
         mirrorSps = null; mirrorPps = null; mirrorVps = null;
         mirrorWidth = 0; mirrorHeight = 0;
         mirrorUseFallback = false;
+        // 检测连接类型：HTTPS (wss://) 通常意味着通过 Cloudflare Tunnel 或反向代理
+        mirrorIsTunnel = location.protocol === 'https:';
+        mirrorDropThreshold = mirrorIsTunnel ? 3 : 6;
+        mirrorLastFrameTime = 0;
+        mirrorFrameIntervals = [];
+        if (mirrorIsTunnel) {
+            console.log('[mirror] 检测到 HTTPS/wss 连接，启用 Tunnel 优化模式（更积极丢帧）');
+        }
 
         // 获取设备分辨率
         try {
@@ -1673,8 +1688,14 @@
         if (!mirrorWidth) { mirrorWidth = 1080; mirrorHeight = 1920; }
 
         // 请求最优编码器：优先 H.265（同等画质码率减半）
+        // Cloudflare Tunnel 模式：降低初始码率，减少带宽压力
         const preferCodec = (await supportsH265()) ? 'h265' : 'h264';
-        const res = await apiPost('/api/mirror/start', { codec: preferCodec });
+        const startParams = { codec: preferCodec };
+        if (mirrorIsTunnel) {
+            startParams.bit_rate = 4000000; // Tunnel 模式: 4Mbps（局域网默认 10Mbps）
+            startParams.fps = 30;           // Tunnel 模式: 30fps（局域网默认 60fps）
+        }
+        const res = await apiPost('/api/mirror/start', startParams);
         if (!res.ok) {
             showToast(res.message || '启动投屏失败', 'error');
             document.getElementById('mirror-status').style.display = 'none';
@@ -1719,6 +1740,8 @@
         mirrorBackCanvas = null; mirrorBackCtx = null; mirrorRenderScheduled = false;
         mirrorLastSeq = -1; mirrorFramesLost = 0; mirrorFecGroup = {};
         mirrorPipelineLatency = { capture: 0, encode: 0, network: 0, decode: 0, render: 0, total: 0 };
+        mirrorIsTunnel = false; mirrorDropThreshold = 6;
+        mirrorLastFrameTime = 0; mirrorFrameIntervals = [];
         stopMirrorAudio();
         // 退出全屏
         if (document.fullscreenElement) document.exitFullscreen();
@@ -1778,11 +1801,13 @@
                         mirrorStats.lastFpsTime = now;
                         // 上报质量指标到后端（ABR 系统据此自适应调整码率/帧率）
                         // 借鉴 Sunshine 的双层 ABR + 丢包感知
+                        // Tunnel 模式下额外上报丢帧数（更积极的丢帧策略会产生更多丢帧）
                         if (mirrorWs && mirrorWs.readyState === 1) {
+                            const reportLost = mirrorIsTunnel ? mirrorFramesLost * 2 : mirrorFramesLost;
                             apiPost('/api/mirror/quality', {
                                 queue_depth: mirrorStats.queueDepth,
                                 render_fps: mirrorStats.renderFps,
-                                frames_lost: mirrorFramesLost,
+                                frames_lost: reportLost,
                                 pipeline_latency: mirrorPipelineLatency.total
                             }).catch(() => {});
                             mirrorFramesLost = 0; // 重置丢帧计数
@@ -1958,7 +1983,7 @@
                 // 重置信号，清空缓存
                 mirrorSps = null; mirrorPps = null; mirrorVps = null;
                 break;
-            case 'codec':
+            case 'cdc':
                 // 后端告知使用的编码器（h264 或 hevc）
                 mirrorCodec = new TextDecoder().decode(msg.data);
                 console.log('[mirror] 后端编码器:', mirrorCodec);
@@ -2111,10 +2136,33 @@
                     mirrorPipelineLatency.network = msg.ts; // 编码端已消耗的时间
                 }
                 // 智能丢帧策略（借鉴 RustDesk 的 rc_dropframe_thresh）：
-                // 当解码队列积压超过 6 帧时，跳过 P 帧只保留关键帧，减少延迟
+                // 本地连接: 队列积压 > 6 帧时丢弃 P 帧
+                // Cloudflare Tunnel: 队列积压 > 3 帧时丢弃（高延迟需要更积极）
+                // 预测性丢帧: 帧间隔异常增大时提前丢帧（解码器正在追赶）
                 const queueSize = mirrorDecoder.decodeQueueSize || 0;
                 mirrorStats.queueDepth = queueSize;
-                if (msg.tag === 'frm' && queueSize > 6) {
+                const now = performance.now();
+                let shouldDrop = false;
+                if (msg.tag === 'frm') {
+                    // 队列深度丢帧
+                    if (queueSize > mirrorDropThreshold) {
+                        shouldDrop = true;
+                    }
+                    // 预测性丢帧：检测帧间隔是否异常（>2倍平均间隔 = 解码器积压中）
+                    if (mirrorLastFrameTime > 0) {
+                        const interval = now - mirrorLastFrameTime;
+                        mirrorFrameIntervals.push(interval);
+                        if (mirrorFrameIntervals.length > 10) mirrorFrameIntervals.shift();
+                        if (mirrorFrameIntervals.length >= 3) {
+                            const avgInterval = mirrorFrameIntervals.reduce((a, b) => a + b, 0) / mirrorFrameIntervals.length;
+                            if (interval > avgInterval * 2.5 && queueSize > 1) {
+                                shouldDrop = true;
+                            }
+                        }
+                    }
+                    mirrorLastFrameTime = now;
+                }
+                if (shouldDrop) {
                     mirrorStats.framesDropped++;
                     break;
                 }

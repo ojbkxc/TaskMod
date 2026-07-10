@@ -12,6 +12,7 @@ mod api;
 mod config;
 mod data;
 mod kcp_stream;
+mod platform;
 mod state;
 mod tools;
 mod utils;
