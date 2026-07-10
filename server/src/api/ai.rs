@@ -768,7 +768,7 @@ fn save_ai_providers(providers: &[AiProvider]) -> Result<(), std::io::Error> {
 
 /// 调用支持视觉的AI分析截图
 pub async fn call_ai_image_analyze(provider: &AiProvider, prompt: &str, img_base64: &str) -> Result<String, String> {
-    let api_url = format!("{}/chat/completions", provider.base_url.trim_end_matches('/'));
+    let api_url = format!("{}/v1/chat/completions", provider.base_url.trim_end_matches('/'));
     let body = json!({
         "model": provider.model,
         "messages": [{

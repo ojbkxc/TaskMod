@@ -32,10 +32,17 @@ pub async fn list_tasks() -> Json<ApiResponse<Vec<Task>>> {
 
 pub async fn add_task(Json(req): Json<AddTaskRequest>) -> Json<ApiResponse<String>> {
     let weeks = req.weeks.unwrap_or_else(|| "*".to_string());
-    let new_task = format!(
-        "{}|{}|{}|{}",
-        req.time, weeks, req.script, req.task_type
-    );
+    let new_task = if let Some(interval) = req.interval {
+        format!(
+            "{}|{}|{}|{}|{}",
+            req.time, weeks, req.script, req.task_type, interval
+        )
+    } else {
+        format!(
+            "{}|{}|{}|{}",
+            req.time, weeks, req.script, req.task_type
+        )
+    };
 
     let mut content = fs::read_to_string(SCHEDULE_FILE).unwrap_or_default();
     if !content.ends_with('\n') {

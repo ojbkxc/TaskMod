@@ -271,6 +271,8 @@ pub async fn input_text(text: &str) -> String {
     // 对特殊字符进行转义（Android input text 要求）
     let escaped = text
         .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("'", "\\'")
         .replace(" ", "%s")
         .replace("&", "\\&")
         .replace("<", "\\<")
@@ -278,9 +280,7 @@ pub async fn input_text(text: &str) -> String {
         .replace("|", "\\|")
         .replace(";", "\\;")
         .replace("(", "\\(")
-        .replace(")", "\\)")
-        .replace("'", "\\'")
-        .replace("\"", "\\\"");
+        .replace(")", "\\)");
     
     match Command::new("input")
         .arg("text")

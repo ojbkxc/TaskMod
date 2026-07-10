@@ -358,6 +358,8 @@ pub async fn send_control(
             let text = req.text.unwrap_or_default();
             let escaped = text
                 .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("'", "\\'")
                 .replace(" ", "%s")
                 .replace("&", "\\&")
                 .replace("<", "\\<")
@@ -365,9 +367,7 @@ pub async fn send_control(
                 .replace("|", "\\|")
                 .replace(";", "\\;")
                 .replace("(", "\\(")
-                .replace(")", "\\)")
-                .replace("'", "\\'")
-                .replace("\"", "\\\"");
+                .replace(")", "\\)");
             Command::new(input_cmd).arg("text").arg(escaped).status().await
         }
         "swipe" => {
@@ -642,6 +642,14 @@ pub struct FileUploadReq {
 
 pub async fn upload_file_to_device(Json(req): Json<FileUploadReq>) -> Json<ApiResponse<String>> {
     use base64::Engine;
+
+    // 校验文件名，防止路径穿越和命令注入
+    if req.filename.contains("..") || req.filename.contains('/') || req.filename.contains('\\')
+        || req.filename.contains('\'') || req.filename.contains('"') || req.filename.contains(';')
+    {
+        return Json(ApiResponse::err("无效的文件名"));
+    }
+
     let dest_dir = req.dest_dir.unwrap_or_else(|| "/sdcard/Download".to_string());
     let dest_path = format!("{}/{}", dest_dir, req.filename);
 

@@ -335,6 +335,9 @@ every 5 check.sh
 | email | 发送邮件 | 收件人、主题、内容 |
 | email_attachment | 带附件邮件 | 收件人、主题、内容、附件列表 |
 | tts | 语音播报 | 文本内容、TTS引擎 |
+| ai_generate | AI生成内容 | provider_id、prompt、output_var |
+| condition | 条件分支 | expression、true_next、false_next |
+| mqtt_publish | MQTT发布消息 | topic、payload |
 | end | 结束节点 | 无 |
 
 ## APK 配置文件
@@ -526,6 +529,21 @@ POST /api/service/unload - 手动卸载服务
 - TTS 语音功能需要系统支持（支持小爱同学等语音助手）
 - MQTT 使用纯Rust实现（rumqttc），无C依赖，避免交叉编译问题
 - 邮件功能使用统一的utils/email.rs实现，无重复代码
+
+## 更新日志
+
+### v1.0.4 (2026-07-10)
+
+**Bug 修复：**
+- **定时任务 interval 字段丢失** - `add_task` API 未写入 `interval` 字段，导致间隔任务配置丢失
+- **schedule.conf 格式不一致** - Rust 后端使用 `|` 分隔符，`service.sh` 使用空格分隔，现已统一支持两种格式（优先管道分隔，兼容旧格式）
+- **使用量统计日期计算错误** - `chrono_date()` 使用简单的天数除法计算日期（不考虑闰年），修正为使用 `chrono::Local` 获取准确日期
+- **ADB 文本输入转义顺序错误** - 单引号/双引号转义应在反斜杠转义之后执行，导致双重转义问题，影响投屏和 AI 工具的文本输入
+- **AI截图分析API路径错误** - `call_ai_image_analyze` 缺少 `/v1` 前缀，导致截图+AI视觉分析功能无法正常工作
+- **文件上传命令注入风险** - `upload_file_to_device` 未校验文件名，添加路径穿越和特殊字符过滤
+
+**功能补充：**
+- **工作流节点类型扩展** - 新增 `ai_generate`（AI生成）、`condition`（条件分支）、`mqtt_publish`（MQTT发布）节点类型
 
 ## 许可证
 

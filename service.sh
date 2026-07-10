@@ -77,37 +77,76 @@ process_schedule() {
   while IFS= read -r line || [ -n "$line" ]; do
     line=$(echo "$line" | tr -d '\r')
     case "$line" in ""|\#*) continue ;; esac
-    set -- $line
-    type="$1"
-    if [ "$type" = "every" ]; then
-      mins="$2"
-      script="$3"
-      now_min=$(date +%M)
-      if [ $((now_min % mins)) -eq 0 ]; then
-        marker="$MARKER_DIR/$(date +%Y%m%d%H%M)_$(echo "$script" | tr '/' '_')"
-        if [ ! -f "$marker" ]; then
-          touch "$marker"
-          run_script "$script"
-        fi
-      fi
-    else
-      time_val="$1"
-      time_key=$(echo "$time_val" | tr -d ':')
-      if [ "$#" -eq 3 ]; then
+
+    # 支持两种格式：管道分隔（Rust后端写入）和空格分隔（旧格式）
+    case "$line" in
+      *\|*)
+        # 管道分隔格式: time|weeks|script|task_type|interval
+        OLD_IFS="$IFS"
+        IFS='|'
+        set -- $line
+        IFS="$OLD_IFS"
+        time_val="$1"
         weeks="$2"
         script="$3"
-      else
-        weeks="1,2,3,4,5,6,7"
-        script="$2"
-      fi
-      if match_minute "$time_key" && match_today "$weeks"; then
-        marker="$MARKER_DIR/$(date +%Y%m%d)_${time_key}_${weeks}_$(echo "$script" | tr '/' '_')"
-        if [ ! -f "$marker" ]; then
-          touch "$marker"
-          run_script "$script"
+        task_type="$4"
+        interval="$5"
+
+        if [ "$task_type" = "interval" ] && [ -n "$interval" ]; then
+          now_min=$(date +%M)
+          if [ $((now_min % interval)) -eq 0 ]; then
+            marker="$MARKER_DIR/$(date +%Y%m%d%H%M)_$(echo "$script" | tr '/' '_')"
+            if [ ! -f "$marker" ]; then
+              touch "$marker"
+              run_script "$script"
+            fi
+          fi
+        else
+          time_key=$(echo "$time_val" | tr -d ':')
+          if match_minute "$time_key" && match_today "$weeks"; then
+            marker="$MARKER_DIR/$(date +%Y%m%d)_${time_key}_${weeks}_$(echo "$script" | tr '/' '_')"
+            if [ ! -f "$marker" ]; then
+              touch "$marker"
+              run_script "$script"
+            fi
+          fi
         fi
-      fi
-    fi
+        ;;
+      *)
+        # 空格分隔旧格式（兼容）
+        set -- $line
+        type="$1"
+        if [ "$type" = "every" ]; then
+          mins="$2"
+          script="$3"
+          now_min=$(date +%M)
+          if [ $((now_min % mins)) -eq 0 ]; then
+            marker="$MARKER_DIR/$(date +%Y%m%d%H%M)_$(echo "$script" | tr '/' '_')"
+            if [ ! -f "$marker" ]; then
+              touch "$marker"
+              run_script "$script"
+            fi
+          fi
+        else
+          time_val="$1"
+          time_key=$(echo "$time_val" | tr -d ':')
+          if [ "$#" -eq 3 ]; then
+            weeks="$2"
+            script="$3"
+          else
+            weeks="1,2,3,4,5,6,7"
+            script="$2"
+          fi
+          if match_minute "$time_key" && match_today "$weeks"; then
+            marker="$MARKER_DIR/$(date +%Y%m%d)_${time_key}_${weeks}_$(echo "$script" | tr '/' '_')"
+            if [ ! -f "$marker" ]; then
+              touch "$marker"
+              run_script "$script"
+            fi
+          fi
+        fi
+        ;;
+    esac
   done < "$SCHEDULE_FILE"
 }
 

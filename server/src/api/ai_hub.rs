@@ -1,5 +1,6 @@
 use axum::{Json, extract::Path, extract::Query};
 use base64::Engine;
+use chrono::Local;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -1542,13 +1543,8 @@ pub async fn record_usage(Json(req): Json<RecordUsageReq>) -> Json<serde_json::V
 }
 
 fn chrono_date() -> String {
-    let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
-    let days = secs / 86400;
-    let y = 1970 + days / 365;
-    let d = days % 365;
-    let m = d / 30 + 1;
-    let d = d % 30 + 1;
-    format!("{:04}-{:02}-{:02}", y, m, d)
+    let now = Local::now();
+    now.format("%Y-%m-%d").to_string()
 }
 
 // ==================== 对话标题自动生成 ====================
