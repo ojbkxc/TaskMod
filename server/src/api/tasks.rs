@@ -1,7 +1,7 @@
 use axum::{extract::Path as AxumPath, Json};
 use chrono::{DateTime, Local};
-use std::fs;
 use std::path::Path;
+use tokio::fs;
 use tokio::process::Command;
 
 use crate::config::{SCHEDULE_FILE, SCRIPTS_DIR, EMAIL_CONF};
@@ -10,7 +10,7 @@ use crate::data::response::ApiResponse;
 use crate::utils::email;
 
 pub async fn list_tasks() -> Json<ApiResponse<Vec<Task>>> {
-    let content = fs::read_to_string(SCHEDULE_FILE).unwrap_or_default();
+    let content = fs::read_to_string(SCHEDULE_FILE).await.unwrap_or_default();
     let tasks: Vec<Task> = content
         .lines()
         .filter(|line| !line.trim().is_empty() && !line.starts_with('#'))
@@ -44,21 +44,20 @@ pub async fn add_task(Json(req): Json<AddTaskRequest>) -> Json<ApiResponse<Strin
         )
     };
 
-    let mut content = fs::read_to_string(SCHEDULE_FILE).unwrap_or_default();
+    let mut content = fs::read_to_string(SCHEDULE_FILE).await.unwrap_or_default();
     if !content.ends_with('\n') {
         content.push('\n');
     }
     content.push_str(&new_task);
     content.push('\n');
 
-    match fs::write(SCHEDULE_FILE, &content) {
+    match fs::write(SCHEDULE_FILE, &content).await {
         Ok(_) => Json(ApiResponse::ok_msg("ok".to_string(), "任务已添加，30秒内自动生效")),
         Err(_) => {
-            // Try creating directory and retry
             if let Some(parent) = Path::new(SCHEDULE_FILE).parent() {
-                let _ = fs::create_dir_all(parent);
+                let _ = fs::create_dir_all(parent).await;
             }
-            match fs::write(SCHEDULE_FILE, &content) {
+            match fs::write(SCHEDULE_FILE, &content).await {
                 Ok(_) => Json(ApiResponse::ok_msg("ok".to_string(), "任务已添加，30秒内自动生效")),
                 Err(e) => Json(ApiResponse::err(&format!("添加失败: {}", e))),
             }
@@ -67,7 +66,7 @@ pub async fn add_task(Json(req): Json<AddTaskRequest>) -> Json<ApiResponse<Strin
 }
 
 pub async fn delete_task(AxumPath(id): AxumPath<usize>) -> Json<ApiResponse<String>> {
-    let content = fs::read_to_string(SCHEDULE_FILE).unwrap_or_default();
+    let content = fs::read_to_string(SCHEDULE_FILE).await.unwrap_or_default();
     let lines: Vec<&str> = content.lines().collect();
 
     // Build index mapping: filtered_index -> raw_line_index
@@ -86,7 +85,7 @@ pub async fn delete_task(AxumPath(id): AxumPath<usize>) -> Json<ApiResponse<Stri
     let mut new_lines: Vec<&str> = lines.to_vec();
     new_lines.remove(raw_index);
 
-    match fs::write(SCHEDULE_FILE, new_lines.join("\n")) {
+    match fs::write(SCHEDULE_FILE, new_lines.join("\n")).await {
         Ok(_) => Json(ApiResponse::ok_msg("ok".to_string(), "任务已删除")),
         Err(e) => Json(ApiResponse::err(&format!("删除失败: {}", e))),
     }
@@ -107,7 +106,7 @@ pub async fn trigger_script(Json(req): Json<TriggerRequest>) -> Json<ApiResponse
                 let result = String::from_utf8_lossy(&output.stdout);
                 let now: DateTime<Local> = Local::now();
                 
-                let email_conf = parse_email_conf();
+                let email_conf = parse_email_conf().await;
                 let enable_notify = email_conf.get("enable_notify")
                     .map(|v| v == "true" || v == "1")
                     .unwrap_or(false);
@@ -150,8 +149,8 @@ pub async fn trigger_script(Json(req): Json<TriggerRequest>) -> Json<ApiResponse
     Json(ApiResponse::ok(format!("脚本 {} 已触发", script_name)))
 }
 
-fn parse_email_conf() -> std::collections::HashMap<String, String> {
-    let content = fs::read_to_string(EMAIL_CONF).unwrap_or_default();
+async fn parse_email_conf() -> std::collections::HashMap<String, String> {
+    let content = fs::read_to_string(EMAIL_CONF).await.unwrap_or_default();
     let mut conf = std::collections::HashMap::new();
     for line in content.lines() {
         if let Some((key, value)) = line.split_once('=') {

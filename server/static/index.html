@@ -6,7 +6,13 @@
     <title>TaskMod - AI Assistant</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/marked.min.js"></script>
-        <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markup.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
 
 </head>
 <body>
@@ -169,8 +175,30 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                             </svg>
                         </div>
-                        <div class="ds-empty-state-title">开始与 AI 对话</div>
-                        <div class="ds-empty-state-description">选择一个AI提供商，然后输入消息控制设备</div>
+                        <div class="ds-empty-state-title">欢迎使用 AI 助手</div>
+                        <div class="ds-empty-state-description">选择一个AI提供商，然后输入消息控制设备。你也可以试试下面的快捷操作：</div>
+                        <div class="ds-quick-prompts">
+                            <button class="ds-quick-prompt-card" onclick="insertChatPrompt('帮我查看设备状态')">
+                                <i class="fas fa-mobile-alt"></i>
+                                <span>查看设备状态</span>
+                            </button>
+                            <button class="ds-quick-prompt-card" onclick="insertChatPrompt('截一张屏幕截图并分析')">
+                                <i class="fas fa-camera"></i>
+                                <span>截图分析</span>
+                            </button>
+                            <button class="ds-quick-prompt-card" onclick="insertChatPrompt('帮我打开设置页面')">
+                                <i class="fas fa-cog"></i>
+                                <span>打开设置</span>
+                            </button>
+                            <button class="ds-quick-prompt-card" onclick="insertChatPrompt('列出已安装的应用')">
+                                <i class="fas fa-th"></i>
+                                <span>列出应用</span>
+                            </button>
+                        </div>
+                        <div style="display:flex;gap:8px;margin-top:12px;">
+                            <button class="ds-chat-text-button" onclick="clearChat()"><i class="fas fa-plus" style="margin-right:4px;"></i>新对话</button>
+                            <button class="ds-chat-text-button" onclick="exportChat()"><i class="fas fa-download" style="margin-right:4px;"></i>导出对话</button>
+                        </div>
                     </div>
                 </div>
                 <footer class="ds-chat-composer-wrap">
@@ -182,7 +210,7 @@
                                 <button class="ds-chat-text-button" id="tts-reply-toggle" onclick="toggleTtsReply()" title="朗读AI回复" style="font-size:12px;padding:4px 8px;border-radius:12px;cursor:pointer;">
                                     <i class="fas fa-volume-up"></i>
                                 </button>
-                                <button class="ds-chat-mic-button" id="voice-input-btn" onclick="toggleVoiceInput()" title="语音输入" style="display:none;font-size:14px;padding:4px 8px;border-radius:50%;cursor:pointer;border:none;background:transparent;color:#666;">
+                                <button class="ds-chat-mic-button" id="voice-input-btn" onclick="toggleVoiceInput()" title="语音输入" style="display:none;font-size:14px;padding:4px 8px;border-radius:50%;cursor:pointer;border:none;background:transparent;color:var(--ds-text-secondary);">
                                     <i class="fas fa-microphone"></i>
                                 </button>
                                 <button class="ds-chat-send-button" id="chat-send-btn" onclick="sendChatMessage()" title="发送">
@@ -296,138 +324,113 @@
 
             <!-- ========== Mirror ========== -->
             <section id="tab-mirror" class="tab-content page-content" style="display:none;">
-                <div class="ds-page-intro">
-                    <div>
-                        <h1 class="ds-page-intro-title">设备控制</h1>
-                        <p class="ds-page-intro-description">投屏、设备操控与ADB命令</p>
+                <!-- 顶部操作栏：紧凑一行 -->
+                <div class="mirror-top-bar">
+                    <div class="mirror-top-left">
+                        <span class="mirror-connection-dot" id="mirror-conn-dot"></span>
+                        <span class="mirror-connection-text" id="mirror-conn-text">未连接</span>
                     </div>
-                    <div class="ds-page-intro-actions">
-                        <button class="ds-btn-primary" id="mirror-start-btn" onclick="startMirror()"><i class="fas fa-play"></i> 开始投屏</button>
-                        <button class="ds-btn-danger" id="mirror-stop-btn" onclick="stopMirror()" style="display:none;"><i class="fas fa-stop"></i> 停止投屏</button>
-                        <button class="ds-btn-secondary" id="mirror-fullscreen-btn" onclick="toggleMirrorFullscreen()" style="display:none;" title="全屏"><i class="fas fa-expand"></i> 全屏</button>
-                        <button class="ds-btn-secondary" id="mirror-audio-btn" onclick="toggleMirrorAudio()" style="display:none;" title="设备声音"><i class="fas fa-volume-up"></i> 声音</button>
+                    <div class="mirror-top-actions">
+                        <button class="ds-btn-primary mirror-start-btn" id="mirror-start-btn" onclick="startMirror()"><i class="fas fa-play"></i> 开始投屏</button>
+                        <button class="ds-btn-danger" id="mirror-stop-btn" onclick="stopMirror()" style="display:none;"><i class="fas fa-stop"></i> 停止</button>
+                        <button class="mirror-icon-btn" id="mirror-fullscreen-btn" onclick="toggleMirrorFullscreen()" style="display:none;" title="全屏"><i class="fas fa-expand"></i></button>
+                        <button class="mirror-icon-btn" id="mirror-audio-btn" onclick="toggleMirrorAudio()" style="display:none;" title="设备声音"><i class="fas fa-volume-up"></i></button>
+                        <button class="mirror-icon-btn" onclick="screenshot()" title="截屏"><i class="fas fa-camera"></i></button>
                     </div>
                 </div>
 
-                <!-- 快捷操作栏 -->
-                <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
-                    <button class="ds-btn-secondary" onclick="screenshot()"><i class="fas fa-camera"></i> 截屏</button>
-                    <button class="ds-btn-secondary" onclick="unlockScreen()"><i class="fas fa-unlock"></i> 上滑解锁</button>
-                    <button class="ds-btn-secondary" onclick="rebootDevice()"><i class="fas fa-power-off"></i> 重启设备</button>
-                </div>
-
-                <!-- ADB 命令输入 -->
-                <div class="ds-card" style="padding:14px 16px;margin-bottom:16px;">
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-                        <i class="fas fa-terminal" style="opacity:0.5;"></i>
-                        <strong style="font-size:14px;">ADB 命令</strong>
-                        <span style="font-size:11px;color:var(--ds-text-tertiary);">发送 shell 命令到设备</span>
-                    </div>
-                    <div style="display:flex;gap:8px;">
-                        <input type="text" id="adb-command-input" class="ds-chat-input" style="flex:1;font-family:monospace;font-size:13px;" placeholder="输入命令，如: input tap 500 500" onkeydown="if(event.key==='Enter')sendAdbCommand()">
-                        <button class="ds-btn-primary" onclick="sendAdbCommand()"><i class="fas fa-paper-plane"></i> 执行</button>
-                    </div>
-                    <div id="adb-command-result" style="margin-top:8px;display:none;">
-                        <pre style="background:var(--ds-bg);border:1px solid var(--ds-border);border-radius:var(--radius-ctrl);padding:10px;font-family:monospace;font-size:12px;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin:0;"></pre>
-                    </div>
-                    <!-- 常用命令快捷按钮 -->
-                    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">
-                        <button class="ds-badge" style="cursor:pointer;" onclick="quickAdb('input keyevent KEYCODE_WAKEUP')">唤醒屏幕</button>
-                        <button class="ds-badge" style="cursor:pointer;" onclick="quickAdb('input keyevent KEYCODE_SLEEP')">息屏</button>
-                        <button class="ds-badge" style="cursor:pointer;" onclick="quickAdb('input swipe 540 1800 540 600 300')">上滑解锁</button>
-                        <button class="ds-badge" style="cursor:pointer;" onclick="quickAdb('input keyevent KEYCODE_HOME')">Home</button>
-                        <button class="ds-badge" style="cursor:pointer;" onclick="quickAdb('input keyevent KEYCODE_BACK')">返回</button>
-                        <button class="ds-badge" style="cursor:pointer;" onclick="quickAdb('dumpsys battery')">电池信息</button>
-                        <button class="ds-badge" style="cursor:pointer;" onclick="quickAdb('getprop ro.product.model')">设备型号</button>
-                        <button class="ds-badge" style="cursor:pointer;" onclick="quickAdb('settings get system screen_brightness')">屏幕亮度</button>
-                        <button class="ds-badge" style="cursor:pointer;" onclick="quickAdb('wm size')">屏幕分辨率</button>
-                        <button class="ds-badge" style="cursor:pointer;" onclick="quickAdb('cat /proc/cpuinfo | head -5')">CPU信息</button>
-                    </div>
-                </div>
+                <!-- 投屏区域：视觉焦点 -->
                 <div class="mirror-container" id="mirror-container">
-                    <div class="ds-empty-state" id="mirror-placeholder">
-                        <i class="fas fa-desktop" style="font-size:2.5rem;opacity:0.3;"></i>
-                        <p>点击"开始投屏"连接设备</p>
+                    <div class="mirror-empty-state" id="mirror-placeholder">
+                        <div class="mirror-empty-icon"><i class="fas fa-mobile-alt"></i></div>
+                        <p class="mirror-empty-title">设备未连接</p>
+                        <p class="mirror-empty-desc">点击上方"开始投屏"连接设备屏幕</p>
                     </div>
                     <canvas id="mirror-canvas" style="display:none;width:100%;height:100%;object-fit:contain;"></canvas>
+                    <!-- 浮动导航控制条 -->
+                    <div class="mirror-float-controls" id="mirror-controls" style="display:none;">
+                        <button class="mirror-ctrl-btn" onclick="mirrorKey('BACK')" title="返回"><i class="fas fa-arrow-left"></i></button>
+                        <button class="mirror-ctrl-btn" onclick="mirrorKey('HOME')" title="桌面"><i class="fas fa-circle"></i></button>
+                        <button class="mirror-ctrl-btn" onclick="mirrorKey('APP_SWITCH')" title="任务"><i class="fas fa-square"></i></button>
+                        <div class="mirror-ctrl-sep"></div>
+                        <button class="mirror-ctrl-btn" onclick="mirrorKey('POWER')" title="电源"><i class="fas fa-power-off"></i></button>
+                        <button class="mirror-ctrl-btn" onclick="mirrorVolumeDown()" title="音量-"><i class="fas fa-volume-down"></i></button>
+                        <button class="mirror-ctrl-btn" onclick="mirrorVolumeUp()" title="音量+"><i class="fas fa-volume-up"></i></button>
+                    </div>
+                    <!-- 状态浮层 -->
                     <div class="mirror-status-overlay" id="mirror-status" style="display:none;">
                         <span id="mirror-status-text">连接中...</span>
                     </div>
                     <div class="mirror-recording-indicator" id="mirror-recording" style="display:none;">
                         <span class="recording-dot"></span> 录制中
                     </div>
+                    <!-- 触控涟漪 -->
+                    <div class="touch-ripple" id="touch-ripple"></div>
                 </div>
 
-                <!-- 设备控制按钮 -->
-                <div id="mirror-controls" style="display:none;margin-top:16px;">
-                    <!-- 导航栏 -->
-                    <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:12px;">
-                        <button class="mirror-ctrl-btn" onclick="mirrorKey('BACK')" title="返回">
-                            <i class="fas fa-arrow-left"></i>
-                            <span>返回</span>
-                        </button>
-                        <button class="mirror-ctrl-btn" onclick="mirrorKey('HOME')" title="桌面">
-                            <i class="fas fa-circle"></i>
-                            <span>桌面</span>
-                        </button>
-                        <button class="mirror-ctrl-btn" onclick="mirrorKey('APP_SWITCH')" title="最近任务">
-                            <i class="fas fa-square"></i>
-                            <span>任务</span>
-                        </button>
-                        <div style="width:1px;height:36px;background:var(--ds-border);margin:0 4px;"></div>
-                        <button class="mirror-ctrl-btn" onclick="mirrorKey('MENU')" title="菜单">
-                            <i class="fas fa-bars"></i>
-                            <span>菜单</span>
-                        </button>
-                        <button class="mirror-ctrl-btn" onclick="mirrorKey('POWER')" title="电源">
-                            <i class="fas fa-power-off"></i>
-                            <span>电源</span>
-                        </button>
-                        <div style="width:1px;height:36px;background:var(--ds-border);margin:0 4px;"></div>
-                        <button class="mirror-ctrl-btn" onclick="mirrorVolumeDown()" title="音量-">
-                            <i class="fas fa-volume-down"></i>
-                            <span>音量-</span>
-                        </button>
-                        <button class="mirror-ctrl-btn" onclick="mirrorVolumeUp()" title="音量+">
-                            <i class="fas fa-volume-up"></i>
-                            <span>音量+</span>
-                        </button>
-                    </div>
+                <!-- 手势提示 -->
+                <div class="mirror-gesture-hint" id="mirror-gesture-hint" style="display:none;">
+                    <span><i class="fas fa-hand-pointer"></i> 单击=点击</span>
+                    <span><i class="fas fa-arrows-alt-v"></i> 上下滑动=滚动</span>
+                    <span><i class="fas fa-mouse"></i> 滚轮=滚动</span>
                 </div>
 
-                <!-- 设备工具栏 -->
-                <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;">
-                    <button class="ds-btn-primary" onclick="loadDeviceInfo()" style="font-size:13px;padding:8px 16px;"><i class="fas fa-info-circle"></i> 设备信息</button>
-                    <button class="ds-btn-primary" onclick="getDeviceClipboard()" style="font-size:13px;padding:8px 16px;"><i class="fas fa-clipboard"></i> 获取剪贴板</button>
-                    <button class="ds-btn-primary" onclick="setDeviceClipboard()" style="font-size:13px;padding:8px 16px;"><i class="fas fa-paste"></i> 设置剪贴板</button>
-                    <button class="ds-btn-primary" onclick="document.getElementById('file-upload-input').click()" style="font-size:13px;padding:8px 16px;"><i class="fas fa-upload"></i> 上传文件到设备</button>
-                    <input type="file" id="file-upload-input" style="display:none;" multiple onchange="handleFileSelect(this.files)">
-                </div>
-
-                <!-- 设备信息 -->
-                <div id="device-info-container" style="margin-top:12px;display:none;">
-                    <div class="ds-card" style="padding:16px;">
-                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                            <h3 style="margin:0;font-size:15px;"><i class="fas fa-mobile-alt"></i> 设备信息</h3>
-                            <button onclick="document.getElementById('device-info-container').style.display='none'" style="background:none;border:none;cursor:pointer;font-size:16px;opacity:0.6;">&times;</button>
+                <!-- 折叠面板：ADB 命令 -->
+                <details class="mirror-collapse" open>
+                    <summary class="mirror-collapse-header">
+                        <i class="fas fa-terminal"></i> ADB 命令
+                        <span class="mirror-collapse-desc">发送 shell 命令到设备</span>
+                    </summary>
+                    <div class="mirror-collapse-body">
+                        <div style="display:flex;gap:8px;">
+                            <input type="text" id="adb-command-input" class="ds-chat-input" style="flex:1;font-family:monospace;font-size:13px;" placeholder="输入命令，如: input tap 500 500" onkeydown="if(event.key==='Enter')sendAdbCommand()">
+                            <button class="ds-btn-primary" onclick="sendAdbCommand()"><i class="fas fa-paper-plane"></i> 执行</button>
                         </div>
-                        <div id="device-info" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;"></div>
-                    </div>
-                </div>
-
-                <!-- 剪贴板 -->
-                <div id="clipboard-container" style="margin-top:12px;display:none;">
-                    <div class="ds-card" style="padding:16px;">
-                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                            <h3 style="margin:0;font-size:15px;"><i class="fas fa-clipboard"></i> 剪贴板同步</h3>
-                            <button onclick="document.getElementById('clipboard-container').style.display='none'" style="background:none;border:none;cursor:pointer;font-size:16px;opacity:0.6;">&times;</button>
+                        <div id="adb-command-result" style="margin-top:8px;display:none;">
+                            <pre style="background:var(--ds-bg);border:1px solid var(--ds-border);border-radius:var(--radius-ctrl);padding:10px;font-family:monospace;font-size:12px;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin:0;"></pre>
                         </div>
-                        <textarea id="clipboard-text" rows="3" placeholder="剪贴板内容..." style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--ds-border);background:var(--ds-bg);color:var(--ds-text);resize:vertical;box-sizing:border-box;"></textarea>
+                        <!-- 常用命令：卡片式 -->
+                        <div class="mirror-cmd-grid">
+                            <button class="mirror-cmd-card" onclick="quickAdb('input keyevent KEYCODE_WAKEUP')"><i class="fas fa-sun"></i><span>唤醒屏幕</span></button>
+                            <button class="mirror-cmd-card" onclick="quickAdb('input keyevent KEYCODE_SLEEP')"><i class="fas fa-moon"></i><span>息屏</span></button>
+                            <button class="mirror-cmd-card" onclick="quickAdb('input swipe 540 1800 540 600 300')"><i class="fas fa-hand-rock"></i><span>上滑解锁</span></button>
+                            <button class="mirror-cmd-card" onclick="quickAdb('input keyevent KEYCODE_HOME')"><i class="fas fa-home"></i><span>Home</span></button>
+                            <button class="mirror-cmd-card" onclick="quickAdb('input keyevent KEYCODE_BACK')"><i class="fas fa-arrow-left"></i><span>返回</span></button>
+                            <button class="mirror-cmd-card" onclick="quickAdb('dumpsys battery')"><i class="fas fa-battery-half"></i><span>电池信息</span></button>
+                            <button class="mirror-cmd-card" onclick="quickAdb('getprop ro.product.model')"><i class="fas fa-mobile-alt"></i><span>设备型号</span></button>
+                            <button class="mirror-cmd-card" onclick="quickAdb('wm size')"><i class="fas fa-expand-arrows-alt"></i><span>分辨率</span></button>
+                        </div>
                     </div>
-                </div>
+                </details>
 
-                <!-- 文件上传进度 -->
-                <div id="file-upload-progress" style="margin-top:12px;"></div>
+                <!-- 折叠面板：设备工具 -->
+                <details class="mirror-collapse">
+                    <summary class="mirror-collapse-header">
+                        <i class="fas fa-tools"></i> 设备工具
+                        <span class="mirror-collapse-desc">截屏、剪贴板、文件上传</span>
+                    </summary>
+                    <div class="mirror-collapse-body">
+                        <div class="mirror-tool-grid">
+                            <button class="mirror-tool-card" onclick="screenshot()"><i class="fas fa-camera"></i><span>截屏</span></button>
+                            <button class="mirror-tool-card" onclick="unlockScreen()"><i class="fas fa-unlock"></i><span>上滑解锁</span></button>
+                            <button class="mirror-tool-card" onclick="rebootDevice()"><i class="fas fa-power-off"></i><span>重启设备</span></button>
+                            <button class="mirror-tool-card" onclick="loadDeviceInfo()"><i class="fas fa-info-circle"></i><span>设备信息</span></button>
+                            <button class="mirror-tool-card" onclick="getDeviceClipboard()"><i class="fas fa-clipboard"></i><span>获取剪贴板</span></button>
+                            <button class="mirror-tool-card" onclick="setDeviceClipboard()"><i class="fas fa-paste"></i><span>设置剪贴板</span></button>
+                            <button class="mirror-tool-card" onclick="document.getElementById('file-upload-input').click()"><i class="fas fa-upload"></i><span>上传文件</span></button>
+                            <input type="file" id="file-upload-input" style="display:none;" multiple onchange="handleFileSelect(this.files)">
+                        </div>
+                        <!-- 设备信息区域 -->
+                        <div id="device-info-container" style="margin-top:12px;display:none;">
+                            <div id="device-info" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;"></div>
+                        </div>
+                        <!-- 剪贴板区域 -->
+                        <div id="clipboard-container" style="margin-top:12px;display:none;">
+                            <textarea id="clipboard-text" rows="3" placeholder="剪贴板内容..." style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--ds-border);background:var(--ds-bg);color:var(--ds-text);resize:vertical;box-sizing:border-box;"></textarea>
+                        </div>
+                        <div id="file-upload-progress" style="margin-top:12px;"></div>
+                    </div>
+                </details>
             </section>
 
             <!-- ========== Tasks ========== -->
@@ -480,70 +483,94 @@
                         <p class="ds-page-intro-description">浏览和管理设备文件</p>
                     </div>
                     <div class="ds-page-intro-actions">
-                        <button class="ds-btn-secondary" onclick="fileGoUp()" title="上级目录"><i class="fas fa-level-up-alt"></i> 上级</button>
-                        <button class="ds-btn-secondary" onclick="fileRefresh()" title="刷新"><i class="fas fa-sync-alt"></i> 刷新</button>
-                        <button class="ds-btn-secondary" onclick="fileNewFolder()"><i class="fas fa-folder-plus"></i> 新建目录</button>
-                        <button class="ds-btn-secondary" onclick="fileNewFile()"><i class="fas fa-file-medical"></i> 新建文件</button>
-                        <button class="ds-btn-secondary" onclick="document.getElementById('file-upload-input').click()"><i class="fas fa-upload"></i> 上传文件</button>
-                        <input type="file" id="file-upload-input" style="display:none;" multiple onchange="fileUpload(this.files)">
+                        <input type="file" id="fm-upload-input" style="display:none;" multiple onchange="fileUpload(this.files)">
                     </div>
                 </div>
+                <div class="fm-layout">
+                    <!-- 左侧目录树侧边栏 -->
+                    <aside class="fm-sidebar" id="fm-sidebar">
+                        <div class="fm-sidebar-header">
+                            <span>目录</span>
+                            <button class="fm-toolbar-btn" style="width:24px;height:24px;font-size:10px;" onclick="toggleFmSidebar()" title="收起"><i class="fas fa-chevron-left"></i></button>
+                        </div>
+                        <div class="fm-sidebar-tree" id="fm-tree">
+                            <!-- JS 动态生成 -->
+                        </div>
+                        <div class="fm-resize-handle" id="fm-resize-handle"></div>
+                    </aside>
 
-                <!-- 面包屑导航 -->
-                <div id="file-breadcrumb" style="display:flex;align-items:center;gap:4px;padding:10px 16px;background:var(--ds-surface);border:1px solid var(--ds-border);border-radius:var(--radius-ctrl);margin-bottom:12px;overflow-x:auto;white-space:nowrap;">
-                    <span style="cursor:pointer;color:var(--ds-blue);" onclick="loadFileManager('/')">/</span>
-                </div>
+                    <!-- 右侧主区域 -->
+                    <div class="fm-main">
+                        <!-- 工具栏 -->
+                        <div class="fm-toolbar">
+                            <button class="fm-hamburger" onclick="toggleFmSidebar()"><i class="fas fa-bars"></i></button>
+                            <button class="fm-toolbar-btn" onclick="fileGoUp()" title="上级目录"><i class="fas fa-level-up-alt"></i></button>
+                            <button class="fm-toolbar-btn" onclick="fileRefresh()" title="刷新"><i class="fas fa-sync-alt"></i></button>
+                            <div class="fm-toolbar-sep"></div>
+                            <div class="fm-dropdown-wrap">
+                                <button class="fm-toolbar-btn" onclick="toggleNewDropdown()" title="新建"><i class="fas fa-plus"></i></button>
+                                <div class="fm-dropdown-menu" id="fm-new-dropdown">
+                                    <div class="context-menu-item" onclick="fileNewFile();closeNewDropdown()"><i class="fas fa-file-medical"></i> 新建文件</div>
+                                    <div class="context-menu-item" onclick="fileNewFolder();closeNewDropdown()"><i class="fas fa-folder-plus"></i> 新建文件夹</div>
+                                </div>
+                            </div>
+                            <button class="fm-toolbar-btn" onclick="document.getElementById('fm-upload-input').click()" title="上传"><i class="fas fa-upload"></i></button>
+                            <div class="fm-toolbar-sep"></div>
+                            <div class="fm-search-wrap">
+                                <i class="fas fa-search"></i>
+                                <input type="text" id="file-search-input" placeholder="搜索文件名..." oninput="fileSearchDebounce()">
+                            </div>
+                            <div class="fm-toolbar-sep"></div>
+                            <select id="file-sort-select" class="fm-toolbar-btn" style="width:auto;padding:0 8px;font-size:11px;" onchange="fileSort()">
+                                <option value="name-asc">名称 A-Z</option>
+                                <option value="name-desc">名称 Z-A</option>
+                                <option value="size-asc">大小 ↑</option>
+                                <option value="size-desc">大小 ↓</option>
+                                <option value="time-desc">最新修改</option>
+                                <option value="time-asc">最早修改</option>
+                            </select>
+                            <button class="fm-toolbar-btn" onclick="fileToggleViewMode()" id="fm-view-toggle" title="切换视图"><i class="fas fa-list"></i></button>
+                        </div>
 
-                <!-- 搜索和排序 -->
-                <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-                    <div style="flex:1;min-width:200px;position:relative;">
-                        <input type="text" id="file-search-input" class="ds-chat-input" style="padding-left:32px;" placeholder="搜索文件名..." oninput="fileSearchDebounce()">
-                        <i class="fas fa-search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);opacity:0.4;font-size:13px;"></i>
-                    </div>
-                    <select id="file-sort-select" class="ds-chat-input" style="width:130px;padding:8px 10px;" onchange="fileSort()">
-                        <option value="name-asc">名称 A-Z</option>
-                        <option value="name-desc">名称 Z-A</option>
-                        <option value="size-asc">大小 ↑</option>
-                        <option value="size-desc">大小 ↓</option>
-                        <option value="time-desc">最新修改</option>
-                        <option value="time-asc">最早修改</option>
-                        <option value="ext-asc">类型 A-Z</option>
-                    </select>
-                    <select id="file-view-mode" class="ds-chat-input" style="width:90px;padding:8px 10px;" onchange="fileViewMode()">
-                        <option value="list">列表</option>
-                        <option value="grid">网格</option>
-                    </select>
-                </div>
+                        <!-- 面包屑导航 -->
+                        <div class="fm-breadcrumb" id="file-breadcrumb">
+                            <span class="fm-breadcrumb-item" onclick="loadFileManager('/')">根目录</span>
+                        </div>
 
-                <!-- 剪贴板状态 -->
-                <div id="file-clipboard-bar" style="display:none;padding:8px 16px;background:var(--ds-blue-light);border:1px solid var(--ds-selected-border);border-radius:var(--radius-ctrl);margin-bottom:12px;font-size:13px;">
-                    <span id="file-clipboard-info"></span>
-                    <button class="ds-btn-primary" style="font-size:12px;padding:4px 12px;margin-left:8px;" onclick="filePaste()"><i class="fas fa-paste"></i> 粘贴</button>
-                    <button class="ds-btn-secondary" style="font-size:12px;padding:4px 12px;" onclick="fileClearClipboard()"><i class="fas fa-times"></i> 取消</button>
-                </div>
+                        <!-- 剪贴板状态 -->
+                        <div class="fm-clipboard-bar" id="file-clipboard-bar">
+                            <span id="file-clipboard-info"></span>
+                            <button class="ds-btn-primary" style="font-size:12px;padding:4px 12px;" onclick="filePaste()"><i class="fas fa-paste"></i> 粘贴</button>
+                            <button class="ds-btn-secondary" style="font-size:12px;padding:4px 12px;" onclick="fileClearClipboard()"><i class="fas fa-times"></i> 取消</button>
+                        </div>
 
-                <!-- 文件列表 -->
-                <div id="file-list-container" style="border:1px solid var(--ds-border);border-radius:var(--radius-ctrl);overflow:hidden;">
-                    <div style="display:grid;grid-template-columns:1fr 100px 140px;gap:0;padding:8px 16px;background:var(--ds-surface);font-size:12px;font-weight:600;color:var(--ds-text-secondary);border-bottom:1px solid var(--ds-border);">
-                        <span>名称</span>
-                        <span>大小</span>
-                        <span>修改时间 / 操作</span>
-                    </div>
-                    <div id="file-list">
-                        <div class="ds-empty-state" style="padding:40px;">
-                            <i class="fas fa-folder-open" style="font-size:2rem;opacity:0.3;"></i>
-                            <p>加载中...</p>
+                        <!-- 文件列表区域 -->
+                        <div class="fm-file-area" id="fm-file-area">
+                            <div id="file-list">
+                                <div class="ds-empty-state" style="padding:40px;">
+                                    <i class="fas fa-folder-open" style="font-size:2rem;opacity:0.3;"></i>
+                                    <p>加载中...</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 底部选中操作栏 -->
+                        <div class="fm-selection-bar" id="fm-selection-bar">
+                            <span class="fm-sel-count" id="fm-sel-count">已选 0 个文件</span>
+                            <button class="fm-toolbar-btn" style="width:auto;padding:0 10px;font-size:12px;" onclick="fmSelectedCopy()" title="复制"><i class="fas fa-copy"></i> 复制</button>
+                            <button class="fm-toolbar-btn" style="width:auto;padding:0 10px;font-size:12px;" onclick="fmSelectedCut()" title="剪切"><i class="fas fa-cut"></i> 剪切</button>
+                            <button class="fm-toolbar-btn" style="width:auto;padding:0 10px;font-size:12px;" onclick="fmSelectedDelete()" title="删除"><i class="fas fa-trash"></i> 删除</button>
+                            <button class="fm-toolbar-btn" style="width:auto;padding:0 10px;font-size:12px;" onclick="fmSelectedChmod()" title="权限"><i class="fas fa-key"></i> 权限</button>
+                            <div style="flex:1;"></div>
+                            <button class="fm-toolbar-btn" style="width:auto;padding:0 10px;font-size:12px;" onclick="fmClearSelection()">取消选择</button>
+                        </div>
+
+                        <!-- 状态栏 -->
+                        <div class="fm-statusbar" id="fm-statusbar">
+                            <span id="fm-status-text">就绪</span>
+                            <span id="fm-status-count">共 0 个项目</span>
                         </div>
                     </div>
-                </div>
-
-                <!-- 文件属性面板 -->
-                <div id="file-info-panel" style="display:none;margin-top:12px;padding:14px 16px;background:var(--ds-card);border:1px solid var(--ds-border);border-radius:var(--radius-ctrl);">
-                    <div style="display:flex;justify-content:space-between;align-items:center;">
-                        <strong id="file-info-name"></strong>
-                        <button class="ds-btn-secondary" style="font-size:11px;padding:3px 8px;" onclick="document.getElementById('file-info-panel').style.display='none'"><i class="fas fa-times"></i></button>
-                    </div>
-                    <div id="file-info-details" style="margin-top:8px;font-size:13px;color:var(--ds-text-secondary);"></div>
                 </div>
             </section>
 
@@ -554,74 +581,138 @@
                         <h1 class="ds-page-intro-title">TTS 语音合成</h1>
                         <p class="ds-page-intro-description">文本转语音控制面板 · 配置持久化到设备</p>
                     </div>
-                    <div style="display:flex;gap:8px;">
+                    <div class="ds-page-intro-actions">
                         <button class="ds-btn-secondary" onclick="loadTtsSettings()"><i class="fas fa-cog"></i> 加载设置</button>
                         <button class="ds-btn-secondary" onclick="loadTtsEngines()"><i class="fas fa-sync"></i> 刷新引擎</button>
-                        <a href="/api/docs" target="_blank" class="ds-btn-secondary" style="text-decoration:none;display:inline-flex;align-items:center;gap:4px;"><i class="fas fa-book"></i> API 文档</a>
+                        <a href="/api/docs" target="_blank" class="ds-btn-secondary" style="text-decoration:none;display:inline-flex;align-items:center;gap:4px;"><i class="fas fa-book"></i> API</a>
                     </div>
                 </div>
 
-                <!-- 核心控制面板 -->
-                <div class="tts-control-panel">
-                    <div class="form-group">
-                        <label>语音引擎
-                            <button class="ds-btn-secondary" style="padding:2px 8px;font-size:12px;margin-left:8px;" onclick="auditionTTS()"><i class="fas fa-headphones"></i> 试听</button>
-                        </label>
-                        <select id="tts-engine" class="ds-chat-input">
+                <!-- 1. TTS 引擎选择区 -->
+                <div class="ds-card tts-card">
+                    <div class="tts-card-header">
+                        <span class="tts-card-title"><i class="fas fa-microchip"></i> 语音引擎</span>
+                        <span class="tts-engine-status" id="tts-engine-status"><span class="tts-engine-dot"></span>就绪</span>
+                    </div>
+                    <div class="tts-engine-bar">
+                        <select id="tts-engine" class="ds-chat-input" style="flex:1;">
                             <option value="">加载中...</option>
                         </select>
-                    </div>
-                    <div class="form-group">
-                        <label>文本内容</label>
-                        <textarea id="tts-text" class="ds-chat-input" rows="4" placeholder="输入要朗读的文本...长文本会自动分句朗读"></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label>语速 <span id="tts-speed-val">1.0</span></label>
-                        <input type="range" id="tts-speed" min="0.1" max="3.0" step="0.1" value="1.0" oninput="document.getElementById('tts-speed-val').textContent=this.value">
-                    </div>
-                    <div class="form-group">
-                        <label>音调 <span id="tts-pitch-val">1.0</span></label>
-                        <input type="range" id="tts-pitch" min="0.5" max="2.0" step="0.1" value="1.0" oninput="document.getElementById('tts-pitch-val').textContent=this.value">
-                    </div>
-                    <div class="form-group">
-                        <label>音量 <span id="tts-volume-val">1.0</span></label>
-                        <input type="range" id="tts-volume" min="0.0" max="1.0" step="0.1" value="1.0" oninput="document.getElementById('tts-volume-val').textContent=this.value">
-                    </div>
-                    <!-- 功能开关 -->
-                    <div style="display:flex;gap:24px;margin:4px 0;">
-                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-                            <input type="checkbox" id="tts-replace-enabled" onchange="saveTtsSettings()"> 启用文本替换
-                        </label>
-                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-                            <input type="checkbox" id="tts-split-enabled" checked onchange="saveTtsSettings()"> 启用智能分句
-                        </label>
-                    </div>
-                    <div style="display:flex;gap:12px;">
-                        <button class="ds-btn-primary" onclick="speakTTS()"><i class="fas fa-play"></i> 朗读</button>
-                        <button class="ds-btn-secondary" onclick="testTTS()"><i class="fas fa-vial"></i> 测试</button>
-                        <button class="ds-btn-secondary" onclick="saveTtsSettings()"><i class="fas fa-save"></i> 保存设置</button>
-                        <button class="ds-btn-danger" onclick="stopTTS()"><i class="fas fa-stop"></i> 停止</button>
+                        <button class="ds-btn-secondary" onclick="auditionTTS()" title="试听当前引擎"><i class="fas fa-headphones"></i> 试听</button>
                     </div>
                 </div>
 
-                <!-- 按引擎独立参数 -->
-                <div class="tts-control-panel" style="margin-top:16px;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;">
-                        <label style="font-weight:600;">按引擎独立参数</label>
-                        <button class="ds-btn-secondary" style="padding:4px 12px;font-size:12px;" onclick="showAddEngineParamDialog()"><i class="fas fa-plus"></i> 添加</button>
+                <!-- 2. 声音参数卡片 -->
+                <div class="ds-card tts-card">
+                    <div class="tts-card-header">
+                        <span class="tts-card-title"><i class="fas fa-sliders-h"></i> 声音参数</span>
                     </div>
-                    <p style="font-size:12px;color:#888;margin:4px 0 8px;">为不同引擎设置独立的语速/音调/音量，未配置的引擎使用全局参数</p>
-                    <div id="engine-params-list" style="font-size:13px;color:#666;">加载中...</div>
+                    <div class="tts-slider-group">
+                        <label>语速</label>
+                        <input type="range" id="tts-speed" min="0.5" max="3.0" step="0.05" value="1.0" oninput="updateSliderVal(this,'tts-speed-val')">
+                        <span id="tts-speed-val">1.00</span>
+                    </div>
+                    <div class="tts-slider-group">
+                        <label>音调</label>
+                        <input type="range" id="tts-pitch" min="0.5" max="2.0" step="0.05" value="1.0" oninput="updateSliderVal(this,'tts-pitch-val')">
+                        <span id="tts-pitch-val">1.00</span>
+                    </div>
+                    <div class="tts-slider-group">
+                        <label>音量</label>
+                        <input type="range" id="tts-volume" min="0.0" max="1.0" step="0.05" value="1.0" oninput="updateSliderVal(this,'tts-volume-val')">
+                        <span id="tts-volume-val">1.00</span>
+                    </div>
                 </div>
 
-                <!-- 文本替换规则 -->
-                <div class="tts-control-panel" style="margin-top:16px;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;">
-                        <label style="font-weight:600;">文本替换规则</label>
-                        <button class="ds-btn-secondary" style="padding:4px 12px;font-size:12px;" onclick="showAddReplaceRuleDialog()"><i class="fas fa-plus"></i> 添加规则</button>
+                <!-- 3. 功能开关卡片 -->
+                <div class="ds-card tts-card">
+                    <div class="tts-card-header">
+                        <span class="tts-card-title"><i class="fas fa-toggle-on"></i> 功能开关</span>
                     </div>
-                    <p style="font-size:12px;color:#888;margin:4px 0 8px;">朗读前自动替换文本（支持正则），用于处理特殊字符、敏感词等</p>
-                    <div id="replace-rules-list" style="font-size:13px;color:#666;">加载中...</div>
+                    <div class="tts-toggle-row">
+                        <div>
+                            <div class="tts-toggle-label">启用文本替换</div>
+                            <div class="tts-toggle-desc">朗读前自动替换匹配的文本内容</div>
+                        </div>
+                        <label class="ds-switch"><input type="checkbox" id="tts-replace-enabled" onchange="saveTtsSettings()"><span class="ds-slider"></span></label>
+                    </div>
+                    <div class="tts-toggle-row">
+                        <div>
+                            <div class="tts-toggle-label">启用智能分句</div>
+                            <div class="tts-toggle-desc">长文本自动按标点分句朗读</div>
+                        </div>
+                        <label class="ds-switch"><input type="checkbox" id="tts-split-enabled" checked onchange="saveTtsSettings()"><span class="ds-slider"></span></label>
+                    </div>
+                    <div class="tts-toggle-row">
+                        <div>
+                            <div class="tts-toggle-label">朗读AI回复</div>
+                            <div class="tts-toggle-desc">AI回复后自动使用TTS朗读</div>
+                        </div>
+                        <label class="ds-switch"><input type="checkbox" id="tts-ai-reply-enabled" onchange="toggleTtsReplyFromSwitch(this.checked)"><span class="ds-slider"></span></label>
+                    </div>
+                </div>
+
+                <!-- 4. 文本输入区 -->
+                <div class="ds-card tts-card">
+                    <div class="tts-card-header">
+                        <span class="tts-card-title"><i class="fas fa-font"></i> 文本输入</span>
+                        <button class="ds-btn-secondary" onclick="saveTtsSettings()" style="padding:4px 10px;font-size:11px;"><i class="fas fa-save"></i> 保存设置</button>
+                    </div>
+                    <textarea id="tts-text" class="ds-chat-input" rows="4" placeholder="输入要朗读的文本...长文本会自动分句朗读" oninput="updateTtsCharCount()"></textarea>
+                    <div class="tts-text-footer">
+                        <span class="tts-char-count" id="tts-char-count">0 字</span>
+                        <div class="tts-action-btns">
+                            <button class="ds-btn-primary" onclick="speakTTS()"><i class="fas fa-play"></i> 朗读</button>
+                            <button class="ds-btn-danger" onclick="stopTTS()"><i class="fas fa-stop"></i> 停止</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 5. 按引擎独立参数（折叠面板） -->
+                <details class="ds-card tts-card tts-collapse">
+                    <summary class="tts-card-header tts-collapse-header">
+                        <span class="tts-card-title"><i class="fas fa-cogs"></i> 按引擎独立参数</span>
+                        <i class="fas fa-chevron-down tts-collapse-icon"></i>
+                    </summary>
+                    <div class="tts-collapse-body">
+                        <p style="font-size:11px;color:var(--ds-text-tertiary);margin:0 0 10px;">为不同引擎设置独立的语速/音调/音量，未配置的引擎使用全局参数</p>
+                        <div id="engine-params-list" style="color:var(--ds-text-tertiary);font-size:13px;">加载中...</div>
+                        <button class="ds-btn-secondary" style="margin-top:10px;padding:6px 14px;font-size:12px;" onclick="showAddEngineParamDialog()"><i class="fas fa-plus"></i> 添加引擎参数</button>
+                    </div>
+                </details>
+
+                <!-- 6. 文本替换规则（折叠面板） -->
+                <details class="ds-card tts-card tts-collapse">
+                    <summary class="tts-card-header tts-collapse-header">
+                        <span class="tts-card-title"><i class="fas fa-exchange-alt"></i> 文本替换规则</span>
+                        <i class="fas fa-chevron-down tts-collapse-icon"></i>
+                    </summary>
+                    <div class="tts-collapse-body">
+                        <p style="font-size:11px;color:var(--ds-text-tertiary);margin:0 0 10px;">朗读前自动替换文本（支持正则），用于处理特殊字符、敏感词等</p>
+                        <div id="replace-rules-list" style="color:var(--ds-text-tertiary);font-size:13px;">加载中...</div>
+                        <button class="ds-btn-secondary" style="margin-top:10px;padding:6px 14px;font-size:12px;" onclick="showAddReplaceRuleDialog()"><i class="fas fa-plus"></i> 添加规则</button>
+                    </div>
+                </details>
+
+                <!-- 7. 朗读状态区 -->
+                <div class="ds-card tts-card">
+                    <div class="tts-card-header">
+                        <span class="tts-card-title"><i class="fas fa-volume-up"></i> 朗读状态</span>
+                    </div>
+                    <div class="tts-status-row">
+                        <span class="tts-status-label">当前状态</span>
+                        <span class="tts-status-value" id="tts-speaking-status">空闲</span>
+                    </div>
+                    <div class="tts-status-row">
+                        <span class="tts-status-label">朗读进度</span>
+                        <span class="tts-status-value" id="tts-speaking-progress">--</span>
+                    </div>
+                    <div style="margin-top:10px;">
+                        <div style="font-size:11px;font-weight:600;color:var(--ds-text-secondary);margin-bottom:6px;">朗读历史</div>
+                        <div id="tts-history-list" class="tts-history-list">
+                            <div style="color:var(--ds-text-tertiary);font-size:12px;">暂无朗读记录</div>
+                        </div>
+                    </div>
                 </div>
             </section>
 
@@ -637,21 +728,21 @@
                     <!-- Voice Settings -->
                     <div class="ds-card" style="padding:20px;">
                         <h3 style="font-weight:600;margin-bottom:16px;"><i class="fas fa-microphone-alt"></i> 语音</h3>
-                        <p style="font-size:12px;color:#888;margin:-8px 0 12px;">语音输入与回复朗读</p>
+                        <p style="font-size:12px;color:var(--ds-text-tertiary);margin:-8px 0 12px;">语音输入与回复朗读</p>
                         <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;">
                             <div>
                                 <div style="font-size:13px;font-weight:500;">语音输入</div>
-                                <div style="font-size:11px;color:#888;margin-top:2px;">在对话中使用浏览器语音识别输入文本</div>
+                                <div style="font-size:11px;color:var(--ds-text-tertiary);margin-top:2px;">在对话中使用浏览器语音识别输入文本</div>
                             </div>
                             <label class="ds-switch">
                                 <input type="checkbox" id="voice-input-enabled" onchange="saveVoiceSettings()">
                                 <span class="ds-slider"></span>
                             </label>
                         </div>
-                        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid #f0f0f0;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--ds-border);">
                             <div>
                                 <div style="font-size:13px;font-weight:500;">朗读回复</div>
-                                <div style="font-size:11px;color:#888;margin-top:2px;">AI回复后自动使用TTS朗读</div>
+                                <div style="font-size:11px;color:var(--ds-text-tertiary);margin-top:2px;">AI回复后自动使用TTS朗读</div>
                             </div>
                             <label class="ds-switch">
                                 <input type="checkbox" id="voice-read-aloud" onchange="saveVoiceSettings()">
@@ -813,17 +904,47 @@
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
                 <h3 style="font-weight:700;font-size:1.1rem;" id="script-modal-title">编辑脚本</h3>
                 <div style="display:flex;gap:8px;align-items:center;">
-                    <span id="script-line-info" style="font-size:12px;color:var(--ds-text-secondary);">行 1, 列 1</span>
+                    <button class="ds-btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="editorToggleFind('script')"><i class="fas fa-search"></i> 查找</button>
                     <button class="ds-btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="formatScript()"><i class="fas fa-indent"></i> 格式化</button>
                 </div>
             </div>
-            <div class="form-group" style="flex:1;display:flex;flex-direction:column;">
-                <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
-                    <span style="font-size:11px;color:var(--ds-text-tertiary);padding:4px 0;">快捷键: Tab=缩进 | Shift+Tab=取消缩进 | Ctrl+S=保存</span>
+            <div class="editor-modal-body">
+                <!-- 查找替换栏 -->
+                <div class="editor-find-bar" id="script-find-bar">
+                    <input type="text" class="editor-find-input" id="script-find-input" placeholder="查找..." oninput="editorDoFind('script')">
+                    <button class="editor-find-btn" onclick="editorFindNext('script')" title="下一个"><i class="fas fa-chevron-down"></i></button>
+                    <button class="editor-find-btn" onclick="editorFindPrev('script')" title="上一个"><i class="fas fa-chevron-up"></i></button>
+                    <span class="editor-find-count" id="script-find-count"></span>
+                    <div class="fm-toolbar-sep" style="height:20px;"></div>
+                    <input type="text" class="editor-find-input" id="script-replace-input" placeholder="替换..." style="max-width:160px;">
+                    <button class="editor-find-btn" onclick="editorReplaceOne('script')" title="替换"><i class="fas fa-exchange-alt"></i></button>
+                    <button class="editor-find-btn" onclick="editorReplaceAll('script')" title="全部替换"><i class="fas fa-check-double"></i></button>
+                    <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer;">
+                        <input type="checkbox" id="script-find-regex" onchange="editorDoFind('script')"> 正则
+                    </label>
+                    <button class="editor-find-btn" onclick="editorCloseFind('script')" title="关闭"><i class="fas fa-times"></i></button>
                 </div>
-                <textarea id="script-editor" class="ds-code-editor" placeholder="#!/bin/bash&#10;# 在此编写 Shell 脚本...&#10;&#10;echo 'Hello TaskMod'"></textarea>
+                <!-- 编辑器主体 -->
+                <div class="editor-container">
+                    <div class="editor-body" id="script-editor-body">
+                        <div class="editor-line-numbers" id="script-line-numbers"><div class="line-num">1</div></div>
+                        <div class="editor-current-line" id="script-current-line"></div>
+                        <textarea id="script-editor" class="editor-textarea" placeholder="#!/bin/bash&#10;# 在此编写 Shell 脚本...&#10;&#10;echo 'Hello TaskMod'" spellcheck="false"></textarea>
+                        <div class="editor-autocomplete" id="script-autocomplete"></div>
+                    </div>
+                    <!-- 状态栏 -->
+                    <div class="editor-statusbar">
+                        <span id="script-line-info">行 1, 列 1</span>
+                        <span id="script-char-count">0 字符</span>
+                        <span>Shell</span>
+                        <span>UTF-8</span>
+                        <span id="script-save-status" style="margin-left:auto;">就绪</span>
+                    </div>
+                </div>
             </div>
             <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:12px;">
+                <span style="font-size:11px;color:var(--ds-text-tertiary);padding:4px 0;">Tab=缩进 | Shift+Tab=取消 | Ctrl+S=保存 | Ctrl+F=查找</span>
+                <div style="flex:1;"></div>
                 <button class="ds-btn-secondary" onclick="document.getElementById('script-modal').style.display='none'">取消</button>
                 <button class="ds-btn-primary" onclick="saveScript()"><i class="fas fa-save"></i> 保存</button>
             </div>
@@ -848,17 +969,47 @@
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
                 <h3 style="font-weight:700;font-size:1.1rem;" id="file-editor-title">编辑文件</h3>
                 <div style="display:flex;gap:8px;align-items:center;">
-                    <span id="file-editor-info" style="font-size:12px;color:var(--ds-text-secondary);"></span>
+                    <button class="ds-btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="editorToggleFind('file')"><i class="fas fa-search"></i> 查找</button>
                     <button class="ds-btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="fileEditorWordWrap()"><i class="fas fa-text-width"></i> 换行</button>
                 </div>
             </div>
-            <div class="form-group" style="flex:1;display:flex;flex-direction:column;">
-                <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
-                    <span style="font-size:11px;color:var(--ds-text-tertiary);padding:4px 0;">快捷键: Ctrl+S=保存 | Ctrl+Z=撤销</span>
+            <div class="editor-modal-body">
+                <!-- 查找替换栏 -->
+                <div class="editor-find-bar" id="file-find-bar">
+                    <input type="text" class="editor-find-input" id="file-find-input" placeholder="查找..." oninput="editorDoFind('file')">
+                    <button class="editor-find-btn" onclick="editorFindNext('file')" title="下一个"><i class="fas fa-chevron-down"></i></button>
+                    <button class="editor-find-btn" onclick="editorFindPrev('file')" title="上一个"><i class="fas fa-chevron-up"></i></button>
+                    <span class="editor-find-count" id="file-find-count"></span>
+                    <div class="fm-toolbar-sep" style="height:20px;"></div>
+                    <input type="text" class="editor-find-input" id="file-replace-input" placeholder="替换..." style="max-width:160px;">
+                    <button class="editor-find-btn" onclick="editorReplaceOne('file')" title="替换"><i class="fas fa-exchange-alt"></i></button>
+                    <button class="editor-find-btn" onclick="editorReplaceAll('file')" title="全部替换"><i class="fas fa-check-double"></i></button>
+                    <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer;">
+                        <input type="checkbox" id="file-find-regex" onchange="editorDoFind('file')"> 正则
+                    </label>
+                    <button class="editor-find-btn" onclick="editorCloseFind('file')" title="关闭"><i class="fas fa-times"></i></button>
                 </div>
-                <textarea id="file-editor-content" class="ds-code-editor" placeholder="文件内容..."></textarea>
+                <!-- 编辑器主体 -->
+                <div class="editor-container">
+                    <div class="editor-body" id="file-editor-body">
+                        <div class="editor-line-numbers" id="file-line-numbers"><div class="line-num">1</div></div>
+                        <div class="editor-current-line" id="file-current-line"></div>
+                        <textarea id="file-editor-content" class="editor-textarea" placeholder="文件内容..." spellcheck="false"></textarea>
+                        <div class="editor-autocomplete" id="file-autocomplete"></div>
+                    </div>
+                    <!-- 状态栏 -->
+                    <div class="editor-statusbar">
+                        <span id="file-line-info">行 1, 列 1</span>
+                        <span id="file-char-count">0 字符</span>
+                        <span id="file-editor-info">-</span>
+                        <span>UTF-8</span>
+                        <span id="file-save-status" style="margin-left:auto;">就绪</span>
+                    </div>
+                </div>
             </div>
             <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:12px;">
+                <span style="font-size:11px;color:var(--ds-text-tertiary);padding:4px 0;">Ctrl+S=保存 | Ctrl+F=查找 | Ctrl+H=替换</span>
+                <div style="flex:1;"></div>
                 <button class="ds-btn-secondary" onclick="document.getElementById('file-editor-modal').style.display='none'">关闭</button>
                 <button class="ds-btn-primary" onclick="fileEditorSave()"><i class="fas fa-save"></i> 保存</button>
             </div>
@@ -1062,6 +1213,63 @@
             <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:12px;">
                 <button class="ds-btn-secondary" onclick="document.getElementById('mcp-modal').style.display='none'">取消</button>
                 <button class="ds-btn-primary" onclick="saveMcpServer()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TTS Engine Param Modal -->
+    <div class="ds-modal-overlay" id="engine-param-modal" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+        <div class="ds-modal-card" style="max-width:420px;">
+            <h3 style="font-weight:700;font-size:1.1rem;margin-bottom:16px;">添加引擎独立参数</h3>
+            <div class="form-group">
+                <label>引擎包名</label>
+                <input type="text" id="ep-engine" class="ds-chat-input" placeholder="如 com.iflytek.tts">
+            </div>
+            <div class="form-group">
+                <label>语速 <span id="ep-speed-val">1.00</span></label>
+                <input type="range" id="ep-speed" class="tts-modal-slider" min="0.5" max="3.0" step="0.05" value="1.0" oninput="updateSliderVal(this,'ep-speed-val')">
+            </div>
+            <div class="form-group">
+                <label>音调 <span id="ep-pitch-val">1.00</span></label>
+                <input type="range" id="ep-pitch" class="tts-modal-slider" min="0.5" max="2.0" step="0.05" value="1.0" oninput="updateSliderVal(this,'ep-pitch-val')">
+            </div>
+            <div class="form-group">
+                <label>音量 <span id="ep-volume-val">1.00</span></label>
+                <input type="range" id="ep-volume" class="tts-modal-slider" min="0.0" max="1.0" step="0.05" value="1.0" oninput="updateSliderVal(this,'ep-volume-val')">
+            </div>
+            <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:16px;">
+                <button class="ds-btn-secondary" onclick="document.getElementById('engine-param-modal').style.display='none'">取消</button>
+                <button class="ds-btn-primary" onclick="submitEngineParam()"><i class="fas fa-check"></i> 确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TTS Replace Rule Modal -->
+    <div class="ds-modal-overlay" id="replace-rule-modal" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+        <div class="ds-modal-card" style="max-width:420px;">
+            <h3 style="font-weight:700;font-size:1.1rem;margin-bottom:16px;">添加替换规则</h3>
+            <div class="form-group">
+                <label>规则名称</label>
+                <input type="text" id="rr-name" class="ds-chat-input" placeholder="规则名称">
+            </div>
+            <div class="form-group">
+                <label>匹配文本</label>
+                <input type="text" id="rr-pattern" class="ds-chat-input" placeholder="要匹配的文本或正则表达式">
+            </div>
+            <div class="form-group">
+                <label>替换为</label>
+                <input type="text" id="rr-replacement" class="ds-chat-input" placeholder="替换后的内容">
+            </div>
+            <div class="tts-toggle-row" style="margin:12px 0;">
+                <div>
+                    <div class="tts-toggle-label">正则表达式</div>
+                    <div class="tts-toggle-desc">开启后匹配文本将作为正则表达式使用</div>
+                </div>
+                <label class="ds-switch"><input type="checkbox" id="rr-is-regex"><span class="ds-slider"></span></label>
+            </div>
+            <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:16px;">
+                <button class="ds-btn-secondary" onclick="document.getElementById('replace-rule-modal').style.display='none'">取消</button>
+                <button class="ds-btn-primary" onclick="submitReplaceRule()"><i class="fas fa-check"></i> 确定</button>
             </div>
         </div>
     </div>

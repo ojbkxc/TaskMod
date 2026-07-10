@@ -2,7 +2,7 @@ use axum::{extract::{Path as AxumPath, Query}, Json, response::{Html, IntoRespon
 use chrono::{DateTime, Local};
 use serde_json::json;
 use std::collections::HashMap;
-use std::fs;
+use tokio::fs;
 use tokio::process::Command;
 
 use crate::config::{SCHEDULE_FILE, SCREENSHOTS_DIR, LOG_FILE, SCRIPTS_DIR, WORKFLOWS_DIR};
@@ -46,36 +46,35 @@ pub async fn get_logs(Query(params): Query<HashMap<String, String>>) -> Json<Api
         .and_then(|l| l.parse::<usize>().ok())
         .unwrap_or(200);
 
-    let content = fs::read_to_string(LOG_FILE).unwrap_or_else(|_| "暂无日志".to_string());
+    let content = fs::read_to_string(LOG_FILE).await.unwrap_or_else(|_| "暂无日志".to_string());
     let lines: Vec<String> = content.lines().rev().take(limit).map(String::from).collect();
     Json(ApiResponse::ok(lines))
 }
 
 pub async fn clear_logs() -> Json<ApiResponse<String>> {
-    match fs::write(LOG_FILE, "") {
+    match fs::write(LOG_FILE, "").await {
         Ok(_) => Json(ApiResponse::ok("日志已清空".to_string())),
         Err(e) => Json(ApiResponse::err(&format!("清空失败: {}", e))),
     }
 }
 
 pub async fn list_screenshots() -> Json<ApiResponse<Vec<String>>> {
-    let entries = fs::read_dir(SCREENSHOTS_DIR)
-        .map(|dir| {
-            let mut files: Vec<String> = dir
-                .filter_map(|e| e.ok())
-                .filter(|e| {
-                    e.path()
-                        .extension()
-                        .map(|ext| ext == "png")
-                        .unwrap_or(false)
-                })
-                .filter_map(|e| e.file_name().into_string().ok())
-                .collect();
+    let entries = match fs::read_dir(SCREENSHOTS_DIR).await {
+        Ok(mut dir) => {
+            let mut files: Vec<String> = Vec::new();
+            while let Ok(Some(entry)) = dir.next_entry().await {
+                if entry.path().extension().map(|ext| ext == "png").unwrap_or(false) {
+                    if let Ok(name) = entry.file_name().into_string() {
+                        files.push(name);
+                    }
+                }
+            }
             files.sort();
             files.reverse();
             files
-        })
-        .unwrap_or_default();
+        }
+        Err(_) => Vec::new(),
+    };
     Json(ApiResponse::ok(entries))
 }
 
@@ -103,7 +102,7 @@ pub async fn get_screenshot(AxumPath(filename): AxumPath<String>) -> impl IntoRe
         return StatusCode::BAD_REQUEST.into_response();
     }
     let filepath = format!("{}/{}", SCREENSHOTS_DIR, filename);
-    match fs::read(&filepath) {
+    match fs::read(&filepath).await {
         Ok(data) => (
             StatusCode::OK,
             [(axum::http::header::CONTENT_TYPE, "image/png")],
@@ -119,7 +118,7 @@ pub async fn delete_screenshot(AxumPath(filename): AxumPath<String>) -> Json<Api
         return Json(ApiResponse::err("无效的文件名"));
     }
     let filepath = format!("{}/{}", SCREENSHOTS_DIR, filename);
-    match fs::remove_file(&filepath) {
+    match fs::remove_file(&filepath).await {
         Ok(_) => Json(ApiResponse::ok("截图已删除".to_string())),
         Err(e) => Json(ApiResponse::err(&format!("删除失败: {}", e))),
     }
@@ -147,12 +146,12 @@ pub async fn exec_command(Json(req): Json<CommandRequest>) -> Json<ApiResponse<S
 }
 
 pub async fn get_config() -> Json<ApiResponse<String>> {
-    let content = fs::read_to_string(SCHEDULE_FILE).unwrap_or_default();
+    let content = fs::read_to_string(SCHEDULE_FILE).await.unwrap_or_default();
     Json(ApiResponse::ok(content))
 }
 
 pub async fn update_config(Json(req): Json<ConfigUpdate>) -> Json<ApiResponse<String>> {
-    match fs::write(SCHEDULE_FILE, &req.content) {
+    match fs::write(SCHEDULE_FILE, &req.content).await {
         Ok(_) => Json(ApiResponse::ok_msg("ok".to_string(), "配置已保存，30秒内自动生效")),
         Err(e) => Json(ApiResponse::err(&format!("更新失败: {}", e))),
     }
@@ -267,41 +266,46 @@ pub async fn system_status() -> Json<serde_json::Value> {
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
         .unwrap_or_else(|_| "N/A".to_string());
 
-    let tasks_count = fs::read_to_string(SCHEDULE_FILE)
+    let tasks_count = fs::read_to_string(SCHEDULE_FILE).await
         .map(|c| c.lines().filter(|l| !l.trim().is_empty() && !l.starts_with('#')).count())
         .unwrap_or(0);
 
-    let screenshots_count = fs::read_dir(SCREENSHOTS_DIR)
-        .map(|d| d.filter_map(|e| e.ok()).count())
-        .unwrap_or(0);
+    let screenshots_count = match fs::read_dir(SCREENSHOTS_DIR).await {
+        Ok(mut d) => {
+            let mut count = 0usize;
+            while let Ok(Some(_)) = d.next_entry().await { count += 1; }
+            count
+        }
+        Err(_) => 0,
+    };
 
-    let battery_capacity = fs::read_to_string("/sys/class/power_supply/battery/capacity")
-        .map(|s| s.trim().to_string())
-        .or_else(|_| fs::read_to_string("/sys/class/power_supply/battery0/capacity")
-            .map(|s| s.trim().to_string()))
-        .unwrap_or_else(|_| "N/A".to_string());
+    let battery_capacity = match fs::read_to_string("/sys/class/power_supply/battery/capacity").await {
+        Ok(s) => s.trim().to_string(),
+        Err(_) => fs::read_to_string("/sys/class/power_supply/battery0/capacity").await
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|_| "N/A".to_string()),
+    };
 
-    let battery_temp = fs::read_to_string("/sys/class/power_supply/battery/temp")
-        .map(|s| {
-            match s.trim().parse::<i32>() {
+    let battery_temp = match fs::read_to_string("/sys/class/power_supply/battery/temp").await {
+        Ok(s) => match s.trim().parse::<i32>() {
+            Ok(t) => format!("{:.1}", t as f64 / 10.0),
+            Err(_) => s.trim().to_string(),
+        },
+        Err(_) => match fs::read_to_string("/sys/class/power_supply/battery0/temp").await {
+            Ok(s) => match s.trim().parse::<i32>() {
                 Ok(t) => format!("{:.1}", t as f64 / 10.0),
                 Err(_) => s.trim().to_string(),
-            }
-        })
-        .or_else(|_| fs::read_to_string("/sys/class/power_supply/battery0/temp")
-            .map(|s| {
-                match s.trim().parse::<i32>() {
-                    Ok(t) => format!("{:.1}", t as f64 / 10.0),
-                    Err(_) => s.trim().to_string(),
-                }
-            }))
-        .unwrap_or_else(|_| "N/A".to_string());
+            },
+            Err(_) => "N/A".to_string(),
+        },
+    };
 
-    let battery_status = fs::read_to_string("/sys/class/power_supply/battery/status")
-        .map(|s| s.trim().to_string())
-        .or_else(|_| fs::read_to_string("/sys/class/power_supply/battery0/status")
-            .map(|s| s.trim().to_string()))
-        .unwrap_or_else(|_| "N/A".to_string());
+    let battery_status = match fs::read_to_string("/sys/class/power_supply/battery/status").await {
+        Ok(s) => s.trim().to_string(),
+        Err(_) => fs::read_to_string("/sys/class/power_supply/battery0/status").await
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|_| "N/A".to_string()),
+    };
 
     Json(json!({
         "success": true,
@@ -325,28 +329,28 @@ pub async fn list_workflows_api() -> Json<ApiResponse<Vec<Workflow>>> {
 }
 
 pub async fn get_workflow(AxumPath(id): AxumPath<String>) -> Json<ApiResponse<Workflow>> {
-    match load_workflow(&id) {
+    match load_workflow(&id).await {
         Some(workflow) => Json(ApiResponse::ok(workflow)),
         None => Json(ApiResponse::err("工作流不存在")),
     }
 }
 
 pub async fn save_workflow_api(Json(req): Json<WorkflowSaveRequest>) -> Json<ApiResponse<String>> {
-    match save_workflow(&req.workflow) {
+    match save_workflow(&req.workflow).await {
         Ok(_) => Json(ApiResponse::ok_msg(req.workflow.id.clone(), "工作流已保存")),
         Err(e) => Json(ApiResponse::err(&format!("保存失败: {}", e))),
     }
 }
 
 pub async fn delete_workflow_api(AxumPath(id): AxumPath<String>) -> Json<ApiResponse<String>> {
-    match delete_workflow(&id) {
+    match delete_workflow(&id).await {
         Ok(_) => Json(ApiResponse::ok("已删除".to_string())),
         Err(e) => Json(ApiResponse::err(&format!("删除失败: {}", e))),
     }
 }
 
 pub async fn run_workflow(Json(req): Json<WorkflowRunRequest>) -> Json<ApiResponse<String>> {
-    let workflow = match load_workflow(&req.workflow_id) {
+    let workflow = match load_workflow(&req.workflow_id).await {
         Some(w) => w,
         None => return Json(ApiResponse::err("工作流不存在")),
     };
@@ -364,43 +368,43 @@ pub async fn run_workflow(Json(req): Json<WorkflowRunRequest>) -> Json<ApiRespon
     Json(ApiResponse::ok(format!("工作流 {} 已开始执行", workflow.name)))
 }
 
-fn save_workflow(workflow: &Workflow) -> Result<(), std::io::Error> {
-    let _ = fs::create_dir_all(WORKFLOWS_DIR);
+async fn save_workflow(workflow: &Workflow) -> Result<(), std::io::Error> {
+    let _ = fs::create_dir_all(WORKFLOWS_DIR).await;
     let path = format!("{}/{}.json", WORKFLOWS_DIR, workflow.id);
     let content = serde_json::to_string_pretty(workflow).unwrap_or_default();
-    fs::write(path, content)
+    fs::write(path, content).await
 }
 
-fn load_workflow(id: &str) -> Option<Workflow> {
+async fn load_workflow(id: &str) -> Option<Workflow> {
     let path = format!("{}/{}.json", WORKFLOWS_DIR, id);
-    fs::read_to_string(&path)
+    fs::read_to_string(&path).await
         .ok()
         .and_then(|content| serde_json::from_str(&content).ok())
 }
 
 pub fn list_workflows() -> Vec<Workflow> {
-    let _ = fs::create_dir_all(WORKFLOWS_DIR);
-    fs::read_dir(WORKFLOWS_DIR)
+    let _ = std::fs::create_dir_all(WORKFLOWS_DIR);
+    std::fs::read_dir(WORKFLOWS_DIR)
         .map(|dir| {
             dir.filter_map(|e| e.ok())
                 .filter(|e| e.path().extension().map_or(false, |ext| ext == "json"))
-                .filter_map(|e| fs::read_to_string(e.path()).ok())
+                .filter_map(|e| std::fs::read_to_string(e.path()).ok())
                 .filter_map(|content| serde_json::from_str(&content).ok())
                 .collect()
         })
         .unwrap_or_default()
 }
 
-fn delete_workflow(id: &str) -> Result<(), std::io::Error> {
+async fn delete_workflow(id: &str) -> Result<(), std::io::Error> {
     let path = format!("{}/{}.json", WORKFLOWS_DIR, id);
-    fs::remove_file(path)
+    fs::remove_file(path).await
 }
 
 pub async fn execute_workflow(workflow: Workflow, context: Option<serde_json::Value>) {
     let log = |msg: &str| {
         let now: DateTime<Local> = Local::now();
         let log_msg = format!("[{}] [工作流: {}] {}", now.format("%Y-%m-%d %H:%M:%S"), workflow.name, msg);
-        let _ = fs::OpenOptions::new()
+        let _ = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(LOG_FILE)
@@ -545,7 +549,7 @@ pub async fn execute_workflow(workflow: Workflow, context: Option<serde_json::Va
                         for attachment in attachment_list {
                             if let Some(filename) = attachment.as_str() {
                                 let filepath = format!("{}/{}", SCREENSHOTS_DIR, filename);
-                                if let Ok(content) = fs::read(&filepath) {
+                                if let Ok(content) = fs::read(&filepath).await {
                                     attachments.push((filename.to_string(), content));
                                     log(&format!("添加附件: {}", filename));
                                 } else {

@@ -43,18 +43,19 @@ async fn write_json_file<T: Serialize>(path: &str, data: &T) -> Result<(), Strin
 }
 
 async fn list_json_dir<T: serde::de::DeserializeOwned>(dir: &str) -> Vec<T> {
-    let mut items = Vec::new();
+    let mut paths = Vec::new();
     if let Ok(mut entries) = fs::read_dir(dir).await {
         while let Ok(Some(entry)) = entries.next_entry().await {
             let path = entry.path();
             if path.extension().map_or(false, |e| e == "json") {
-                if let Some(item) = read_json_file(path.to_str().unwrap_or("")).await {
-                    items.push(item);
-                }
+                paths.push(path);
             }
         }
     }
-    items
+    let items: Vec<Option<T>> = futures::future::join_all(
+        paths.iter().map(|p| read_json_file::<T>(p.to_str().unwrap_or("")))
+    ).await;
+    items.into_iter().flatten().collect()
 }
 
 // ==================== 对话历史 ====================

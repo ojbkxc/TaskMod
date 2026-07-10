@@ -22,35 +22,59 @@ impl MirrorState {
     }
 
     pub fn set_video_tx(&self, tx: broadcast::Sender<Vec<u8>>) {
-        *self.video_tx.write().unwrap_or_else(|e| e.into_inner()) = Some(tx);
+        *self.video_tx.write().unwrap_or_else(|e| {
+            tracing::warn!("video_tx 锁中毒，已恢复");
+            e.into_inner()
+        }) = Some(tx);
     }
 
     pub fn set_audio_tx(&self, tx: broadcast::Sender<Vec<u8>>) {
-        *self.audio_tx.write().unwrap_or_else(|e| e.into_inner()) = Some(tx);
+        *self.audio_tx.write().unwrap_or_else(|e| {
+            tracing::warn!("audio_tx 锁中毒，已恢复");
+            e.into_inner()
+        }) = Some(tx);
     }
 
     pub fn set_original_brightness(&self, brightness: String) {
-        *self.original_brightness.write().unwrap_or_else(|e| e.into_inner()) = Some(brightness);
+        *self.original_brightness.write().unwrap_or_else(|e| {
+            tracing::warn!("original_brightness 锁中毒，已恢复");
+            e.into_inner()
+        }) = Some(brightness);
     }
 
     pub fn clear_video_tx(&self) {
-        *self.video_tx.write().unwrap_or_else(|e| e.into_inner()) = None;
+        *self.video_tx.write().unwrap_or_else(|e| {
+            tracing::warn!("video_tx 锁中毒，已恢复");
+            e.into_inner()
+        }) = None;
     }
 
     pub fn clear_audio_tx(&self) {
-        *self.audio_tx.write().unwrap_or_else(|e| e.into_inner()) = None;
+        *self.audio_tx.write().unwrap_or_else(|e| {
+            tracing::warn!("audio_tx 锁中毒，已恢复");
+            e.into_inner()
+        }) = None;
     }
 
     pub fn get_video_rx(&self) -> Option<broadcast::Receiver<Vec<u8>>> {
-        self.video_tx.read().unwrap_or_else(|e| e.into_inner()).as_ref().map(|tx| tx.subscribe())
+        self.video_tx.read().unwrap_or_else(|e| {
+            tracing::warn!("video_tx 锁中毒，已恢复");
+            e.into_inner()
+        }).as_ref().map(|tx| tx.subscribe())
     }
 
     pub fn get_audio_rx(&self) -> Option<broadcast::Receiver<Vec<u8>>> {
-        self.audio_tx.read().unwrap_or_else(|e| e.into_inner()).as_ref().map(|tx| tx.subscribe())
+        self.audio_tx.read().unwrap_or_else(|e| {
+            tracing::warn!("audio_tx 锁中毒，已恢复");
+            e.into_inner()
+        }).as_ref().map(|tx| tx.subscribe())
     }
 
     pub fn get_original_brightness(&self) -> Option<String> {
-        self.original_brightness.read().unwrap_or_else(|e| e.into_inner()).clone()
+        self.original_brightness.read().unwrap_or_else(|e| {
+            tracing::warn!("original_brightness 锁中毒，已恢复");
+            e.into_inner()
+        }).clone()
     }
 
     pub fn set_running(&self, running: bool) {
@@ -62,11 +86,17 @@ impl MirrorState {
     }
 
     pub fn set_last_touch(&self, pos: Option<(i32, i32)>) {
-        *self.last_touch.write().unwrap_or_else(|e| e.into_inner()) = pos;
+        *self.last_touch.write().unwrap_or_else(|e| {
+            tracing::warn!("last_touch 锁中毒，已恢复");
+            e.into_inner()
+        }) = pos;
     }
 
     pub fn get_last_touch(&self) -> Option<(i32, i32)> {
-        *self.last_touch.read().unwrap_or_else(|e| e.into_inner())
+        *self.last_touch.read().unwrap_or_else(|e| {
+            tracing::warn!("last_touch 锁中毒，已恢复");
+            e.into_inner()
+        })
     }
 }
 

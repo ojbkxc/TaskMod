@@ -551,17 +551,53 @@ pub async fn send_control(
 pub async fn mirror_ws(
     State(state): State<SharedMirrorState>,
     ws: WebSocketUpgrade,
-) -> impl IntoResponse {
+) -> axum::response::Response {
+    if crate::WS_CONNECTION_COUNT.load(Ordering::Relaxed) >= crate::MAX_WS_CONNECTIONS {
+        return axum::http::StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+    crate::WS_CONNECTION_COUNT.fetch_add(1, Ordering::Relaxed);
     ws.on_upgrade(move |socket| async move {
-        let (mut write, _) = socket.split();
+        let (mut write, mut read) = socket.split();
+        let mut ping_interval = tokio::time::interval(Duration::from_secs(30));
+        let mut last_pong = tokio::time::Instant::now();
+        const PONG_TIMEOUT: Duration = Duration::from_secs(60);
 
         if let Some(mut video_rx) = state.get_video_rx() {
-            while let Ok(data) = video_rx.recv().await {
-                if let Err(_) = write.send(axum::extract::ws::Message::Binary(data)).await {
-                    break;
+            loop {
+                tokio::select! {
+                    biased;
+                    msg = read.next() => {
+                        match msg {
+                            Some(Ok(axum::extract::ws::Message::Pong(_))) => {
+                                last_pong = tokio::time::Instant::now();
+                            }
+                            Some(Ok(axum::extract::ws::Message::Close(_))) | None => break,
+                            _ => {}
+                        }
+                    }
+                    _ = ping_interval.tick() => {
+                        if last_pong.elapsed() > PONG_TIMEOUT {
+                            tracing::warn!("[mirror_ws] 客户端心跳超时，关闭连接");
+                            break;
+                        }
+                        if write.send(axum::extract::ws::Message::Ping(vec![])).await.is_err() {
+                            break;
+                        }
+                    }
+                    data = video_rx.recv() => {
+                        match data {
+                            Ok(data) => {
+                                if write.send(axum::extract::ws::Message::Binary(data)).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Err(_) => break,
+                        }
+                    }
                 }
             }
         }
+        crate::WS_CONNECTION_COUNT.fetch_sub(1, Ordering::Relaxed);
     })
 }
 
@@ -583,17 +619,53 @@ fn find_wav_data_offset(data: &[u8]) -> Option<usize> {
 pub async fn audio_ws(
     State(state): State<SharedMirrorState>,
     ws: WebSocketUpgrade,
-) -> impl IntoResponse {
+) -> axum::response::Response {
+    if crate::WS_CONNECTION_COUNT.load(Ordering::Relaxed) >= crate::MAX_WS_CONNECTIONS {
+        return axum::http::StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+    crate::WS_CONNECTION_COUNT.fetch_add(1, Ordering::Relaxed);
     ws.on_upgrade(move |socket| async move {
-        let (mut write, _) = socket.split();
+        let (mut write, mut read) = socket.split();
+        let mut ping_interval = tokio::time::interval(Duration::from_secs(30));
+        let mut last_pong = tokio::time::Instant::now();
+        const PONG_TIMEOUT: Duration = Duration::from_secs(60);
 
         if let Some(mut audio_rx) = state.get_audio_rx() {
-            while let Ok(data) = audio_rx.recv().await {
-                if let Err(_) = write.send(axum::extract::ws::Message::Binary(data)).await {
-                    break;
+            loop {
+                tokio::select! {
+                    biased;
+                    msg = read.next() => {
+                        match msg {
+                            Some(Ok(axum::extract::ws::Message::Pong(_))) => {
+                                last_pong = tokio::time::Instant::now();
+                            }
+                            Some(Ok(axum::extract::ws::Message::Close(_))) | None => break,
+                            _ => {}
+                        }
+                    }
+                    _ = ping_interval.tick() => {
+                        if last_pong.elapsed() > PONG_TIMEOUT {
+                            tracing::warn!("[audio_ws] 客户端心跳超时，关闭连接");
+                            break;
+                        }
+                        if write.send(axum::extract::ws::Message::Ping(vec![])).await.is_err() {
+                            break;
+                        }
+                    }
+                    data = audio_rx.recv() => {
+                        match data {
+                            Ok(data) => {
+                                if write.send(axum::extract::ws::Message::Binary(data)).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Err(_) => break,
+                        }
+                    }
                 }
             }
         }
+        crate::WS_CONNECTION_COUNT.fetch_sub(1, Ordering::Relaxed);
     })
 }
 

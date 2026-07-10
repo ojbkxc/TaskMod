@@ -46,7 +46,7 @@ class TaskModService : Service(), CoroutineScope by CoroutineScope(Dispatchers.D
 
     override fun onCreate() {
         super.onCreate()
-        serverManager = ServerManager(this)
+        serverManager = ServerManager.getInstance(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -79,11 +79,15 @@ class TaskModService : Service(), CoroutineScope by CoroutineScope(Dispatchers.D
     }
 
     private fun handleStop() {
-        serverManager.stop()
-        releaseWakeLock()
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
-        sendBroadcast(Intent("com.taskmod.STATUS_CHANGED").putExtra("running", false))
+        launch(Dispatchers.IO) {
+            serverManager.stop()
+            withContext(Dispatchers.Main) {
+                releaseWakeLock()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                sendBroadcast(Intent("com.taskmod.STATUS_CHANGED").putExtra("running", false))
+            }
+        }
     }
 
     private fun handleScreenshot() {
@@ -161,7 +165,13 @@ class TaskModService : Service(), CoroutineScope by CoroutineScope(Dispatchers.D
     private fun acquireWakeLock() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "TaskMod::Server")
-        wakeLock?.acquire(24 * 60 * 60 * 1000L) // 24小时
+        wakeLock?.acquire(60 * 60 * 1000L) // 1小时
+
+        // 安全超时：协程中延时后确保释放，防止异常情况泄漏
+        launch {
+            delay(60 * 60 * 1000L)
+            releaseWakeLock()
+        }
     }
 
     private fun releaseWakeLock() {

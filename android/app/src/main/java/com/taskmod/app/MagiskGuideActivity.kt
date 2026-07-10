@@ -6,17 +6,19 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
-import android.os.Handler
-import android.os.Looper
 import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.gson.Gson
 import com.google.gson.JsonObject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -27,8 +29,6 @@ class MagiskGuideActivity : AppCompatActivity() {
         private const val API_URL = "https://api.github.com/repos/${TaskModApp.GITHUB_REPO}/releases/latest"
         private const val DOWNLOAD_DIR = "TaskMod"
     }
-
-    private val handler = Handler(Looper.getMainLooper())
 
     // Views
     private lateinit var progressContainer: LinearLayout
@@ -150,9 +150,9 @@ class MagiskGuideActivity : AppCompatActivity() {
         step1Card.setCardBackgroundColor(getColor(R.color.surface_variant))
         step1Text.text = "正在检测 Magisk…"
 
-        Thread {
+        lifecycleScope.launch(Dispatchers.IO) {
             val hasMagisk = RootHelper.checkRoot().method == "magisk"
-            handler.post {
+            withContext(Dispatchers.Main) {
                 if (hasMagisk) {
                     step1Status.setImageResource(android.R.drawable.presence_online)
                     step1Text.text = "已检测到 Magisk"
@@ -163,7 +163,7 @@ class MagiskGuideActivity : AppCompatActivity() {
                     showNoMagiskDialog()
                 }
             }
-        }.start()
+        }
     }
 
     // Step 2: 获取最新版本
@@ -172,7 +172,7 @@ class MagiskGuideActivity : AppCompatActivity() {
         step2Card.setCardBackgroundColor(getColor(R.color.surface_variant))
         step2Text.text = "正在查询 GitHub Releases…"
 
-        Thread {
+        lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val url = URL(API_URL)
                 val conn = url.openConnection() as HttpURLConnection
@@ -206,7 +206,7 @@ class MagiskGuideActivity : AppCompatActivity() {
 
                     conn.disconnect()
 
-                    handler.post {
+                    withContext(Dispatchers.Main) {
                         if (latestVersion.isNotEmpty()) {
                             step2Status.setImageResource(android.R.drawable.presence_online)
                             step2Text.text = "最新版本: v$latestVersion"
@@ -221,20 +221,20 @@ class MagiskGuideActivity : AppCompatActivity() {
                     }
                 } else {
                     conn.disconnect()
-                    handler.post {
+                    withContext(Dispatchers.Main) {
                         step2Status.setImageResource(android.R.drawable.presence_busy)
                         step2Text.text = "网络请求失败 (${conn.responseCode})"
                         btnRetry.visibility = View.VISIBLE
                     }
                 }
             } catch (e: Exception) {
-                handler.post {
+                withContext(Dispatchers.Main) {
                     step2Status.setImageResource(android.R.drawable.presence_busy)
                     step2Text.text = "网络错误: ${e.message}"
                     btnRetry.visibility = View.VISIBLE
                 }
             }
-        }.start()
+        }
     }
 
     // Step 3: 下载模块
@@ -287,14 +287,14 @@ class MagiskGuideActivity : AppCompatActivity() {
 
         if (file.exists()) {
             downloadedFile = file
-            handler.post {
+            runOnUiThread {
                 step3Status.setImageResource(android.R.drawable.presence_online)
                 step3Text.text = "下载完成: ${file.name}"
                 btnDownload.visibility = View.GONE
                 step4Flash()
             }
         } else {
-            handler.post {
+            runOnUiThread {
                 step3Status.setImageResource(android.R.drawable.presence_busy)
                 step3Text.text = "下载完成但文件未找到"
                 btnDownload.isEnabled = true

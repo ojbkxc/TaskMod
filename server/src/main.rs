@@ -1,7 +1,7 @@
 use axum::{routing::{delete, get, post, put}, Router, Json};
 use serde_json;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 
@@ -14,6 +14,10 @@ mod data;
 mod state;
 mod tools;
 mod utils;
+
+/// WebSocket 并发连接计数器
+pub(crate) static WS_CONNECTION_COUNT: AtomicUsize = AtomicUsize::new(0);
+pub(crate) const MAX_WS_CONNECTIONS: usize = 10;
 
 /// 看门狗：定期检测主循环是否卡死
 /// 如果心跳超过 timeout_secs 没有更新，发送告警邮件

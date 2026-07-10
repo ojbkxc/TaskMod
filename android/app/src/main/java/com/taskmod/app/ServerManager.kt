@@ -6,11 +6,20 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
-class ServerManager(private val context: Context) {
+class ServerManager private constructor(private val context: Context) {
 
     companion object {
         private const val TAG = "ServerManager"
         private const val BINARY_NAME = "taskmod-server"
+
+        @Volatile
+        private var instance: ServerManager? = null
+
+        fun getInstance(context: Context): ServerManager {
+            return instance ?: synchronized(this) {
+                instance ?: ServerManager(context.applicationContext).also { instance = it }
+            }
+        }
     }
 
     private var process: Process? = null
@@ -78,8 +87,15 @@ class ServerManager(private val context: Context) {
 
             process = builder.start()
 
-            // 等待启动
-            Thread.sleep(2000)
+            // 轮询等待服务就绪（最多 3 秒，每 200ms 检查一次）
+            val maxWait = 3000L
+            val interval = 200L
+            var waited = 0L
+            while (waited < maxWait) {
+                Thread.sleep(interval)
+                waited += interval
+                if (isRunning()) break
+            }
 
             if (isRunning()) {
                 state = ServerState.RUNNING

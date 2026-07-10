@@ -104,7 +104,7 @@ class SettingsActivity : AppCompatActivity() {
 
         // === 当前所有可用地址 ===
         layout.addView(makeLabel("当前可用地址"))
-        val serverManager = ServerManager(this)
+        val serverManager = ServerManager.getInstance(this)
         for (url in serverManager.getAllAccessUrls()) {
             layout.addView(android.widget.TextView(this).apply {
                 text = url

@@ -1,19 +1,23 @@
 package com.taskmod.app
 
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
-import android.webkit.*
 import android.widget.*
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
@@ -46,8 +50,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvVersion: TextView
     private lateinit var toolbar: MaterialToolbar
 
-    private var webView: WebView? = null
     private var statusCheckRunnable: Runnable? = null
+
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            // 权限结果回调，无需额外处理
+        }
 
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -59,7 +67,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        serverManager = ServerManager(this)
+        serverManager = ServerManager.getInstance(this)
         initViews()
         setupListeners()
         checkRootStatus()
@@ -69,6 +77,15 @@ class MainActivity : AppCompatActivity() {
         // 检查是否需要自动启动
         if (ConfigManager.load().autoStart) {
             TaskModService.start(this)
+        }
+
+        // Android 13+ 请求 POST_NOTIFICATIONS 权限
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
         }
 
         // 检查更新
@@ -183,8 +200,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openWebView() {
-        if (webView != null) return
-
         val intent = Intent(this, WebViewActivity::class.java)
         intent.putExtra("url", serverManager.getLocalUrl())
         startActivity(intent)
@@ -242,7 +257,7 @@ class MainActivity : AppCompatActivity() {
             tvAddress.text = "http://--:${serverManager.port}"
         }
         btnToggle.text = if (running) "停止服务" else "启动服务"
-        btnToggle.setBackgroundColor(getColor(if (running) R.color.error else R.color.primary))
+        btnToggle.backgroundTintList = ColorStateList.valueOf(getColor(if (running) R.color.error else R.color.primary))
     }
 
     private fun startStatusCheck() {

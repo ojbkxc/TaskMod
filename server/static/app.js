@@ -157,9 +157,29 @@
     /* ===== Theme Toggle ===== */
     function toggleTheme() {
         const root = document.documentElement;
-        const isDark = root.classList.toggle('dark');
-        root.style.colorScheme = isDark ? 'dark' : 'light';
+        const current = root.getAttribute('data-theme');
+        const next = current === 'dark' ? 'light' : 'dark';
+        root.setAttribute('data-theme', next);
+        root.style.colorScheme = next;
+        localStorage.setItem('theme', next);
     }
+
+    // 初始化主题
+    (function initTheme() {
+        const saved = localStorage.getItem('theme');
+        if (saved) {
+            document.documentElement.setAttribute('data-theme', saved);
+            document.documentElement.style.colorScheme = saved;
+        }
+    })();
+
+    // 全局 Escape 键关闭模态框
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            const modals = document.querySelectorAll('.ds-modal-overlay');
+            modals.forEach(m => { if (m.style.display !== 'none') m.style.display = 'none'; });
+        }
+    });
 
     /* ===== API Helpers ===== */
     async function apiGet(url) {
@@ -235,6 +255,71 @@
         return d.innerHTML;
     }
 
+    /* ===== Custom Confirm Dialog (replaces native confirm) ===== */
+    function dsConfirm(message, title = '确认') {
+        return new Promise(resolve => {
+            const overlay = document.createElement('div');
+            overlay.className = 'ds-confirm-overlay';
+            overlay.innerHTML = `
+                <div class="ds-confirm-card">
+                    <div class="ds-confirm-title">${escapeHtml(title)}</div>
+                    <div class="ds-confirm-message">${escapeHtml(message)}</div>
+                    <div class="ds-confirm-actions">
+                        <button class="ds-btn-secondary" data-action="cancel">取消</button>
+                        <button class="ds-btn-danger" data-action="confirm">确定</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(overlay);
+            const cleanup = (result) => { overlay.remove(); resolve(result); };
+            overlay.querySelector('[data-action="cancel"]').onclick = () => cleanup(false);
+            overlay.querySelector('[data-action="confirm"]').onclick = () => cleanup(true);
+            overlay.onclick = (e) => { if (e.target === overlay) cleanup(false); };
+            overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') cleanup(false); });
+            overlay.querySelector('[data-action="confirm"]').focus();
+        });
+    }
+
+    /* ===== Custom Prompt Dialog (replaces native prompt) ===== */
+    function dsPrompt(message, defaultValue = '', title = '输入') {
+        return new Promise(resolve => {
+            const overlay = document.createElement('div');
+            overlay.className = 'ds-confirm-overlay';
+            overlay.innerHTML = `
+                <div class="ds-confirm-card">
+                    <div class="ds-confirm-title">${escapeHtml(title)}</div>
+                    <div class="ds-confirm-message">${escapeHtml(message)}</div>
+                    <div class="form-group" style="margin-bottom:16px;">
+                        <input type="text" class="ds-chat-input" value="${escapeHtml(defaultValue)}" style="width:100%;">
+                    </div>
+                    <div class="ds-confirm-actions">
+                        <button class="ds-btn-secondary" data-action="cancel">取消</button>
+                        <button class="ds-btn-primary" data-action="confirm">确定</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(overlay);
+            const input = overlay.querySelector('input');
+            input.focus();
+            input.select();
+            const cleanup = (result) => { overlay.remove(); resolve(result); };
+            overlay.querySelector('[data-action="cancel"]').onclick = () => cleanup(null);
+            overlay.querySelector('[data-action="confirm"]').onclick = () => cleanup(input.value);
+            overlay.onclick = (e) => { if (e.target === overlay) cleanup(null); };
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') cleanup(input.value);
+                if (e.key === 'Escape') cleanup(null);
+            });
+        });
+    }
+
+    /* ===== Skeleton Loading Helper ===== */
+    function showSkeleton(containerId, count = 3) {
+        const el = document.getElementById(containerId);
+        if (!el) return;
+        el.innerHTML = Array.from({ length: count }, () =>
+            '<div class="skeleton skeleton-card"></div>'
+        ).join('');
+    }
+
     /* ===== Dashboard ===== */
     async function refreshStatus() {
         const res = await apiGet('/api/status');
@@ -254,7 +339,7 @@
     }
 
     async function rebootDevice() {
-        if (!confirm('确定要重启设备吗？')) return;
+        if (!await dsConfirm('确定要重启设备吗？')) return;
         const res = await apiPost('/api/command', { command: 'reboot' });
         if (res.ok) showToast('重启命令已发送', 'success');
         else showToast(res.message || '重启失败', 'error');
@@ -377,7 +462,7 @@
                         progress.innerHTML += '<p style="color:#dc3545;">✗ ' + file.name + ': ' + (res.message || '上传失败') + '</p>';
                     }
                 } catch(err) {
-                    progress.innerHTML += '<p style="color:#dc3545;">✗ ' + file.name + ': ' + err.message + '</p>';
+                    progress.innerHTML += '<p style="color:var(--ds-danger);">✗ ' + file.name + ': ' + err.message + '</p>';
                 }
             };
             reader.readAsDataURL(file);
@@ -412,7 +497,7 @@
 
     function clearChat() {
         const container = document.getElementById('chat-messages');
-        container.innerHTML = '<div class="ds-chat-empty"><div class="ds-empty-state-icon"><svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg></div><div class="ds-empty-state-title">开始与 AI 对话</div><div class="ds-empty-state-description">选择一个AI提供商，然后输入消息控制设备</div></div>';
+        container.innerHTML = '<div class="ds-chat-empty"><div class="ds-empty-state-icon"><svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg></div><div class="ds-empty-state-title">欢迎使用 AI 助手</div><div class="ds-empty-state-description">选择一个AI提供商，然后输入消息控制设备。你也可以试试下面的快捷操作：</div><div class="ds-quick-prompts"><button class="ds-quick-prompt-card" onclick="insertChatPrompt(\'帮我查看设备状态\')"><i class="fas fa-mobile-alt"></i><span>查看设备状态</span></button><button class="ds-quick-prompt-card" onclick="insertChatPrompt(\'截一张屏幕截图并分析\')"><i class="fas fa-camera"></i><span>截图分析</span></button><button class="ds-quick-prompt-card" onclick="insertChatPrompt(\'帮我打开设置页面\')"><i class="fas fa-cog"></i><span>打开设置</span></button><button class="ds-quick-prompt-card" onclick="insertChatPrompt(\'列出已安装的应用\')"><i class="fas fa-th"></i><span>列出应用</span></button></div><div style="display:flex;gap:8px;margin-top:12px;"><button class="ds-chat-text-button" onclick="clearChat()"><i class="fas fa-plus" style="margin-right:4px;"></i>新对话</button><button class="ds-chat-text-button" onclick="exportChat()"><i class="fas fa-download" style="margin-right:4px;"></i>导出对话</button></div></div>';
         currentAssistantEl = null;
         isChatStreaming = false;
         if (chatWs && chatWs.readyState === WebSocket.OPEN) {
@@ -494,7 +579,7 @@
     }
 
     async function deleteProvider(id) {
-        if (!confirm('确定删除此提供商？')) return;
+        if (!await dsConfirm('确定删除此提供商？')) return;
         const res = await apiDelete('/api/ai/providers/' + id);
         if (res.ok) {
             showToast('已删除', 'success');
@@ -537,7 +622,7 @@
     }
 
     async function deleteMemory(id) {
-        if (!confirm('确定删除此记忆？')) return;
+        if (!await dsConfirm('确定删除此记忆？')) return;
         const res = await apiDelete('/api/ai/memories/' + id);
         if (res.ok) { showToast('已删除', 'success'); loadMemories(); }
         else showToast(res.message || '删除失败', 'error');
@@ -718,7 +803,7 @@
     }
 
     async function deleteSavedItem(id) {
-        if (!confirm('确定删除此保存项？')) return;
+        if (!await dsConfirm('确定删除此保存项？')) return;
         const res = await apiDelete('/api/ai/saved/' + id);
         if (res.ok) { showToast('已删除', 'success'); loadSavedItems(); }
         else showToast(res.message || '删除失败', 'error');
@@ -776,7 +861,7 @@
         if (!res.ok) return;
         const s = (res.data || []).find(x => x.id === id);
         if (s) {
-            const text = prompt('请输入要处理的文本:');
+            const text = await dsPrompt('请输入要处理的文本:');
             if (text) {
                 showTab('chat');
                 document.getElementById('chat-input').value = s.prompt_template.replace(/\{text\}/g, text);
@@ -793,7 +878,7 @@
     }
 
     async function deleteScenario(id) {
-        if (!confirm('确定删除此场景？')) return;
+        if (!await dsConfirm('确定删除此场景？')) return;
         const res = await apiDelete('/api/ai/scenarios/' + id);
         if (res.ok) { showToast('已删除', 'success'); loadScenarios(); }
         else showToast(res.message || '删除失败', 'error');
@@ -971,7 +1056,7 @@
     }
 
     async function deleteScreenshot(filename) {
-        if (!confirm('确定删除此截图？')) return;
+        if (!await dsConfirm('确定删除此截图？')) return;
         const res = await apiDelete('/api/screenshots/' + filename);
         if (res.ok) { showToast('已删除', 'success'); loadScreenshots(); }
         else showToast(res.message || '删除失败', 'error');
@@ -1028,7 +1113,7 @@
 
     /* ===== Chat: Export ===== */
     async function exportChat() {
-        const format = prompt('导出格式 (md/json):', 'md');
+        const format = await dsPrompt('导出格式 (md/json):', 'md', '导出对话');
         if (!format) return;
         const messages = [];
         document.querySelectorAll('#chat-messages .ds-chat-message').forEach(el => {
@@ -1084,7 +1169,11 @@
                 container.appendChild(currentAssistantEl);
             }
             const body = currentAssistantEl.querySelector('.ds-chat-message-content') || currentAssistantEl.querySelector('.markdown-body');
-            if (body) body.innerHTML += escapeHtml(msg.content);
+            if (body) {
+                const cursor = body.querySelector('.ds-streaming-cursor');
+                if (cursor) cursor.remove();
+                body.innerHTML += escapeHtml(msg.content) + '<span class="ds-streaming-cursor"></span>';
+            }
             scrollChatToBottom();
         } else if (msg.type === 'thinking') {
             if (!currentAssistantEl) {
@@ -1140,24 +1229,20 @@
         } else if (msg.type === 'done' || msg.type === 'stream_end') {
             if (currentAssistantEl) {
                 const body = currentAssistantEl.querySelector('.ds-chat-message-content') || currentAssistantEl.querySelector('.markdown-body');
-                if (body && typeof marked !== 'undefined') {
-                    try { body.innerHTML = marked.parse(body.textContent); } catch (e) { /* keep raw */ }
+                if (body) {
+                    // 移除流式光标
+                    const cursor = body.querySelector('.ds-streaming-cursor');
+                    if (cursor) cursor.remove();
+                    if (typeof marked !== 'undefined') {
+                        try { body.innerHTML = marked.parse(body.textContent); } catch (e) { /* keep raw */ }
+                    }
+                    // 为代码块添加复制按钮
+                    addCodeBlockCopyButtons(body);
                 }
                 // 自动朗读AI回复
                 if (ttsReplyEnabled && body) {
                     const text = body.textContent.trim();
                     if (text) ttsReadText(text);
-                }
-                // 添加朗读按钮到消息气泡
-                if (body) {
-                    const readBtn = document.createElement('button');
-                    readBtn.className = 'ds-msg-read-btn';
-                    readBtn.innerHTML = '<i class="fas fa-volume-up"></i>';
-                    readBtn.title = '朗读此回复';
-                    readBtn.style.cssText = 'position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.05);border:none;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:11px;color:#888;display:flex;align-items:center;justify-content:center;';
-                    readBtn.onclick = function() { ttsReadText(body.textContent.trim()); };
-                    const bubble = body.closest('.ds-chat-message');
-                    if (bubble) { bubble.style.position = 'relative'; bubble.appendChild(readBtn); }
                 }
             }
             currentAssistantEl = null;
@@ -1198,8 +1283,80 @@
         body.className = 'markdown-body';
         body.textContent = content;
         bubble.appendChild(body);
+        if (role === 'assistant') {
+            const actions = document.createElement('div');
+            actions.className = 'ds-chat-message-actions';
+            actions.innerHTML =
+                '<button class="ds-chat-msg-action-btn" title="复制" onclick="copyMessageText(this)"><i class="fas fa-copy"></i></button>' +
+                '<button class="ds-chat-msg-action-btn" title="重新生成" onclick="regenerateMessage(this)"><i class="fas fa-redo"></i></button>' +
+                '<button class="ds-chat-msg-action-btn" title="朗读" onclick="readMessageAloud(this)"><i class="fas fa-volume-up"></i></button>';
+            bubble.appendChild(actions);
+        }
         row.appendChild(bubble);
         return row;
+    }
+
+    function copyMessageText(btn) {
+        const bubble = btn.closest('.ds-chat-message');
+        const body = bubble.querySelector('.markdown-body');
+        if (body) {
+            navigator.clipboard.writeText(body.textContent).then(function() {
+                showToast('已复制到剪贴板', 'success');
+            }).catch(function() {
+                showToast('复制失败', 'error');
+            });
+        }
+    }
+
+    function regenerateMessage(btn) {
+        const bubble = btn.closest('.ds-chat-message');
+        const body = bubble.querySelector('.markdown-body');
+        if (body) {
+            const text = body.textContent.trim();
+            if (text) {
+                const input = document.getElementById('chat-input');
+                input.value = text;
+                input.focus();
+                sendChatMessage();
+            }
+        }
+    }
+
+    function readMessageAloud(btn) {
+        const bubble = btn.closest('.ds-chat-message');
+        const body = bubble.querySelector('.markdown-body');
+        if (body) {
+            const text = body.textContent.trim();
+            if (text) ttsReadText(text);
+        }
+    }
+
+    function addCodeBlockCopyButtons(body) {
+        body.querySelectorAll('pre').forEach(function(pre) {
+            if (pre.querySelector('.ds-chat-code-header')) return;
+            const code = pre.querySelector('code');
+            const lang = code ? (code.className.match(/language-(\w+)/) || [])[1] || '' : '';
+            const header = document.createElement('div');
+            header.className = 'ds-chat-code-header';
+            header.innerHTML = '<span>' + escapeHtml(lang || 'code') + '</span>' +
+                '<button class="ds-chat-code-copy-btn" onclick="copyCodeBlock(this)"><i class="fas fa-copy"></i> 复制代码</button>';
+            pre.parentNode.insertBefore(header, pre);
+        });
+    }
+
+    function copyCodeBlock(btn) {
+        const header = btn.closest('.ds-chat-code-header');
+        const pre = header.nextElementSibling;
+        if (pre && pre.tagName === 'PRE') {
+            const code = pre.querySelector('code');
+            const text = code ? code.textContent : pre.textContent;
+            navigator.clipboard.writeText(text).then(function() {
+                btn.innerHTML = '<i class="fas fa-check"></i> 已复制';
+                setTimeout(function() { btn.innerHTML = '<i class="fas fa-copy"></i> 复制代码'; }, 1500);
+            }).catch(function() {
+                showToast('复制失败', 'error');
+            });
+        }
     }
 
     function scrollChatToBottom() {
@@ -1294,8 +1451,17 @@
         document.getElementById('mirror-placeholder').style.display = 'none';
         document.getElementById('mirror-canvas').style.display = 'block';
         document.getElementById('mirror-status-text').textContent = '连接中...';
+        // 更新连接状态
+        const dot = document.getElementById('mirror-conn-dot');
+        if (dot) dot.classList.add('connected');
+        const txt = document.getElementById('mirror-conn-text');
+        if (txt) txt.textContent = '已连接';
+        // 显示手势提示
+        const hint = document.getElementById('mirror-gesture-hint');
+        if (hint) { hint.style.display = ''; setTimeout(() => hint.style.display = 'none', 8000); }
 
         connectMirrorWs();
+        setupMirrorCanvasEvents();
     }
 
     async function stopMirror() {
@@ -1316,6 +1482,13 @@
         document.getElementById('mirror-canvas').style.display = 'none';
         document.getElementById('mirror-status').style.display = 'none';
         document.getElementById('mirror-recording').style.display = 'none';
+        // 重置连接状态
+        const dot = document.getElementById('mirror-conn-dot');
+        if (dot) dot.classList.remove('connected');
+        const txt = document.getElementById('mirror-conn-text');
+        if (txt) txt.textContent = '未连接';
+        const hint = document.getElementById('mirror-gesture-hint');
+        if (hint) hint.style.display = 'none';
         showToast('投屏已停止', 'info');
     }
 
@@ -1567,13 +1740,12 @@
         const container = document.getElementById('mirror-container');
         if (!document.fullscreenElement) {
             container.requestFullscreen().then(() => {
-                document.getElementById('mirror-fullscreen-btn').innerHTML = '<i class="fas fa-compress"></i> 退出全屏';
-                // 全屏时隐藏侧边栏
+                document.getElementById('mirror-fullscreen-btn').innerHTML = '<i class="fas fa-compress"></i>';
                 document.querySelector('.side-tabs').style.display = 'none';
             }).catch(e => showToast('无法进入全屏: ' + e.message, 'error'));
         } else {
             document.exitFullscreen().then(() => {
-                document.getElementById('mirror-fullscreen-btn').innerHTML = '<i class="fas fa-expand"></i> 全屏';
+                document.getElementById('mirror-fullscreen-btn').innerHTML = '<i class="fas fa-expand"></i>';
                 document.querySelector('.side-tabs').style.display = '';
             });
         }
@@ -1582,7 +1754,7 @@
     // 监听全屏变化（按Esc退出时恢复按钮文字）
     document.addEventListener('fullscreenchange', () => {
         if (!document.fullscreenElement) {
-            document.getElementById('mirror-fullscreen-btn').innerHTML = '<i class="fas fa-expand"></i> 全屏';
+            document.getElementById('mirror-fullscreen-btn').innerHTML = '<i class="fas fa-expand"></i>';
             document.querySelector('.side-tabs').style.display = '';
         }
     });
@@ -1641,6 +1813,41 @@
 
     function mirrorVolumeDown() {
         apiPost('/api/command', { command: 'input keyevent 25' });
+    }
+
+    /* ===== Touch Ripple Effect ===== */
+    function showMirrorRipple(x, y) {
+        const ripple = document.getElementById('touch-ripple');
+        if (!ripple) return;
+        const container = document.getElementById('mirror-container');
+        const rect = container.getBoundingClientRect();
+        ripple.style.left = (x - rect.left - 20) + 'px';
+        ripple.style.top = (y - rect.top - 20) + 'px';
+        ripple.classList.remove('active');
+        void ripple.offsetWidth; // force reflow
+        ripple.classList.add('active');
+        setTimeout(() => ripple.classList.remove('active'), 400);
+    }
+
+    // 设置镜像画布触控事件
+    function setupMirrorCanvasEvents() {
+        const canvas = document.getElementById('mirror-canvas');
+        if (!canvas || canvas._eventsSetup) return;
+        canvas._eventsSetup = true;
+        let touchStartTime = 0;
+        let touchStartPos = null;
+
+        canvas.addEventListener('mousedown', (e) => {
+            showMirrorRipple(e.clientX, e.clientY);
+        });
+
+        canvas.addEventListener('touchstart', (e) => {
+            if (e.touches.length > 0) {
+                showMirrorRipple(e.touches[0].clientX, e.touches[0].clientY);
+                touchStartTime = Date.now();
+                touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }
+        }, { passive: true });
     }
 
     /* ===== Mirror Audio (Web Audio API) ===== */
@@ -1730,7 +1937,7 @@
 
                 mirrorAudioEnabled = true;
                 const btn = document.getElementById('mirror-audio-btn');
-                btn.innerHTML = '<i class="fas fa-volume-mute"></i> 静音';
+                btn.innerHTML = '<i class="fas fa-volume-mute"></i>';
                 btn.classList.add('ds-btn-active');
                 showToast('设备声音已开启', 'success');
             }).catch(e => {
@@ -1747,7 +1954,7 @@
         if (mirrorAudioNode) { mirrorAudioNode.disconnect(); mirrorAudioNode = null; }
         if (mirrorAudioCtx) { mirrorAudioCtx.close(); mirrorAudioCtx = null; }
         const btn = document.getElementById('mirror-audio-btn');
-        btn.innerHTML = '<i class="fas fa-volume-up"></i> 声音';
+        btn.innerHTML = '<i class="fas fa-volume-up"></i>';
         btn.classList.remove('ds-btn-active');
     }
 
@@ -1912,7 +2119,7 @@
         const isNew = modal.dataset.isNew === 'true';
 
         if (isNew && !name) {
-            name = prompt('请输入脚本文件名 (以 .sh 结尾):', 'script_' + Date.now() + '.sh');
+            name = await dsPrompt('请输入脚本文件名 (以 .sh 结尾):', 'script_' + Date.now() + '.sh');
             if (!name) return;
             if (!name.endsWith('.sh')) name += '.sh';
             modal.dataset.name = name;
@@ -1937,71 +2144,429 @@
         else showToast(res.message || '删除失败', 'error');
     }
 
-    // 脚本编辑器增强：Tab缩进、Ctrl+S保存、行号显示
-    document.addEventListener('DOMContentLoaded', () => {
-        const editor = document.getElementById('script-editor');
-        if (!editor) return;
+    // ===== Enhanced Editor System =====
+    const _editorState = {
+        script: { findMatches: [], findIndex: -1, autoSaveTimer: null },
+        file: { findMatches: [], findIndex: -1, autoSaveTimer: null }
+    };
 
-        // Tab 键缩进
-        editor.addEventListener('keydown', (e) => {
+    // Initialize enhanced editor for a given type ('script' or 'file')
+    function initEnhancedEditor(type) {
+        const textarea = document.getElementById(type === 'script' ? 'script-editor' : 'file-editor-content');
+        if (!textarea || textarea._enhanced) return;
+        textarea._enhanced = true;
+
+        // Tab key: 4 spaces, Shift+Tab: unindent, multi-line support
+        textarea.addEventListener('keydown', (e) => {
             if (e.key === 'Tab') {
                 e.preventDefault();
-                const start = editor.selectionStart;
-                const end = editor.selectionEnd;
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
                 if (e.shiftKey) {
-                    // Shift+Tab: 取消缩进
-                    const lineStart = editor.value.lastIndexOf('\n', start - 1) + 1;
-                    const lineText = editor.value.substring(lineStart, start);
-                    if (lineText.startsWith('  ')) {
-                        editor.value = editor.value.substring(0, lineStart) + editor.value.substring(lineStart + 2);
-                        editor.selectionStart = editor.selectionEnd = start - 2;
-                    } else if (lineText.startsWith('\t')) {
-                        editor.value = editor.value.substring(0, lineStart) + editor.value.substring(lineStart + 1);
-                        editor.selectionStart = editor.selectionEnd = start - 1;
-                    }
+                    // Unindent selected lines
+                    const val = textarea.value;
+                    const lineStart = val.lastIndexOf('\n', start - 1) + 1;
+                    const lineEnd = val.indexOf('\n', end);
+                    const selEnd = lineEnd === -1 ? val.length : lineEnd;
+                    const block = val.substring(lineStart, selEnd);
+                    const lines = block.split('\n');
+                    let removed = 0;
+                    const newLines = lines.map((line, i) => {
+                        if (line.startsWith('    ')) { removed += (i === 0 ? 4 : 0); return line.substring(4); }
+                        if (line.startsWith('\t')) { removed += (i === 0 ? 1 : 0); return line.substring(1); }
+                        return line.replace(/^ {1,3}/, (m) => { removed += (i === 0 ? m.length : 0); return ''; });
+                    });
+                    textarea.value = val.substring(0, lineStart) + newLines.join('\n') + val.substring(selEnd);
+                    textarea.selectionStart = Math.max(lineStart, start - 4);
+                    textarea.selectionEnd = Math.max(lineStart, end - 4);
+                } else if (start !== end) {
+                    // Indent all selected lines
+                    const val = textarea.value;
+                    const lineStart = val.lastIndexOf('\n', start - 1) + 1;
+                    const lineEnd = val.indexOf('\n', end);
+                    const selEnd = lineEnd === -1 ? val.length : lineEnd;
+                    const block = val.substring(lineStart, selEnd);
+                    const newBlock = block.split('\n').map(l => '    ' + l).join('\n');
+                    textarea.value = val.substring(0, lineStart) + newBlock + val.substring(selEnd);
+                    textarea.selectionStart = start + 4;
+                    textarea.selectionEnd = end + (newBlock.length - block.length);
                 } else {
-                    // Tab: 插入2个空格
-                    editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
-                    editor.selectionStart = editor.selectionEnd = start + 2;
+                    textarea.value = textarea.value.substring(0, start) + '    ' + textarea.value.substring(end);
+                    textarea.selectionStart = textarea.selectionEnd = start + 4;
                 }
-                updateLineInfo();
+                editorUpdateLineInfo(type);
             }
 
-            // Ctrl+S 保存
+            // Ctrl+S save
             if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
-                saveScript();
+                if (type === 'script') saveScript();
+                else fileEditorSave();
+            }
+
+            // Ctrl+F find
+            if (e.key === 'f' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                editorToggleFind(type);
+            }
+
+            // Ctrl+H replace
+            if (e.key === 'h' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                editorToggleFind(type, true);
+            }
+
+            // Enter: auto-indent
+            if (e.key === 'Enter') {
+                const val = textarea.value;
+                const pos = textarea.selectionStart;
+                const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
+                const line = val.substring(lineStart, pos);
+                const indent = line.match(/^(\s*)/)[1];
+                if (indent) {
+                    e.preventDefault();
+                    const insertion = '\n' + indent;
+                    textarea.value = val.substring(0, pos) + insertion + val.substring(textarea.selectionEnd);
+                    textarea.selectionStart = textarea.selectionEnd = pos + insertion.length;
+                    editorUpdateLineInfo(type);
+                }
+            }
+
+            // Autocomplete trigger
+            if (e.key === 'Escape') {
+                editorHideAutocomplete(type);
             }
         });
 
-        // 光标位置更新
-        editor.addEventListener('click', updateLineInfo);
-        editor.addEventListener('keyup', updateLineInfo);
-        editor.addEventListener('input', updateLineInfo);
-    });
+        // Input events
+        textarea.addEventListener('input', () => {
+            editorUpdateLineInfo(type);
+            editorUpdateLineNumbers(type);
+            editorAutoSave(type);
+            editorShowAutocomplete(type);
+        });
 
-    function updateLineInfo() {
-        const editor = document.getElementById('script-editor');
-        if (!editor) return;
-        const text = editor.value.substring(0, editor.selectionStart);
-        const lines = text.split('\n');
+        textarea.addEventListener('click', () => {
+            editorUpdateLineInfo(type);
+            editorUpdateCurrentLine(type);
+            editorHideAutocomplete(type);
+        });
+
+        textarea.addEventListener('keyup', () => {
+            editorUpdateLineInfo(type);
+            editorUpdateCurrentLine(type);
+        });
+
+        // Scroll sync line numbers
+        textarea.addEventListener('scroll', () => {
+            const ln = document.getElementById(type + '-line-numbers');
+            if (ln) ln.scrollTop = textarea.scrollTop;
+        });
+
+        // Initial render
+        editorUpdateLineNumbers(type);
+        editorUpdateCurrentLine(type);
+    }
+
+    function editorUpdateLineInfo(type) {
+        const textarea = document.getElementById(type === 'script' ? 'script-editor' : 'file-editor-content');
+        if (!textarea) return;
+        const val = textarea.value;
+        const before = val.substring(0, textarea.selectionStart);
+        const lines = before.split('\n');
         const line = lines.length;
         const col = lines[lines.length - 1].length + 1;
-        const info = document.getElementById('script-line-info');
+        const info = document.getElementById(type + '-line-info');
         if (info) info.textContent = '行 ' + line + ', 列 ' + col;
+        const charCount = document.getElementById(type + '-char-count');
+        if (charCount) charCount.textContent = val.length + ' 字符，' + val.split('\n').length + ' 行';
     }
+
+    function editorUpdateLineNumbers(type) {
+        const textarea = document.getElementById(type === 'script' ? 'script-editor' : 'file-editor-content');
+        const lnContainer = document.getElementById(type + '-line-numbers');
+        if (!textarea || !lnContainer) return;
+        const lineCount = textarea.value.split('\n').length;
+        const before = textarea.value.substring(0, textarea.selectionStart);
+        const currentLine = before.split('\n').length;
+        let html = '';
+        for (let i = 1; i <= lineCount; i++) {
+            html += '<div class="line-num' + (i === currentLine ? ' active' : '') + '">' + i + '</div>';
+        }
+        lnContainer.innerHTML = html;
+        lnContainer.scrollTop = textarea.scrollTop;
+    }
+
+    function editorUpdateCurrentLine(type) {
+        const textarea = document.getElementById(type === 'script' ? 'script-editor' : 'file-editor-content');
+        const lineEl = document.getElementById(type + '-current-line');
+        if (!textarea || !lineEl) return;
+        const before = textarea.value.substring(0, textarea.selectionStart);
+        const currentLine = before.split('\n').length - 1;
+        const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight) || 20.8;
+        const top = currentLine * lineHeight + 12 - textarea.scrollTop;
+        lineEl.style.top = top + 'px';
+        lineEl.style.display = top >= 0 ? 'block' : 'none';
+        editorUpdateLineNumbers(type);
+    }
+
+    // Find/Replace
+    function editorToggleFind(type, showReplace) {
+        const bar = document.getElementById(type + '-find-bar');
+        if (!bar) return;
+        const isVisible = bar.classList.contains('show');
+        bar.classList.toggle('show');
+        if (!isVisible) {
+            const input = document.getElementById(type + '-find-input');
+            if (input) input.focus();
+        }
+    }
+
+    function editorCloseFind(type) {
+        const bar = document.getElementById(type + '-find-bar');
+        if (bar) bar.classList.remove('show');
+        _editorState[type].findMatches = [];
+        _editorState[type].findIndex = -1;
+    }
+
+    function editorDoFind(type) {
+        const textarea = document.getElementById(type === 'script' ? 'script-editor' : 'file-editor-content');
+        const findInput = document.getElementById(type + '-find-input');
+        const countEl = document.getElementById(type + '-find-count');
+        const useRegex = document.getElementById(type + '-find-regex');
+        if (!textarea || !findInput) return;
+
+        const query = findInput.value;
+        if (!query) { _editorState[type].findMatches = []; _editorState[type].findIndex = -1; if (countEl) countEl.textContent = ''; return; }
+
+        const val = textarea.value;
+        const matches = [];
+        try {
+            const flags = 'gi';
+            const regex = useRegex && useRegex.checked ? new RegExp(query, flags) : new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
+            let m;
+            while ((m = regex.exec(val)) !== null) {
+                matches.push({ start: m.index, end: m.index + m[0].length, text: m[0] });
+                if (matches.length > 9999) break;
+            }
+        } catch (e) {
+            if (countEl) countEl.textContent = '无效正则';
+            return;
+        }
+
+        _editorState[type].findMatches = matches;
+        // Find nearest match to cursor
+        const cursor = textarea.selectionStart;
+        let idx = matches.findIndex(m => m.start >= cursor);
+        if (idx === -1) idx = 0;
+        _editorState[type].findIndex = idx;
+
+        if (countEl) countEl.textContent = matches.length > 0 ? (idx + 1) + '/' + matches.length : '无匹配';
+
+        // Highlight first match
+        if (matches.length > 0) {
+            const match = matches[idx];
+            textarea.focus();
+            textarea.setSelectionRange(match.start, match.end);
+        }
+    }
+
+    function editorFindNext(type) {
+        const state = _editorState[type];
+        if (state.findMatches.length === 0) return;
+        state.findIndex = (state.findIndex + 1) % state.findMatches.length;
+        editorGoToFindMatch(type);
+    }
+
+    function editorFindPrev(type) {
+        const state = _editorState[type];
+        if (state.findMatches.length === 0) return;
+        state.findIndex = (state.findIndex - 1 + state.findMatches.length) % state.findMatches.length;
+        editorGoToFindMatch(type);
+    }
+
+    function editorGoToFindMatch(type) {
+        const textarea = document.getElementById(type === 'script' ? 'script-editor' : 'file-editor-content');
+        const countEl = document.getElementById(type + '-find-count');
+        const state = _editorState[type];
+        if (!textarea || state.findMatches.length === 0) return;
+        const match = state.findMatches[state.findIndex];
+        textarea.focus();
+        textarea.setSelectionRange(match.start, match.end);
+        // Scroll to match
+        const before = textarea.value.substring(0, match.start);
+        const lineNum = before.split('\n').length;
+        const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight) || 20.8;
+        textarea.scrollTop = (lineNum - 5) * lineHeight;
+        if (countEl) countEl.textContent = (state.findIndex + 1) + '/' + state.findMatches.length;
+        editorUpdateCurrentLine(type);
+    }
+
+    function editorReplaceOne(type) {
+        const textarea = document.getElementById(type === 'script' ? 'script-editor' : 'file-editor-content');
+        const replaceInput = document.getElementById(type + '-replace-input');
+        const state = _editorState[type];
+        if (!textarea || !replaceInput || state.findMatches.length === 0) return;
+        const match = state.findMatches[state.findIndex];
+        const replacement = replaceInput.value;
+        textarea.value = textarea.value.substring(0, match.start) + replacement + textarea.value.substring(match.end);
+        editorDoFind(type);
+        editorUpdateLineNumbers(type);
+        editorUpdateLineInfo(type);
+    }
+
+    function editorReplaceAll(type) {
+        const textarea = document.getElementById(type === 'script' ? 'script-editor' : 'file-editor-content');
+        const findInput = document.getElementById(type + '-find-input');
+        const replaceInput = document.getElementById(type + '-replace-input');
+        const useRegex = document.getElementById(type + '-find-regex');
+        if (!textarea || !findInput || !replaceInput) return;
+        const query = findInput.value;
+        if (!query) return;
+        try {
+            const flags = 'g';
+            const regex = useRegex && useRegex.checked ? new RegExp(query, flags) : new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
+            textarea.value = textarea.value.replace(regex, replaceInput.value);
+            editorDoFind(type);
+            editorUpdateLineNumbers(type);
+            editorUpdateLineInfo(type);
+            showToast('已全部替换', 'success');
+        } catch (e) {
+            showToast('替换失败: ' + e.message, 'error');
+        }
+    }
+
+    // Autocomplete
+    const _acKeywords = {
+        shell: ['echo', 'if', 'then', 'else', 'elif', 'fi', 'for', 'while', 'do', 'done', 'case', 'esac', 'function', 'return', 'exit', 'export', 'source', 'read', 'local', 'shift', 'set', 'unset', 'trap', 'eval', 'exec', 'test', 'true', 'false', 'cd', 'ls', 'cat', 'grep', 'sed', 'awk', 'find', 'cp', 'mv', 'rm', 'mkdir', 'chmod', 'chown', 'tar', 'zip', 'unzip', 'curl', 'wget', 'ping'],
+        adb: ['adb shell', 'adb install', 'adb uninstall', 'adb push', 'adb pull', 'adb logcat', 'adb devices', 'adb forward', 'adb reboot', 'am start', 'am broadcast', 'pm list packages', 'pm clear', 'input tap', 'input swipe', 'input keyevent', 'input text', 'screencap', 'screenrecord', 'dumpsys', 'getprop', 'setprop', 'settings get', 'settings put', 'wm size', 'wm density']
+    };
+
+    function editorShowAutocomplete(type) {
+        const textarea = document.getElementById(type === 'script' ? 'script-editor' : 'file-editor-content');
+        const acEl = document.getElementById(type + '-autocomplete');
+        if (!textarea || !acEl) return;
+
+        const pos = textarea.selectionStart;
+        const val = textarea.value;
+        // Get current word
+        const wordStart = val.lastIndexOf(' ', pos - 1) + 1;
+        const word = val.substring(wordStart, pos).toLowerCase();
+
+        if (word.length < 2) { acEl.classList.remove('show'); return; }
+
+        const allKw = [..._acKeywords.shell, ..._acKeywords.adb];
+        const matches = allKw.filter(k => k.toLowerCase().startsWith(word)).slice(0, 8);
+
+        if (matches.length === 0) { acEl.classList.remove('show'); return; }
+
+        acEl.innerHTML = matches.map((m, i) =>
+            '<div class="editor-ac-item' + (i === 0 ? ' active' : '') + '" data-word="' + escapeHtml(m) + '">' +
+            '<span class="ac-label">' + escapeHtml(m) + '</span>' +
+            '<span class="ac-type">' + (_acKeywords.adb.includes(m) ? 'ADB' : 'Shell') + '</span></div>'
+        ).join('');
+
+        // Position near cursor
+        const rect = textarea.getBoundingClientRect();
+        const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight) || 20.8;
+        const beforeCursor = val.substring(0, pos);
+        const lineNum = beforeCursor.split('\n').length - 1;
+        const colNum = pos - beforeCursor.lastIndexOf('\n') - 1;
+        acEl.style.left = (rect.left + 16 + colNum * 7.8) + 'px';
+        acEl.style.top = (rect.top + 12 + (lineNum + 1) * lineHeight - textarea.scrollTop) + 'px';
+        acEl.classList.add('show');
+
+        // Click handler
+        acEl.querySelectorAll('.editor-ac-item').forEach(item => {
+            item.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                const word = item.dataset.word;
+                const startPos = val.lastIndexOf(' ', pos - 1) + 1;
+                textarea.value = val.substring(0, startPos) + word + val.substring(pos);
+                textarea.selectionStart = textarea.selectionEnd = startPos + word.length;
+                acEl.classList.remove('show');
+                textarea.focus();
+                editorUpdateLineInfo(type);
+                editorUpdateLineNumbers(type);
+            });
+        });
+
+        // Keyboard navigation in autocomplete
+        textarea._acKeyHandler = (e) => {
+            if (!acEl.classList.contains('show')) return;
+            const items = acEl.querySelectorAll('.editor-ac-item');
+            let activeIdx = Array.from(items).findIndex(it => it.classList.contains('active'));
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                items[activeIdx]?.classList.remove('active');
+                activeIdx = (activeIdx + 1) % items.length;
+                items[activeIdx]?.classList.add('active');
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                items[activeIdx]?.classList.remove('active');
+                activeIdx = (activeIdx - 1 + items.length) % items.length;
+                items[activeIdx]?.classList.add('active');
+            } else if ((e.key === 'Tab' || e.key === 'Enter') && acEl.classList.contains('show')) {
+                e.preventDefault();
+                const selected = acEl.querySelector('.editor-ac-item.active');
+                if (selected) {
+                    const w = selected.dataset.word;
+                    const startPos = val.lastIndexOf(' ', pos - 1) + 1;
+                    textarea.value = val.substring(0, startPos) + w + val.substring(pos);
+                    textarea.selectionStart = textarea.selectionEnd = startPos + w.length;
+                }
+                acEl.classList.remove('show');
+                editorUpdateLineInfo(type);
+                editorUpdateLineNumbers(type);
+            }
+        };
+        if (!textarea._acBound) {
+            textarea._acBound = true;
+            textarea.addEventListener('keydown', (e) => {
+                if (textarea._acKeyHandler) textarea._acKeyHandler(e);
+            });
+        }
+    }
+
+    function editorHideAutocomplete(type) {
+        const acEl = document.getElementById(type + '-autocomplete');
+        if (acEl) acEl.classList.remove('show');
+    }
+
+    // Auto-save draft to localStorage
+    function editorAutoSave(type) {
+        const state = _editorState[type];
+        clearTimeout(state.autoSaveTimer);
+        state.autoSaveTimer = setTimeout(() => {
+            const textarea = document.getElementById(type === 'script' ? 'script-editor' : 'file-editor-content');
+            if (!textarea) return;
+            const key = 'editor_draft_' + type;
+            try { localStorage.setItem(key, textarea.value); } catch (e) {}
+            const status = document.getElementById(type + '-save-status');
+            if (status) { status.textContent = '草稿已保存'; setTimeout(() => { status.textContent = '就绪'; }, 2000); }
+        }, 3000);
+    }
+
+    // Script editor initialization (replacing old DOMContentLoaded handler)
+    document.addEventListener('DOMContentLoaded', () => {
+        initEnhancedEditor('script');
+        initEnhancedEditor('file');
+    });
 
     function formatScript() {
         const editor = document.getElementById('script-editor');
         if (!editor) return;
-        // 简单格式化：去除行尾空格，确保末尾有换行
         editor.value = editor.value.replace(/[ \t]+$/gm, '').replace(/\n*$/, '\n');
+        editorUpdateLineNumbers('script');
         showToast('已格式化', 'info');
     }
 
     /* ===== File Manager ===== */
     let _currentPath = '/';
     let _fileClipboard = null; // { action: 'copy'|'cut', path: string }
+    let _fmSelected = new Set(); // selected file paths
+    let _fmViewMode = 'list'; // 'list' or 'grid'
+    let _fmTreeData = {}; // cached tree data
 
     // 文件类型图标映射
     function fileIcon(name, isDir) {
@@ -2030,7 +2595,6 @@
         return '<i class="fas ' + icon + '" style="color:' + color + ';"></i>';
     }
 
-    // 文件大小格式化
     function formatSize(bytes) {
         if (bytes === 0) return '-';
         const units = ['B','KB','MB','GB','TB'];
@@ -2040,7 +2604,6 @@
         return size.toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
     }
 
-    // 时间格式化
     function formatTimestamp(ts) {
         if (!ts) return '-';
         const d = new Date(ts * 1000);
@@ -2048,134 +2611,383 @@
         return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
     }
 
-    // 加载文件列表
+    function escapeJs(s) {
+        return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
+
+    // ===== Directory Tree =====
+    const _fmRootDirs = [
+        { path: '/sdcard', label: 'sdcard', icon: 'fa-mobile-alt' },
+        { path: '/data', label: 'data', icon: 'fa-database' },
+        { path: '/storage', label: 'storage', icon: 'fa-hdd' },
+        { path: '/system', label: 'system', icon: 'fa-cog' }
+    ];
+
+    function initFmTree() {
+        const tree = document.getElementById('fm-tree');
+        if (!tree) return;
+        tree.innerHTML = _fmRootDirs.map(d =>
+            '<div class="fm-tree-item" data-path="' + d.path + '" onclick="fmTreeNavigate(\'' + d.path + '\')">' +
+            '<i class="fas ' + d.icon + '" style="width:16px;"></i>' +
+            '<span>' + d.label + '</span>' +
+            '</div>'
+        ).join('');
+    }
+
+    function fmTreeNavigate(path) {
+        loadFileManager(path);
+    }
+
+    function fmTreeHighlight() {
+        document.querySelectorAll('.fm-tree-item').forEach(el => {
+            el.classList.toggle('active', el.dataset.path === _currentPath || _currentPath.startsWith(el.dataset.path + '/'));
+        });
+    }
+
+    // ===== Sidebar Toggle & Resize =====
+    function toggleFmSidebar() {
+        const sidebar = document.getElementById('fm-sidebar');
+        if (sidebar) sidebar.classList.toggle('show');
+    }
+
+    // Sidebar resize via drag handle
+    document.addEventListener('DOMContentLoaded', () => {
+        const handle = document.getElementById('fm-resize-handle');
+        const sidebar = document.getElementById('fm-sidebar');
+        if (!handle || !sidebar) return;
+        let startX, startW;
+        handle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            startX = e.clientX;
+            startW = sidebar.offsetWidth;
+            handle.classList.add('dragging');
+            const onMove = (ev) => {
+                const newW = Math.max(160, Math.min(400, startW + ev.clientX - startX));
+                sidebar.style.width = newW + 'px';
+            };
+            const onUp = () => {
+                handle.classList.remove('dragging');
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+    });
+
+    // ===== Toolbar Dropdown =====
+    function toggleNewDropdown() {
+        const dd = document.getElementById('fm-new-dropdown');
+        if (dd) dd.classList.toggle('show');
+    }
+
+    function closeNewDropdown() {
+        const dd = document.getElementById('fm-new-dropdown');
+        if (dd) dd.classList.remove('show');
+    }
+
+    // Close dropdowns on outside click
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.fm-dropdown-wrap')) closeNewDropdown();
+        if (!e.target.closest('.context-menu')) closeContextMenu();
+    });
+
+    // ===== Context Menu =====
+    function showContextMenu(x, y, items) {
+        closeContextMenu();
+        const menu = document.createElement('div');
+        menu.className = 'context-menu';
+        menu.id = 'fm-context-menu';
+        menu.innerHTML = items.map(item => {
+            if (item.separator) return '<div class="context-menu-separator"></div>';
+            return '<div class="context-menu-item' + (item.danger ? ' danger' : '') + '" data-action="' + (item.action || '') + '">' +
+                '<i class="fas ' + (item.icon || 'fa-circle') + '"></i> ' + escapeHtml(item.label) + '</div>';
+        }).join('');
+
+        // Position
+        menu.style.left = x + 'px';
+        menu.style.top = y + 'px';
+        document.body.appendChild(menu);
+
+        // Adjust if off-screen
+        const rect = menu.getBoundingClientRect();
+        if (rect.right > window.innerWidth) menu.style.left = (x - rect.width) + 'px';
+        if (rect.bottom > window.innerHeight) menu.style.top = (y - rect.height) + 'px';
+
+        // Bind clicks
+        menu.querySelectorAll('.context-menu-item').forEach((el, i) => {
+            el.addEventListener('click', () => {
+                const item = items.filter(it => !it.separator)[i];
+                if (item && item.handler) item.handler();
+                closeContextMenu();
+            });
+        });
+    }
+
+    function closeContextMenu() {
+        const menu = document.getElementById('fm-context-menu');
+        if (menu) menu.remove();
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeContextMenu();
+    });
+
+    // Show context menu on file area
+    document.addEventListener('DOMContentLoaded', () => {
+        const area = document.getElementById('fm-file-area');
+        if (!area) return;
+        area.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            const row = e.target.closest('.fm-file-row, .fm-grid-item');
+            if (row && row.dataset.path) {
+                const isDir = row.dataset.isdir === 'true';
+                const name = row.dataset.name;
+                const path = row.dataset.path;
+                const items = [];
+                if (isDir) {
+                    items.push({ icon: 'fa-folder-open', label: '打开', handler: () => loadFileManager(path) });
+                } else {
+                    items.push({ icon: 'fa-edit', label: '编辑', handler: () => fileOpen(path) });
+                }
+                items.push({ separator: true });
+                items.push({ icon: 'fa-pen', label: '重命名', handler: () => fileRename(path, name) });
+                items.push({ icon: 'fa-copy', label: '复制', handler: () => fileCopy(path) });
+                items.push({ icon: 'fa-cut', label: '剪切', handler: () => fileCut(path) });
+                items.push({ separator: true });
+                items.push({ icon: 'fa-key', label: '权限', handler: () => fileChmod(path) });
+                if (!isDir) items.push({ icon: 'fa-download', label: '下载', handler: () => window.open('/api/files/download?path=' + encodeURIComponent(path)) });
+                if (isDir) items.push({ icon: 'fa-file-archive', label: '压缩为zip', handler: () => fileZip(path, name) });
+                if (name && name.toLowerCase().endsWith('.zip')) items.push({ icon: 'fa-expand-arrows-alt', label: '解压', handler: () => fileUnzip(path, name) });
+                items.push({ separator: true });
+                items.push({ icon: 'fa-trash', label: '删除', danger: true, handler: () => fileDelete(path, name) });
+                showContextMenu(e.clientX, e.clientY, items);
+            } else {
+                // Right-click on empty area
+                const items = [
+                    { icon: 'fa-file-medical', label: '新建文件', handler: () => fileNewFile() },
+                    { icon: 'fa-folder-plus', label: '新建文件夹', handler: () => fileNewFolder() },
+                    { separator: true },
+                    { icon: 'fa-sync-alt', label: '刷新', handler: () => fileRefresh() },
+                    { icon: 'fa-paste', label: '粘贴', handler: () => filePaste() }
+                ];
+                showContextMenu(e.clientX, e.clientY, items);
+            }
+        });
+    });
+
+    // ===== Multi-Select =====
+    function fmToggleSelect(path, e) {
+        if (e && e.ctrlKey) {
+            if (_fmSelected.has(path)) _fmSelected.delete(path);
+            else _fmSelected.add(path);
+        } else if (e && e.shiftKey && _fmSelected.size > 0) {
+            // Range select
+            const allRows = Array.from(document.querySelectorAll('.fm-file-row, .fm-grid-item'));
+            const paths = allRows.map(r => r.dataset.path);
+            const lastSelected = Array.from(_fmSelected).pop();
+            const fromIdx = paths.indexOf(lastSelected);
+            const toIdx = paths.indexOf(path);
+            if (fromIdx !== -1 && toIdx !== -1) {
+                const start = Math.min(fromIdx, toIdx);
+                const end = Math.max(fromIdx, toIdx);
+                for (let i = start; i <= end; i++) _fmSelected.add(paths[i]);
+            }
+        } else {
+            _fmSelected.clear();
+            _fmSelected.add(path);
+        }
+        updateSelectionUI();
+    }
+
+    function updateSelectionUI() {
+        const count = _fmSelected.size;
+        const bar = document.getElementById('fm-selection-bar');
+        const countEl = document.getElementById('fm-sel-count');
+        if (bar) bar.classList.toggle('show', count > 0);
+        if (countEl) countEl.textContent = '已选 ' + count + ' 个文件';
+        // Update row highlights
+        document.querySelectorAll('.fm-file-row, .fm-grid-item').forEach(el => {
+            el.classList.toggle('selected', _fmSelected.has(el.dataset.path));
+        });
+    }
+
+    function fmClearSelection() {
+        _fmSelected.clear();
+        updateSelectionUI();
+    }
+
+    async function fmSelectedCopy() {
+        if (_fmSelected.size === 0) return;
+        // For simplicity, copy the first selected
+        const path = Array.from(_fmSelected)[0];
+        fileCopy(path);
+    }
+
+    async function fmSelectedCut() {
+        if (_fmSelected.size === 0) return;
+        const path = Array.from(_fmSelected)[0];
+        fileCut(path);
+    }
+
+    async function fmSelectedDelete() {
+        if (_fmSelected.size === 0) return;
+        if (!await dsConfirm('确定删除选中的 ' + _fmSelected.size + ' 个项目？')) return;
+        let ok = 0;
+        for (const path of _fmSelected) {
+            const res = await apiPost('/api/files/delete', { path });
+            if (res.ok) ok++;
+        }
+        showToast('已删除 ' + ok + ' 个项目', 'success');
+        _fmSelected.clear();
+        loadFileManager(_currentPath);
+    }
+
+    async function fmSelectedChmod() {
+        if (_fmSelected.size === 0) return;
+        const mode = await dsPrompt('输入权限 (如 755, 644):', '755');
+        if (!mode) return;
+        let ok = 0;
+        for (const path of _fmSelected) {
+            const res = await apiPost('/api/files/chmod', { path, mode });
+            if (res.ok) ok++;
+        }
+        showToast('已修改 ' + ok + ' 个文件权限', 'success');
+        loadFileManager(_currentPath);
+    }
+
+    // ===== Load File Manager =====
     async function loadFileManager(path) {
         _currentPath = path || '/';
+        _fmSelected.clear();
+        updateSelectionUI();
         updateBreadcrumb();
-        // 清空搜索
+        fmTreeHighlight();
+
         const searchInput = document.getElementById('file-search-input');
         if (searchInput) searchInput.value = '';
 
         const list = document.getElementById('file-list');
         list.innerHTML = '<div style="padding:30px;text-align:center;opacity:0.5;"><i class="fas fa-spinner fa-spin"></i> 加载中...</div>';
 
+        const statusText = document.getElementById('fm-status-text');
+        if (statusText) statusText.textContent = '加载中...';
+
         try {
             const res = await apiGet('/api/files?path=' + encodeURIComponent(_currentPath));
             if (!res.ok) {
                 list.innerHTML = '<div class="ds-empty-state" style="padding:30px;"><i class="fas fa-exclamation-triangle" style="font-size:2rem;color:var(--ds-warning);"></i><p>' + escapeHtml(res.message || '加载失败') + '</p></div>';
                 _fileData = [];
+                if (statusText) statusText.textContent = '加载失败';
                 return;
             }
 
             _fileData = res.data || [];
             if (_fileData.length === 0) {
                 list.innerHTML = '<div class="ds-empty-state" style="padding:30px;"><i class="fas fa-folder-open" style="font-size:2rem;opacity:0.3;"></i><p>空目录</p></div>';
+                if (statusText) statusText.textContent = '空目录';
+                updateStatusBar(0);
                 return;
             }
 
             renderFileList(_fileData);
+            if (statusText) statusText.textContent = '就绪';
+            updateStatusBar(_fileData.length);
         } catch (e) {
             list.innerHTML = '<div class="ds-empty-state" style="padding:30px;"><p>请求异常: ' + escapeHtml(e.message) + '</p></div>';
             _fileData = [];
         }
     }
 
+    function updateStatusBar(total) {
+        const countEl = document.getElementById('fm-status-count');
+        if (countEl) countEl.textContent = '共 ' + total + ' 个项目';
+    }
+
     function renderFileList(files) {
         const list = document.getElementById('file-list');
-        const viewMode = (document.getElementById('file-view-mode') || {}).value || 'list';
-
         if (files.length === 0) {
             list.innerHTML = '<div class="ds-empty-state" style="padding:30px;"><i class="fas fa-search" style="font-size:2rem;opacity:0.3;"></i><p>无匹配文件</p></div>';
             return;
         }
-
-        if (viewMode === 'grid') {
+        if (_fmViewMode === 'grid') {
             renderFileGrid(files, list);
         } else {
             renderFileListRows(files, list);
         }
+        updateStatusBar(files.length);
     }
 
     function renderFileListRows(files, list) {
-        list.innerHTML = files.map(f => {
+        let html = '<div class="fm-list-header"><span>名称</span><span>大小</span><span>修改时间</span><span>操作</span></div>';
+        html += files.map(f => {
             const icon = fileIcon(f.name, f.is_dir);
             const size = f.is_dir ? '-' : formatSize(f.size);
             const time = formatTimestamp(f.modified);
-            const nameStyle = f.is_dir ? 'color:var(--ds-blue);cursor:pointer;font-weight:500;' : 'cursor:pointer;';
             const isImage = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(f.name);
-            const nameAction = f.is_dir
-                ? 'onclick="loadFileManager(\'' + escapeJs(f.path) + '\')"'
-                : (isImage
-                    ? 'onclick="openImageViewer(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')"'
-                    : 'onclick="fileOpen(\'' + escapeJs(f.path) + '\')"');
-            const downloadBtn = f.is_dir ? '' : '<a href="/api/files/download?path=' + encodeURIComponent(f.path) + '" download="' + escapeHtml(f.name) + '" style="color:var(--ds-text-secondary);padding:4px;" title="下载"><i class="fas fa-download" style="font-size:12px;"></i></a>';
-            const isZip = (f.name.toLowerCase().endsWith('.zip'));
-            const zipBtn = f.is_dir
-                ? '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:4px;" onclick="fileZip(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')" title="压缩为zip"><i class="fas fa-file-archive" style="font-size:12px;"></i></button>'
-                : (isZip
-                    ? '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:4px;" onclick="fileUnzip(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')" title="解压"><i class="fas fa-expand-arrows-alt" style="font-size:12px;"></i></button>'
-                    : '');
+            const selected = _fmSelected.has(f.path) ? ' selected' : '';
+            const dblclick = f.is_dir
+                ? 'loadFileManager(\'' + escapeJs(f.path) + '\')'
+                : (isImage ? 'openImageViewer(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')' : 'fileOpen(\'' + escapeJs(f.path) + '\')');
 
-            return '<div style="display:grid;grid-template-columns:1fr 100px 140px;gap:0;padding:8px 16px;align-items:center;border-bottom:1px solid var(--ds-border);font-size:13px;" ondblclick=' + (f.is_dir ? '"loadFileManager(\'' + escapeJs(f.path) + '\')"' : (isImage ? '"openImageViewer(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')"' : '"fileOpen(\'' + escapeJs(f.path) + '\')"')) + '>' +
-                '<div style="display:flex;align-items:center;gap:10px;min-width:0;">' +
-                '<span style="font-size:16px;width:20px;text-align:center;">' + icon + '</span>' +
-                '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' + nameStyle + '" ' + nameAction + '>' + escapeHtml(f.name) + '</span>' +
-                '</div>' +
-                '<span style="font-size:12px;color:var(--ds-text-tertiary);">' + size + '</span>' +
-                '<div style="display:flex;align-items:center;gap:8px;">' +
-                '<span style="font-size:12px;color:var(--ds-text-tertiary);min-width:80px;">' + time + '</span>' +
-                '<div style="display:flex;gap:2px;flex-wrap:wrap;">' +
-                '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:3px;" onclick="fileRename(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')" title="重命名"><i class="fas fa-pen" style="font-size:11px;"></i></button>' +
-                '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:3px;" onclick="fileCopy(\'' + escapeJs(f.path) + '\')" title="复制"><i class="fas fa-copy" style="font-size:11px;"></i></button>' +
-                '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:3px;" onclick="fileCut(\'' + escapeJs(f.path) + '\')" title="剪切"><i class="fas fa-cut" style="font-size:11px;"></i></button>' +
-                '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:3px;" onclick="fileChmod(\'' + escapeJs(f.path) + '\')" title="权限"><i class="fas fa-key" style="font-size:11px;"></i></button>' +
-                zipBtn +
-                downloadBtn +
-                '<button style="background:none;border:none;color:var(--ds-warning);cursor:pointer;padding:3px;" onclick="fileDelete(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')" title="删除"><i class="fas fa-trash" style="font-size:11px;"></i></button>' +
-                '</div></div></div>';
+            return '<div class="fm-file-row' + selected + '" data-path="' + escapeHtml(f.path) + '" data-name="' + escapeHtml(f.name) + '" data-isdir="' + f.is_dir + '" ' +
+                'onclick="fmToggleSelect(\'' + escapeJs(f.path) + '\', event)" ondblclick="' + dblclick + '">' +
+                '<div class="fm-file-name">' + icon + '<span title="' + escapeHtml(f.name) + '">' + escapeHtml(f.name) + '</span></div>' +
+                '<span class="fm-file-meta">' + size + '</span>' +
+                '<span class="fm-file-meta">' + time + '</span>' +
+                '<div class="fm-file-actions">' +
+                '<button class="fm-file-action-btn" onclick="event.stopPropagation();fileRename(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')" title="重命名"><i class="fas fa-pen"></i></button>' +
+                '<button class="fm-file-action-btn" onclick="event.stopPropagation();fileCopy(\'' + escapeJs(f.path) + '\')" title="复制"><i class="fas fa-copy"></i></button>' +
+                '<button class="fm-file-action-btn" onclick="event.stopPropagation();fileCut(\'' + escapeJs(f.path) + '\')" title="剪切"><i class="fas fa-cut"></i></button>' +
+                '<button class="fm-file-action-btn danger" onclick="event.stopPropagation();fileDelete(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')" title="删除"><i class="fas fa-trash"></i></button>' +
+                '</div></div>';
         }).join('');
+        list.innerHTML = html;
     }
 
     function renderFileGrid(files, list) {
-        list.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;padding:12px;">' +
-            files.map(f => {
-                const icon = fileIcon(f.name, f.is_dir);
-                const isImage = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(f.name);
-                const thumb = isImage
-                    ? '<img src="/api/files/download?path=' + encodeURIComponent(f.path) + '" style="width:100%;height:90px;object-fit:cover;border-radius:6px;margin-bottom:6px;">'
-                    : '<div style="width:100%;height:90px;display:flex;align-items:center;justify-content:center;font-size:32px;opacity:0.6;">' + icon + '</div>';
-                const click = f.is_dir
-                    ? 'onclick="loadFileManager(\'' + escapeJs(f.path) + '\')"'
-                    : (isImage
-                        ? 'onclick="openImageViewer(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')"'
-                        : 'onclick="fileOpen(\'' + escapeJs(f.path) + '\')"');
-                return '<div style="background:var(--ds-card);border:1px solid var(--ds-border);border-radius:var(--radius-ctrl);padding:10px;text-align:center;cursor:pointer;transition:border-color 0.15s;" onmouseover="this.style.borderColor=\'var(--ds-blue)\'" onmouseout="this.style.borderColor=\'var(--ds-border)\'" ' + click + '>' +
-                    thumb +
-                    '<div style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml(f.name) + '">' + escapeHtml(f.name) + '</div>' +
-                    '<div style="font-size:11px;color:var(--ds-text-tertiary);">' + (f.is_dir ? '目录' : formatSize(f.size)) + '</div>' +
-                    '</div>';
-            }).join('') + '</div>';
+        list.innerHTML = '<div class="fm-grid">' + files.map(f => {
+            const icon = fileIcon(f.name, f.is_dir);
+            const isImage = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(f.name);
+            const thumb = isImage
+                ? '<img src="/api/files/download?path=' + encodeURIComponent(f.path) + '" loading="lazy">'
+                : icon;
+            const click = f.is_dir
+                ? 'loadFileManager(\'' + escapeJs(f.path) + '\')'
+                : (isImage ? 'openImageViewer(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')' : 'fileOpen(\'' + escapeJs(f.path) + '\')');
+            const selected = _fmSelected.has(f.path) ? ' selected' : '';
+
+            return '<div class="fm-grid-item' + selected + '" data-path="' + escapeHtml(f.path) + '" data-name="' + escapeHtml(f.name) + '" data-isdir="' + f.is_dir + '" ' +
+                'onclick="fmToggleSelect(\'' + escapeJs(f.path) + '\', event)" ondblclick="' + click + '">' +
+                '<div class="fm-grid-thumb">' + thumb + '</div>' +
+                '<div class="fm-grid-name" title="' + escapeHtml(f.name) + '">' + escapeHtml(f.name) + '</div>' +
+                '<div class="fm-grid-size">' + (f.is_dir ? '目录' : formatSize(f.size)) + '</div></div>';
+        }).join('') + '</div>';
     }
 
-    function escapeJs(s) {
-        return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    }
-
-    // 面包屑导航
+    // ===== Breadcrumb =====
     function updateBreadcrumb() {
         const bc = document.getElementById('file-breadcrumb');
+        if (!bc) return;
         const parts = _currentPath.split('/').filter(Boolean);
-        let html = '<span style="cursor:pointer;color:var(--ds-blue);font-weight:600;" onclick="loadFileManager(\'/\')">根目录</span>';
+        let html = '<span class="fm-breadcrumb-item' + (parts.length === 0 ? ' current' : '') + '" onclick="loadFileManager(\'/\')"><i class="fas fa-hdd" style="margin-right:4px;"></i>根目录</span>';
         let cumPath = '';
-        for (const part of parts) {
-            cumPath += '/' + part;
+        for (let i = 0; i < parts.length; i++) {
+            cumPath += '/' + parts[i];
             const p = cumPath;
-            html += ' <i class="fas fa-chevron-right" style="font-size:10px;opacity:0.4;"></i> <span style="cursor:pointer;color:var(--ds-blue);" onclick="loadFileManager(\'' + escapeJs(p) + '\')">' + escapeHtml(part) + '</span>';
+            const isLast = i === parts.length - 1;
+            // Long path: show first, last 2, ellipsis in middle
+            if (parts.length > 5 && i > 0 && i < parts.length - 2) {
+                if (i === 1) html += ' <i class="fas fa-chevron-right fm-breadcrumb-sep"></i> <span style="opacity:0.5;">...</span>';
+                continue;
+            }
+            html += ' <i class="fas fa-chevron-right fm-breadcrumb-sep"></i> ' +
+                '<span class="fm-breadcrumb-item' + (isLast ? ' current' : '') + '" onclick="loadFileManager(\'' + escapeJs(p) + '\')">' + escapeHtml(parts[i]) + '</span>';
         }
         bc.innerHTML = html;
     }
 
-    // 导航操作
+    // ===== Navigation =====
     function fileGoUp() {
         const parts = _currentPath.split('/').filter(Boolean);
         parts.pop();
@@ -2186,9 +2998,9 @@
         loadFileManager(_currentPath);
     }
 
-    // 新建文件
+    // ===== File Operations =====
     async function fileNewFile() {
-        const name = prompt('输入文件名:');
+        const name = await dsPrompt('输入文件名:');
         if (!name) return;
         const fullPath = _currentPath.replace(/\/$/, '') + '/' + name;
         const res = await apiPost('/api/files/create', { path: fullPath });
@@ -2196,9 +3008,8 @@
         else showToast(res.message || '创建失败', 'error');
     }
 
-    // 新建目录
     async function fileNewFolder() {
-        const name = prompt('输入目录名:');
+        const name = await dsPrompt('输入目录名:');
         if (!name) return;
         const fullPath = _currentPath.replace(/\/$/, '') + '/' + name;
         const res = await apiPost('/api/files/mkdir', { path: fullPath });
@@ -2206,17 +3017,15 @@
         else showToast(res.message || '创建失败', 'error');
     }
 
-    // 删除
     async function fileDelete(path, name) {
-        if (!confirm('确定删除 "' + name + '"？')) return;
+        if (!await dsConfirm('确定删除 "' + name + '"？')) return;
         const res = await apiPost('/api/files/delete', { path });
         if (res.ok) { showToast('已删除', 'success'); loadFileManager(_currentPath); }
         else showToast(res.message || '删除失败', 'error');
     }
 
-    // 重命名
     async function fileRename(path, oldName) {
-        const newName = prompt('新名称:', oldName);
+        const newName = await dsPrompt('新名称:', oldName);
         if (!newName || newName === oldName) return;
         const parent = path.substring(0, path.lastIndexOf('/'));
         const res = await apiPost('/api/files/rename', { from: path, to: parent + '/' + newName });
@@ -2224,7 +3033,6 @@
         else showToast(res.message || '重命名失败', 'error');
     }
 
-    // 复制/剪切
     function fileCopy(path) {
         _fileClipboard = { action: 'copy', path };
         updateClipboardBar();
@@ -2241,9 +3049,9 @@
         if (_fileClipboard) {
             const action = _fileClipboard.action === 'copy' ? '复制' : '剪切';
             info.textContent = '已' + action + ': ' + _fileClipboard.path;
-            bar.style.display = 'flex';
+            if (bar) bar.classList.add('show');
         } else {
-            bar.style.display = 'none';
+            if (bar) bar.classList.remove('show');
         }
     }
 
@@ -2252,13 +3060,11 @@
         updateClipboardBar();
     }
 
-    // 粘贴
     async function filePaste() {
         if (!_fileClipboard) return;
         const from = _fileClipboard.path;
         const name = from.split('/').pop();
         const to = _currentPath.replace(/\/$/, '') + '/' + name;
-
         if (from === to) { showToast('源和目标相同', 'error'); return; }
 
         if (_fileClipboard.action === 'copy') {
@@ -2272,9 +3078,21 @@
         }
     }
 
-    // 打开文件（编辑）
+    // ===== File Open / Editor =====
     async function fileOpen(path) {
         const name = path.split('/').pop();
+        const ext = (name.split('.').pop() || '').toLowerCase();
+        // Binary check
+        const binaryExts = ['png','jpg','jpeg','gif','webp','bmp','ico','svg','mp3','wav','ogg','flac','aac','mp4','mkv','avi','webm','mov','zip','tar','gz','bz2','xz','7z','rar','apk','deb','rpm','pdf','doc','docx','xls','xlsx','ppt','pptx','so','dex','oat','odex','vdex','bin','dat','db'];
+        if (binaryExts.includes(ext)) {
+            if (/\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(name)) {
+                openImageViewer(path, name);
+                return;
+            }
+            showToast('无法以文本方式查看此文件', 'info');
+            return;
+        }
+
         document.getElementById('file-editor-title').textContent = '编辑: ' + name;
         document.getElementById('file-editor-content').value = '加载中...';
         document.getElementById('file-editor-modal').style.display = 'flex';
@@ -2288,97 +3106,80 @@
             document.getElementById('file-editor-content').value = '';
             document.getElementById('file-editor-info').textContent = res.message || '加载失败';
         }
+        initEnhancedEditor('file');
+        editorUpdateLineNumbers('file');
+        editorUpdateLineInfo('file');
     }
 
-    // 文件编辑器保存
     async function fileEditorSave() {
         const modal = document.getElementById('file-editor-modal');
         const path = modal.dataset.path;
         if (!path) return;
-
         const content = document.getElementById('file-editor-content').value;
         const res = await apiPut('/api/files/write', { path, content });
-        if (res.ok) showToast('已保存', 'success');
+        if (res.ok) {
+            showToast('已保存', 'success');
+            const status = document.getElementById('file-save-status');
+            if (status) { status.textContent = '已保存'; setTimeout(() => { status.textContent = '就绪'; }, 2000); }
+        }
         else showToast(res.message || '保存失败', 'error');
     }
 
-    // 文件上传
     async function fileUpload(files) {
         if (!files || files.length === 0) return;
         const total = files.length;
         let done = 0;
-
         for (const file of files) {
             showToast('上传中 (' + (done + 1) + '/' + total + '): ' + file.name, 'info');
             const formData = new FormData();
             formData.append('dir', _currentPath);
             formData.append('file', file);
-
             try {
                 const res = await fetch('/api/files/upload', { method: 'POST', body: formData });
                 const data = await res.json();
-                if (data.success) {
-                    done++;
-                } else {
-                    showToast('上传失败: ' + (data.message || ''), 'error');
-                }
+                if (data.success) done++;
+                else showToast('上传失败: ' + (data.message || ''), 'error');
             } catch (e) {
                 showToast('上传异常: ' + e.message, 'error');
             }
         }
-
         if (done > 0) {
             showToast('已上传 ' + done + '/' + total + ' 个文件', 'success');
             loadFileManager(_currentPath);
         }
-        // 清空 input 以便重复选择同一文件
-        document.getElementById('file-upload-input').value = '';
+        const uploadInput = document.getElementById('fm-upload-input') || document.getElementById('file-upload-input');
+        if (uploadInput) uploadInput.value = '';
     }
 
-    // 修改权限
     async function fileChmod(path) {
-        const mode = prompt('输入权限 (如 755, 644, rwxr-xr-x):', '755');
+        const mode = await dsPrompt('输入权限 (如 755, 644, rwxr-xr-x):', '755');
         if (!mode) return;
         const res = await apiPost('/api/files/chmod', { path, mode });
-        if (res.ok) {
-            showToast('权限已修改', 'success');
-            loadFileManager(_currentPath);
-        } else {
-            showToast(res.message || '修改失败', 'error');
-        }
+        if (res.ok) { showToast('权限已修改', 'success'); loadFileManager(_currentPath); }
+        else showToast(res.message || '修改失败', 'error');
     }
 
-    // 压缩 zip
     async function fileZip(path, name) {
         const defaultName = name + '.zip';
-        const zipName = prompt('zip 文件名:', defaultName);
+        const zipName = await dsPrompt('zip 文件名:', defaultName);
         if (!zipName) return;
         const dest = _currentPath.replace(/\/$/, '') + '/' + zipName;
         showToast('压缩中...', 'info');
         const res = await apiPost('/api/files/zip', { source: path, destination: dest });
-        if (res.ok) {
-            showToast(res.message || '已压缩', 'success');
-            loadFileManager(_currentPath);
-        } else {
-            showToast(res.message || '压缩失败', 'error');
-        }
+        if (res.ok) { showToast(res.message || '已压缩', 'success'); loadFileManager(_currentPath); }
+        else showToast(res.message || '压缩失败', 'error');
     }
 
-    // 解压 zip
     async function fileUnzip(path, name) {
         const dirName = name.replace(/\.zip$/i, '');
         const dest = _currentPath.replace(/\/$/, '') + '/' + dirName;
         showToast('解压中...', 'info');
         const res = await apiPost('/api/files/unzip', { source: path, destination: dest });
-        if (res.ok) {
-            showToast(res.message || '已解压', 'success');
-            loadFileManager(_currentPath);
-        } else {
-            showToast(res.message || '解压失败', 'error');
-        }
+        if (res.ok) { showToast(res.message || '已解压', 'success'); loadFileManager(_currentPath); }
+        else showToast(res.message || '解压失败', 'error');
     }
 
-    // ===== 图片查看器 =====
+    // ===== Image Viewer =====
     function openImageViewer(path, name) {
         const viewer = document.getElementById('image-viewer');
         const img = document.getElementById('image-viewer-img');
@@ -2390,7 +3191,6 @@
         downloadBtn.download = name;
         viewer.style.display = 'block';
         document.body.style.overflow = 'hidden';
-        // 重置缩放和拖拽
         img.style.transform = 'translate(-50%,-50%) scale(1)';
         _imageViewerScale = 1;
     }
@@ -2401,13 +3201,13 @@
     }
 
     let _imageViewerScale = 1;
-    let _imageViewerDrag = { active: false, x: 0, y: 0, imgX: 0, imgY: 0 };
+    let _imageViewerDrag = { active: false, x: 0, y: 0 };
 
     function imageViewerDragStart(e) {
         e.preventDefault();
         e.stopPropagation();
         const img = e.target;
-        _imageViewerDrag = { active: true, x: e.clientX, y: e.clientY, imgX: 0, imgY: 0 };
+        _imageViewerDrag = { active: true, x: e.clientX, y: e.clientY };
         img.style.cursor = 'grabbing';
         const onMove = (ev) => {
             if (!_imageViewerDrag.active) return;
@@ -2425,7 +3225,7 @@
         document.addEventListener('mouseup', onUp);
     }
 
-    // 滚轮缩放图片
+    // Image viewer wheel zoom + ESC
     document.addEventListener('DOMContentLoaded', () => {
         const viewer = document.getElementById('image-viewer');
         if (viewer) {
@@ -2437,16 +3237,17 @@
                 img.style.transform = 'translate(-50%,-50%) scale(' + _imageViewerScale + ')';
             }, { passive: false });
         }
-        // ESC 关闭图片查看器
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && document.getElementById('image-viewer').style.display === 'block') {
                 closeImageViewer();
             }
         });
+        // Init tree
+        initFmTree();
     });
 
-    // ===== 文件搜索/排序/视图 =====
-    let _fileData = []; // 缓存当前目录数据
+    // ===== Search / Sort / View =====
+    let _fileData = [];
     let _searchTimer = null;
 
     function fileSearchDebounce() {
@@ -2457,18 +3258,12 @@
     function fileSort() {
         if (!_fileData || _fileData.length === 0) return;
         const query = (document.getElementById('file-search-input').value || '').toLowerCase();
-        const sortMode = document.getElementById('file-sort-select').value;
+        const sortMode = (document.getElementById('file-sort-select') || {}).value || 'name-asc';
 
         let files = _fileData.slice();
+        if (query) files = files.filter(f => f.name.toLowerCase().includes(query));
 
-        // 搜索过滤
-        if (query) {
-            files = files.filter(f => f.name.toLowerCase().includes(query));
-        }
-
-        // 排序
         files.sort((a, b) => {
-            // 目录始终在前
             if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
             switch (sortMode) {
                 case 'name-asc': return a.name.localeCompare(b.name);
@@ -2477,49 +3272,43 @@
                 case 'size-desc': return b.size - a.size;
                 case 'time-desc': return b.modified - a.modified;
                 case 'time-asc': return a.modified - b.modified;
-                case 'ext-asc': return (a.extension || '').localeCompare(b.extension || '');
                 default: return 0;
             }
         });
-
         renderFileList(files);
     }
 
-    function fileViewMode() {
-        fileSort(); // 重新渲染
+    function fileToggleViewMode() {
+        _fmViewMode = _fmViewMode === 'list' ? 'grid' : 'list';
+        const btn = document.getElementById('fm-view-toggle');
+        if (btn) btn.innerHTML = _fmViewMode === 'list' ? '<i class="fas fa-list"></i>' : '<i class="fas fa-th"></i>';
+        fileSort();
     }
 
-    // 文件编辑器自动换行切换
+    function fileViewMode() {
+        fileSort();
+    }
+
     function fileEditorWordWrap() {
         const ta = document.getElementById('file-editor-content');
-        ta.style.whiteSpace = ta.style.whiteSpace === 'pre-wrap' ? 'pre' : 'pre-wrap';
+        if (ta) ta.style.whiteSpace = ta.style.whiteSpace === 'pre-wrap' ? 'pre' : 'pre-wrap';
     }
-
-    // 文件编辑器 Ctrl+S
-    document.addEventListener('DOMContentLoaded', () => {
-        const editor = document.getElementById('file-editor-content');
-        if (editor) {
-            editor.addEventListener('keydown', (e) => {
-                if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
-                    e.preventDefault();
-                    fileEditorSave();
-                }
-            });
-        }
-    });
 
     /* ===== TTS ===== */
     async function loadTtsEngines() {
         const res = await apiGet('/api/tts/engines');
         const sel = document.getElementById('tts-engine');
+        const statusEl = document.getElementById('tts-engine-status');
         if (res.ok && res.data && res.data.length > 0) {
             sel.innerHTML = res.data.map(e => {
                 const val = typeof e === 'string' ? e : (e.package_name || e.id || '');
                 const label = typeof e === 'string' ? e : (e.label || e.name || val);
                 return '<option value="' + escapeHtml(val) + '">' + escapeHtml(label) + '</option>';
             }).join('');
+            if (statusEl) { statusEl.innerHTML = '<span class="tts-engine-dot"></span>' + res.data.length + ' 个引擎可用'; statusEl.style.color = 'var(--ds-success)'; }
         } else {
             sel.innerHTML = '<option value="">无可用引擎</option>';
+            if (statusEl) { statusEl.innerHTML = '<span class="tts-engine-dot" style="background:var(--ds-danger)"></span>无可用引擎'; statusEl.style.color = 'var(--ds-danger)'; }
         }
     }
 
@@ -2528,6 +3317,8 @@
         if (!text) return showToast('请输入文本', 'error');
         const engine = document.getElementById('tts-engine').value;
         if (!engine) return showToast('请先选择语音引擎', 'error');
+        const statusEl = document.getElementById('tts-speaking-status');
+        if (statusEl) statusEl.textContent = '朗读中...';
         const res = await apiPost('/api/tts/speak', {
             text,
             engine,
@@ -2535,13 +3326,24 @@
             pitch: parseFloat(document.getElementById('tts-pitch').value),
             volume: parseFloat(document.getElementById('tts-volume').value)
         });
-        if (res.ok) showToast(res.message || '朗读中...', 'success');
-        else showToast(res.message || '朗读失败', 'error');
+        if (res.ok) {
+            showToast(res.message || '朗读中...', 'success');
+            addTtsHistory(text);
+        } else {
+            if (statusEl) statusEl.textContent = '空闲';
+            showToast(res.message || '朗读失败', 'error');
+        }
     }
 
     async function stopTTS() {
+        const statusEl = document.getElementById('tts-speaking-status');
         const res = await apiPost('/api/tts/stop', {});
-        if (res.ok) showToast('已停止', 'info');
+        if (res.ok) {
+            showToast('已停止', 'info');
+            if (statusEl) statusEl.textContent = '空闲';
+            const progressEl = document.getElementById('tts-speaking-progress');
+            if (progressEl) progressEl.textContent = '--';
+        }
         else showToast(res.message || '停止失败', 'error');
     }
 
@@ -2557,18 +3359,23 @@
             }
             if (d.default_rate != null) {
                 document.getElementById('tts-speed').value = d.default_rate;
-                document.getElementById('tts-speed-val').textContent = d.default_rate;
+                document.getElementById('tts-speed-val').textContent = parseFloat(d.default_rate).toFixed(2);
             }
             if (d.default_pitch != null) {
                 document.getElementById('tts-pitch').value = d.default_pitch;
-                document.getElementById('tts-pitch-val').textContent = d.default_pitch;
+                document.getElementById('tts-pitch-val').textContent = parseFloat(d.default_pitch).toFixed(2);
             }
             if (d.default_volume != null) {
                 document.getElementById('tts-volume').value = d.default_volume;
-                document.getElementById('tts-volume-val').textContent = d.default_volume;
+                document.getElementById('tts-volume-val').textContent = parseFloat(d.default_volume).toFixed(2);
             }
             document.getElementById('tts-replace-enabled').checked = !!d.replace_enabled;
             document.getElementById('tts-split-enabled').checked = d.split_enabled !== false;
+            // 同步AI回复朗读开关
+            const aiReplyEl = document.getElementById('tts-ai-reply-enabled');
+            if (aiReplyEl) aiReplyEl.checked = ttsReplyEnabled;
+            // 初始化滑块渐变
+            initTtsSliders();
             // 加载引擎参数列表
             renderEngineParams(d.engine_params || []);
             // 加载替换规则列表
@@ -2615,32 +3422,45 @@
     function renderEngineParams(list) {
         const el = document.getElementById('engine-params-list');
         if (!list || list.length === 0) {
-            el.innerHTML = '<div style="color:#999;padding:8px 0;">暂无引擎独立参数，点击"添加"为特定引擎配置参数</div>';
+            el.innerHTML = '<div style="color:var(--ds-text-tertiary);padding:8px 0;">暂无引擎独立参数，点击下方按钮为特定引擎配置参数</div>';
             return;
         }
         el.innerHTML = list.map(p =>
-            '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f0f0f0;">' +
-            '<span style="flex:1;font-family:monospace;font-size:12px;">' + escapeHtml(p.engine) + '</span>' +
-            '<span style="font-size:12px;color:#666;">语速:' + p.rate + ' 音调:' + p.pitch + ' 音量:' + p.volume + '</span>' +
+            '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--ds-border);">' +
+            '<span style="flex:1;font-family:monospace;font-size:12px;color:var(--ds-text);">' + escapeHtml(p.engine) + '</span>' +
+            '<span style="font-size:12px;color:var(--ds-text-secondary);">语速:' + p.rate + ' 音调:' + p.pitch + ' 音量:' + p.volume + '</span>' +
             '<button class="ds-btn-danger" style="padding:2px 8px;font-size:11px;" onclick="deleteEngineParam(\'' + escapeHtml(p.engine) + '\')"><i class="fas fa-trash"></i></button>' +
             '</div>'
         ).join('');
     }
 
     function showAddEngineParamDialog() {
-        const engine = prompt('输入引擎包名 (如 com.iflytek.tts):');
-        if (!engine) return;
-        const rate = parseFloat(prompt('语速 (默认1.0):', '1.0')) || 1.0;
-        const pitch = parseFloat(prompt('音调 (默认1.0):', '1.0')) || 1.0;
-        const volume = parseFloat(prompt('音量 (默认1.0):', '1.0')) || 1.0;
-        apiPost('/api/tts/engine-params', { engine, rate, pitch, volume }).then(res => {
-            if (res.ok) { showToast('已保存', 'success'); loadTtsSettings(); }
-            else showToast(res.message || '保存失败', 'error');
-        });
+        document.getElementById('ep-engine').value = '';
+        document.getElementById('ep-speed').value = '1.0';
+        document.getElementById('ep-pitch').value = '1.0';
+        document.getElementById('ep-volume').value = '1.0';
+        document.getElementById('ep-speed-val').textContent = '1.00';
+        document.getElementById('ep-pitch-val').textContent = '1.00';
+        document.getElementById('ep-volume-val').textContent = '1.00';
+        updateSliderGradient(document.getElementById('ep-speed'));
+        updateSliderGradient(document.getElementById('ep-pitch'));
+        updateSliderGradient(document.getElementById('ep-volume'));
+        document.getElementById('engine-param-modal').style.display = 'flex';
+    }
+
+    async function submitEngineParam() {
+        const engine = document.getElementById('ep-engine').value.trim();
+        if (!engine) return showToast('请输入引擎包名', 'error');
+        const rate = parseFloat(document.getElementById('ep-speed').value) || 1.0;
+        const pitch = parseFloat(document.getElementById('ep-pitch').value) || 1.0;
+        const volume = parseFloat(document.getElementById('ep-volume').value) || 1.0;
+        const res = await apiPost('/api/tts/engine-params', { engine, rate, pitch, volume });
+        if (res.ok) { showToast('已保存', 'success'); document.getElementById('engine-param-modal').style.display = 'none'; loadTtsSettings(); }
+        else showToast(res.message || '保存失败', 'error');
     }
 
     async function deleteEngineParam(engine) {
-        if (!confirm('删除引擎 ' + engine + ' 的独立参数？')) return;
+        if (!await dsConfirm('删除引擎 ' + engine + ' 的独立参数？')) return;
         const res = await apiDelete('/api/tts/engine-params/' + encodeURIComponent(engine));
         if (res.ok) { showToast('已删除', 'info'); loadTtsSettings(); }
         else showToast(res.message || '删除失败', 'error');
@@ -2655,34 +3475,40 @@
     function renderReplaceRules(list) {
         const el = document.getElementById('replace-rules-list');
         if (!list || list.length === 0) {
-            el.innerHTML = '<div style="color:#999;padding:8px 0;">暂无替换规则，点击"添加规则"创建</div>';
+            el.innerHTML = '<div style="color:var(--ds-text-tertiary);padding:8px 0;">暂无替换规则，点击下方按钮创建</div>';
             return;
         }
         list.sort((a, b) => a.order - b.order);
         el.innerHTML = list.map(r =>
-            '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f0f0f0;">' +
-            '<input type="checkbox" ' + (r.enabled ? 'checked' : '') + ' onchange="toggleReplaceRule(\'' + r.id + '\',this.checked)" title="启用/禁用">' +
-            '<span style="flex:1;font-size:12px;">' + escapeHtml(r.name) + '</span>' +
-            '<span style="font-size:11px;color:#888;font-family:monospace;">' + escapeHtml(r.pattern) + ' → ' + escapeHtml(r.replacement) + '</span>' +
-            '<span style="font-size:10px;color:#aaa;">' + (r.is_regex ? '正则' : '文本') + '</span>' +
-            '<button class="ds-btn-danger" style="padding:2px 8px;font-size:11px;" onclick="deleteReplaceRule(\'' + r.id + '\')"><i class="fas fa-trash"></i></button>' +
+            '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--ds-border);">' +
+            '<label class="ds-switch" style="flex-shrink:0;"><input type="checkbox" ' + (r.enabled ? 'checked' : '') + ' onchange="toggleReplaceRule(\'' + r.id + '\',this.checked)"><span class="ds-slider"></span></label>' +
+            '<span style="flex:0 0 auto;font-size:12px;font-weight:500;color:var(--ds-text);">' + escapeHtml(r.name) + '</span>' +
+            '<span style="flex:1;font-size:11px;color:var(--ds-text-secondary);font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(r.pattern) + ' → ' + escapeHtml(r.replacement) + '</span>' +
+            '<span style="font-size:10px;color:var(--ds-text-tertiary);flex-shrink:0;">' + (r.is_regex ? '正则' : '文本') + '</span>' +
+            '<button class="ds-btn-danger" style="padding:2px 8px;font-size:11px;flex-shrink:0;" onclick="deleteReplaceRule(\'' + r.id + '\')"><i class="fas fa-trash"></i></button>' +
             '</div>'
         ).join('');
     }
 
     function showAddReplaceRuleDialog() {
-        const name = prompt('规则名称:');
-        if (!name) return;
-        const pattern = prompt('匹配文本 (支持正则):');
-        if (pattern === null) return;
-        const replacement = prompt('替换为:');
-        if (replacement === null) return;
-        const isRegex = confirm('是否使用正则表达式？\n确定=正则，取消=纯文本');
+        document.getElementById('rr-name').value = '';
+        document.getElementById('rr-pattern').value = '';
+        document.getElementById('rr-replacement').value = '';
+        document.getElementById('rr-is-regex').checked = false;
+        document.getElementById('replace-rule-modal').style.display = 'flex';
+    }
+
+    async function submitReplaceRule() {
+        const name = document.getElementById('rr-name').value.trim();
+        if (!name) return showToast('请输入规则名称', 'error');
+        const pattern = document.getElementById('rr-pattern').value.trim();
+        if (!pattern) return showToast('请输入匹配文本', 'error');
+        const replacement = document.getElementById('rr-replacement').value;
+        const isRegex = document.getElementById('rr-is-regex').checked;
         const id = 'rule_' + Date.now();
-        apiPost('/api/tts/replace-rules', { id, name, pattern, replacement, is_regex: isRegex, enabled: true, order: 0 }).then(res => {
-            if (res.ok) { showToast('已添加', 'success'); loadReplaceRules(); }
-            else showToast(res.message || '添加失败', 'error');
-        });
+        const res = await apiPost('/api/tts/replace-rules', { id, name, pattern, replacement, is_regex: isRegex, enabled: true, order: 0 });
+        if (res.ok) { showToast('已添加', 'success'); document.getElementById('replace-rule-modal').style.display = 'none'; loadReplaceRules(); }
+        else showToast(res.message || '添加失败', 'error');
     }
 
     async function toggleReplaceRule(id, enabled) {
@@ -2696,10 +3522,87 @@
     }
 
     async function deleteReplaceRule(id) {
-        if (!confirm('删除此替换规则？')) return;
+        if (!await dsConfirm('删除此替换规则？')) return;
         const res = await apiDelete('/api/tts/replace-rules/' + id);
         if (res.ok) { showToast('已删除', 'info'); loadReplaceRules(); }
         else showToast(res.message || '删除失败', 'error');
+    }
+
+    /* ===== TTS 辅助函数 ===== */
+    function updateSliderVal(slider, valId) {
+        const val = parseFloat(slider.value).toFixed(2);
+        document.getElementById(valId).textContent = val;
+        updateSliderGradient(slider);
+    }
+
+    function updateSliderGradient(slider) {
+        const min = parseFloat(slider.min);
+        const max = parseFloat(slider.max);
+        const val = parseFloat(slider.value);
+        const pct = ((val - min) / (max - min)) * 100;
+        slider.style.setProperty('--slider-pct', pct + '%');
+    }
+
+    function updateTtsCharCount() {
+        const text = document.getElementById('tts-text').value;
+        document.getElementById('tts-char-count').textContent = text.length + ' 字';
+    }
+
+    function insertChatPrompt(text) {
+        const input = document.getElementById('chat-input');
+        input.value = text;
+        input.focus();
+        input.dispatchEvent(new Event('input'));
+    }
+
+    function toggleTtsReplyFromSwitch(checked) {
+        ttsReplyEnabled = checked;
+        voiceSettings.readAloudEnabled = checked;
+        localStorage.setItem(VOICE_STORAGE_KEY, JSON.stringify(voiceSettings));
+        updateTtsReplyBtn();
+        showToast(checked ? 'AI回复朗读已开启' : 'AI回复朗读已关闭', checked ? 'success' : 'info');
+    }
+
+    /* TTS 朗读历史 */
+    let ttsHistory = [];
+    const TTS_HISTORY_MAX = 10;
+
+    function addTtsHistory(text) {
+        ttsHistory.unshift({ text: text.substring(0, 100), time: new Date().toLocaleTimeString() });
+        if (ttsHistory.length > TTS_HISTORY_MAX) ttsHistory.pop();
+        renderTtsHistory();
+    }
+
+    function renderTtsHistory() {
+        const el = document.getElementById('tts-history-list');
+        if (!el) return;
+        if (ttsHistory.length === 0) {
+            el.innerHTML = '<div style="color:var(--ds-text-tertiary);font-size:12px;">暂无朗读记录</div>';
+            return;
+        }
+        el.innerHTML = ttsHistory.map((h, i) =>
+            '<div class="tts-history-item" onclick="replayTtsHistory(' + i + ')">' +
+            '<i class="fas fa-redo" style="font-size:10px;opacity:0.4;"></i>' +
+            '<span class="tts-history-text">' + escapeHtml(h.text) + '</span>' +
+            '<span style="font-size:10px;color:var(--ds-text-tertiary);flex-shrink:0;">' + h.time + '</span>' +
+            '</div>'
+        ).join('');
+    }
+
+    function replayTtsHistory(index) {
+        if (ttsHistory[index]) {
+            document.getElementById('tts-text').value = ttsHistory[index].text;
+            updateTtsCharCount();
+            speakTTS();
+        }
+    }
+
+    /* 初始化 TTS 滑块渐变 */
+    function initTtsSliders() {
+        document.querySelectorAll('.tts-slider-group input[type="range"], .tts-modal-slider').forEach(function(slider) {
+            updateSliderGradient(slider);
+            slider.addEventListener('input', function() { updateSliderGradient(this); });
+        });
     }
 
     /* ===== 语音设置（朗读回复 + 语音输入） ===== */
@@ -2727,6 +3630,9 @@
         // 同步朗读回复按钮状态
         ttsReplyEnabled = voiceSettings.readAloudEnabled;
         updateTtsReplyBtn();
+        // 同步TTS页面的AI回复开关
+        const ttsAiReplyEl = document.getElementById('tts-ai-reply-enabled');
+        if (ttsAiReplyEl) ttsAiReplyEl.checked = ttsReplyEnabled;
         // 显示/隐藏语音输入按钮
         updateVoiceInputBtn();
     }
@@ -2783,7 +3689,7 @@
         recognition.onstart = function() {
             isVoiceListening = true;
             const btn = document.getElementById('voice-input-btn');
-            if (btn) { btn.style.color = '#ef4444'; btn.title = '停止语音输入'; }
+            if (btn) { btn.style.color = 'var(--ds-danger)'; btn.title = '停止语音输入'; }
             showToast('正在听...', 'info');
         };
         recognition.onend = function() {
@@ -2851,8 +3757,8 @@
         const btn = document.getElementById('tts-reply-toggle');
         if (!btn) return;
         if (ttsReplyEnabled) {
-            btn.style.background = '#10b981';
-            btn.style.color = '#fff';
+            btn.style.background = 'var(--ds-success)';
+            btn.style.color = 'var(--ds-text-on-primary)';
             btn.title = '朗读AI回复: 已开启';
         } else {
             btn.style.background = '';

@@ -4,6 +4,7 @@ use reqwest::Client;
 use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
+use std::sync::atomic::Ordering;
 
 use crate::config::{AI_CONF, SCRIPTS_DIR};
 use crate::data::models::{AiProvider, AiProviderRequest, AiChatRequest};
@@ -122,7 +123,11 @@ pub async fn delete_ai_provider(AxumPath(id): AxumPath<String>) -> Json<ApiRespo
     }
 }
 
-pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
+pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> axum::response::Response {
+    if crate::WS_CONNECTION_COUNT.load(Ordering::Relaxed) >= crate::MAX_WS_CONNECTIONS {
+        return axum::http::StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+    crate::WS_CONNECTION_COUNT.fetch_add(1, Ordering::Relaxed);
     ws.on_upgrade(move |socket| async move {
         let (mut write, mut read) = socket.split();
         let mut conversation_messages: Vec<serde_json::Value> = Vec::new();
@@ -191,6 +196,24 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                         "role": "user",
                         "content": req.message
                     }));
+
+                    // 截断 conversation_messages，保持 system 消息 + 最新 200 条
+                    const MAX_CONVERSATION: usize = 200;
+                    if conversation_messages.len() > MAX_CONVERSATION {
+                        let system_msgs: Vec<_> = conversation_messages.iter()
+                            .filter(|m| m.get("role").and_then(|r| r.as_str()) == Some("system"))
+                            .cloned()
+                            .collect();
+                        let non_system: Vec<_> = conversation_messages.iter()
+                            .filter(|m| m.get("role").and_then(|r| r.as_str()) != Some("system"))
+                            .cloned()
+                            .collect();
+                        let keep = MAX_CONVERSATION.saturating_sub(system_msgs.len());
+                        let ns_len = non_system.len();
+                        conversation_messages = system_msgs.into_iter()
+                            .chain(non_system.into_iter().skip(ns_len.saturating_sub(keep)))
+                            .collect();
+                    }
 
                     // 注入记忆、预设、项目上下文（首次对话时）
                     if conversation_messages.len() <= 2 {
@@ -287,7 +310,19 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                         messages = truncated;
                     }
 
+                    const MAX_TOOL_ROUNDS: usize = 20;
+                    let mut tool_round = 0usize;
                     loop {
+                        tool_round += 1;
+                        if tool_round > MAX_TOOL_ROUNDS {
+                            let _ = write.send(axum::extract::ws::Message::Text(
+                                serde_json::to_string(&json!({
+                                    "type": "error",
+                                    "message": format!("已达到最大工具调用轮次({})，已停止", MAX_TOOL_ROUNDS)
+                                })).unwrap_or_default()
+                            )).await;
+                            break;
+                        }
                         let api_url = format!("{}/v1/chat/completions", provider.base_url);
 
                         let body = json!({
@@ -495,25 +530,47 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                             exec_registry.register(Box::new(task_tools::ModifyTaskTool));
                             exec_registry.register(Box::new(task_tools::ListScriptsForTaskTool));
 
-                            let mut tool_results: Vec<serde_json::Value> = Vec::new();
+                            // 并行执行所有工具调用，保持原始顺序
+                            let tool_futures: Vec<_> = tool_calls.iter().map(|tc| {
+                                let name = tc.get("function")
+                                    .and_then(|f| f.get("name"))
+                                    .and_then(|n| n.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let args = tc.get("function")
+                                    .and_then(|f| f.get("arguments"))
+                                    .and_then(|a| a.as_str())
+                                    .unwrap_or("{}")
+                                    .to_string();
+                                let tool_call_id = tc.get("id")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                (name, args, tool_call_id)
+                            }).collect();
 
-                            for tc in &tool_calls {
-                                if let Some(func) = tc.get("function") {
-                                    let name = func.get("name").and_then(|n| n.as_str()).unwrap_or("");
-                                    let args = func.get("arguments").and_then(|a| a.as_str()).unwrap_or("{}");
-
-                                    let result = match exec_registry.execute(name, args).await {
-                                        Some(r) => r,
-                                        None => format!("未知工具: {}", name),
-                                    };
-
-                                    tool_results.push(json!({
-                                        "role": "tool",
-                                        "tool_call_id": tc.get("id").and_then(|v| v.as_str()).unwrap_or(""),
-                                        "content": result
-                                    }));
-                                }
-                            }
+                            let tool_results: Vec<serde_json::Value> = futures::future::join_all(
+                                tool_futures.iter().map(|(name, args, tool_call_id)| {
+                                    let name = name.clone();
+                                    let args = args.clone();
+                                    let tool_call_id = tool_call_id.clone();
+                                    async move {
+                                        let result = match tokio::time::timeout(
+                                            std::time::Duration::from_secs(30),
+                                            exec_registry.execute(&name, &args),
+                                        ).await {
+                                            Ok(Some(r)) => r,
+                                            Ok(None) => format!("未知工具: {}", name),
+                                            Err(_) => format!("工具执行超时(30s): {}", name),
+                                        };
+                                        json!({
+                                            "role": "tool",
+                                            "tool_call_id": tool_call_id,
+                                            "content": result
+                                        })
+                                    }
+                                })
+                            ).await;
 
                             for tr in &tool_results {
                                 messages.push(tr.clone());
@@ -557,6 +614,7 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                 }
             }
         }
+        crate::WS_CONNECTION_COUNT.fetch_sub(1, Ordering::Relaxed);
     })
 }
 
@@ -809,25 +867,21 @@ pub fn get_ai_provider(id: &str) -> Option<AiProvider> {
 }
 
 fn extract_images(text: &str) -> Vec<String> {
-    let mut images = Vec::new();
+    lazy_static::lazy_static! {
+        static ref RE_MD_IMAGE: regex::Regex =
+            regex::Regex::new(r"!\[.*?\]\((https?://[^\)]+)\)").unwrap();
+        static ref RE_BASE64: regex::Regex =
+            regex::Regex::new(r#"data:image/[a-zA-Z]+;base64,[^\s"'"]+"#).unwrap();
+    }
 
-    let re = match regex::Regex::new(r"!\[.*?\]\((https?://[^\)]+)\)") {
-        Ok(r) => r,
-        Err(_) => return images,
-    };
-    for cap in re.captures_iter(text) {
+    let mut images = Vec::new();
+    for cap in RE_MD_IMAGE.captures_iter(text) {
         if let Some(url) = cap.get(1) {
             images.push(url.as_str().to_string());
         }
     }
-
-    let re_base64 = match regex::Regex::new(r#"data:image/[a-zA-Z]+;base64,[^\s"'"]+"#) {
-        Ok(r) => r,
-        Err(_) => return images,
-    };
-    for cap in re_base64.find_iter(text) {
+    for cap in RE_BASE64.find_iter(text) {
         images.push(cap.as_str().to_string());
     }
-
     images
 }

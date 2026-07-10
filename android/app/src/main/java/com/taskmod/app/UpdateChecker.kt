@@ -9,6 +9,10 @@ import android.widget.Toast
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.gson.Gson
 import com.google.gson.JsonObject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -20,7 +24,7 @@ class UpdateChecker(private val context: Context) {
     }
 
     fun checkForUpdates(force: Boolean = false) {
-        Thread {
+        CoroutineScope(Dispatchers.IO).launch {
             try {
                 val prefs = context.getSharedPreferences("taskmod", Context.MODE_PRIVATE)
                 val lastCheck = prefs.getLong("last_update_check", 0)
@@ -28,7 +32,7 @@ class UpdateChecker(private val context: Context) {
 
                 // 非强制检查时，每天只检查一次
                 if (!force && now - lastCheck < 24 * 60 * 60 * 1000) {
-                    return@Thread
+                    return@launch
                 }
 
                 val url = URL(API_URL)
@@ -40,7 +44,7 @@ class UpdateChecker(private val context: Context) {
                 if (conn.responseCode == 200) {
                     val response = conn.inputStream.bufferedReader().readText()
                     val json = Gson().fromJson(response, JsonObject::class.java)
-                    val tagName = json.get("tag_name")?.asString ?: return@Thread
+                    val tagName = json.get("tag_name")?.asString ?: return@launch
                     val version = tagName.removePrefix("v")
 
                     // 获取当前版本
@@ -63,11 +67,11 @@ class UpdateChecker(private val context: Context) {
                             }
                         }
 
-                        android.os.Handler(context.mainLooper).post {
+                        withContext(Dispatchers.Main) {
                             showUpdateDialog(version, body, apkUrl)
                         }
                     } else if (force) {
-                        android.os.Handler(context.mainLooper).post {
+                        withContext(Dispatchers.Main) {
                             Toast.makeText(context, "已是最新版本", Toast.LENGTH_SHORT).show()
                         }
                     }
@@ -76,12 +80,12 @@ class UpdateChecker(private val context: Context) {
             } catch (e: Exception) {
                 Log.e(TAG, "检查更新失败", e)
                 if (force) {
-                    android.os.Handler(context.mainLooper).post {
+                    withContext(Dispatchers.Main) {
                         Toast.makeText(context, "检查更新失败", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
-        }.start()
+        }
     }
 
     private fun isNewerVersion(newVersion: String, currentVersion: String): Boolean {
