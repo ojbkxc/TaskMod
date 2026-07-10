@@ -125,7 +125,7 @@ impl KcpServer {
                                     // interval: 5ms 更新间隔
                                     // resend: 2 = 快速重传（2次ACK跨越就重传）
                                     // nc: 1 = 关闭流控
-                                    let _ = kcp.set_nodelay(1, 5, 2, 1);
+                                    let _ = kcp.set_nodelay(true, 5, 2, true);
                                     let _ = kcp.set_mtu(KCP_MTU);
                                     let _ = kcp.set_wndsize(256, 256); // 大窗口减少丢包
 
