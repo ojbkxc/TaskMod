@@ -351,6 +351,28 @@ impl AiTool for AdbTtsTool {
     }
 }
 
+pub struct AdbUnlockTool;
+
+impl AiTool for AdbUnlockTool {
+    fn name(&self) -> &str { "adb_unlock_screen" }
+    fn description(&self) -> &str { "上滑解锁屏幕（从屏幕底部向上滑动）" }
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {}
+        })
+    }
+    fn execute(&self, _args: &str) -> BoxFuture<'_, String> {
+        Box::pin(async move {
+            // 先唤醒屏幕，再上滑解锁
+            let _ = adb::keyevent("wakeup").await;
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            // 从屏幕底部 80% 处滑到 30% 处，适配大多数手机
+            adb::swipe(540, 1800, 540, 600).await
+        })
+    }
+}
+
 #[allow(dead_code)]
 pub fn register_adb_tools(registry: &mut crate::tools::ToolRegistry) {
     registry.register(Box::new(AdbTapTool));
@@ -369,4 +391,5 @@ pub fn register_adb_tools(registry: &mut crate::tools::ToolRegistry) {
     registry.register(Box::new(AdbShutdownTool));
     registry.register(Box::new(AdbClearAppDataTool));
     registry.register(Box::new(AdbTtsTool));
+    registry.register(Box::new(AdbUnlockTool));
 }

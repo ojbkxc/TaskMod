@@ -1984,6 +1984,7 @@
                 <div class="quick-actions">
                     <button class="quick-action-btn" onclick="refreshStatus()"><i class="fas fa-sync-alt"></i> 刷新状态</button>
                     <button class="quick-action-btn" onclick="screenshot()"><i class="fas fa-camera"></i> 截屏</button>
+                    <button class="quick-action-btn" onclick="unlockScreen()"><i class="fas fa-unlock"></i> 上滑解锁</button>
                     <button class="quick-action-btn" onclick="rebootDevice()"><i class="fas fa-power-off"></i> 重启设备</button>
                     <button class="quick-action-btn" onclick="clearLogs()"><i class="fas fa-broom"></i> 清除日志</button>
                 </div>
@@ -2737,6 +2738,17 @@
         const res = await apiPost('/api/command', { command: 'reboot' });
         if (res.ok) showToast('重启命令已发送', 'success');
         else showToast(res.message || '重启失败', 'error');
+    }
+
+    async function unlockScreen() {
+        // 先唤醒屏幕
+        await apiPost('/api/command', { command: 'input keyevent KEYCODE_WAKEUP' });
+        // 等待300ms
+        await new Promise(r => setTimeout(r, 300));
+        // 上滑解锁：从底部80%滑到顶部30%
+        const res = await apiPost('/api/command', { command: 'input swipe 540 1800 540 600 300' });
+        if (res.ok) showToast('上滑解锁已执行', 'success');
+        else showToast(res.message || '解锁失败', 'error');
     }
 
     /* ===== AI Chat ===== */

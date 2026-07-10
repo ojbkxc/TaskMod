@@ -247,6 +247,7 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                     registry.register(Box::new(adb_tools::AdbRebootTool));
                     registry.register(Box::new(adb_tools::AdbShutdownTool));
                     registry.register(Box::new(adb_tools::AdbTtsTool));
+                    registry.register(Box::new(adb_tools::AdbUnlockTool));
                     registry.register(Box::new(script_tools::ListScriptsTool));
                     registry.register(Box::new(script_tools::ReadScriptTool));
                     registry.register(Box::new(script_tools::WriteScriptTool));
