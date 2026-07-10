@@ -1,4 +1,4 @@
-use axum::{extract::{Path as AxumPath, Query}, Json, response::{Html, IntoResponse}};
+use axum::{extract::{Path as AxumPath, Query}, Json, response::IntoResponse};
 use chrono::{DateTime, Local};
 use serde_json::json;
 use std::collections::HashMap;
