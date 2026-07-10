@@ -568,6 +568,27 @@ pub async fn mirror_status(State(state): State<SharedMirrorState>) -> Json<ApiRe
     Json(ApiResponse::ok(state.is_running()))
 }
 
+/// JPEG 截图 fallback 端点
+pub async fn screencap_jpeg() -> Json<ApiResponse<String>> {
+    use base64::Engine;
+    let output = Command::new("screencap")
+        .arg("-p")
+        .output()
+        .await;
+
+    match output {
+        Ok(o) if o.status.success() && !o.stdout.is_empty() => {
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&o.stdout);
+            Json(ApiResponse::ok(b64))
+        }
+        Ok(o) => {
+            let err = String::from_utf8_lossy(&o.stderr);
+            Json(ApiResponse::err(&format!("screencap 失败: {}", err)))
+        }
+        Err(e) => Json(ApiResponse::err(&format!("screencap 执行失败: {}", e))),
+    }
+}
+
 fn find_nalu_start(data: &[u8]) -> usize {
     if data.len() < 3 {
         return data.len();

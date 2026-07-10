@@ -241,6 +241,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/mirror/stop", post(api::mirror::stop_mirror))
         .route("/api/mirror/control", post(api::mirror::send_control))
         .route("/api/mirror/status", get(api::mirror::mirror_status))
+        .route("/api/mirror/screencap", get(api::mirror::screencap_jpeg))
         .route("/ws/mirror", get(api::mirror::mirror_ws))
         .route("/ws/audio", get(api::mirror::audio_ws))
         .with_state(mirror_state);

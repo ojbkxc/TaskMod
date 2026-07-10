@@ -11,7 +11,7 @@ use crate::data::response::ApiResponse;
 use crate::tools::{adb_tools, script_tools, task_tools, ToolRegistry};
 use crate::utils::adb;
 
-/// 全局共享 HTTP Client（连接池复用，避免每次请求重建 TLS）
+// 全局共享 HTTP Client（连接池复用，避免每次请求重建 TLS）
 lazy_static::lazy_static! {
     static ref HTTP_CLIENT: Client = Client::builder()
         .pool_max_idle_per_host(4)
@@ -464,6 +464,37 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                             messages.push(assistant_msg.clone());
                             conversation_messages.push(assistant_msg);
 
+                            // 创建本地 registry 用于工具执行
+                            let mut exec_registry = ToolRegistry::new();
+                            exec_registry.register(Box::new(adb_tools::AdbTapTool));
+                            exec_registry.register(Box::new(adb_tools::AdbSwipeTool));
+                            exec_registry.register(Box::new(adb_tools::AdbKeyeventTool));
+                            exec_registry.register(Box::new(adb_tools::AdbInputTextTool));
+                            exec_registry.register(Box::new(adb_tools::AdbScreencapTool));
+                            exec_registry.register(Box::new(adb_tools::AdbCommandTool));
+                            exec_registry.register(Box::new(adb_tools::AdbStartAppTool));
+                            exec_registry.register(Box::new(adb_tools::AdbStopAppTool));
+                            exec_registry.register(Box::new(adb_tools::AdbClearAppDataTool));
+                            exec_registry.register(Box::new(adb_tools::GetWifiInfoTool));
+                            exec_registry.register(Box::new(adb_tools::GetDeviceInfoTool));
+                            exec_registry.register(Box::new(adb_tools::GetBatteryInfoTool));
+                            exec_registry.register(Box::new(adb_tools::GetRunningAppsTool));
+                            exec_registry.register(Box::new(adb_tools::AdbRebootTool));
+                            exec_registry.register(Box::new(adb_tools::AdbShutdownTool));
+                            exec_registry.register(Box::new(adb_tools::AdbTtsTool));
+                            exec_registry.register(Box::new(adb_tools::AdbUnlockTool));
+                            exec_registry.register(Box::new(script_tools::ListScriptsTool));
+                            exec_registry.register(Box::new(script_tools::ReadScriptTool));
+                            exec_registry.register(Box::new(script_tools::WriteScriptTool));
+                            exec_registry.register(Box::new(script_tools::DeleteScriptTool));
+                            exec_registry.register(Box::new(script_tools::RunScriptTool));
+                            exec_registry.register(Box::new(script_tools::ViewLogsTool));
+                            exec_registry.register(Box::new(task_tools::ListTasksTool));
+                            exec_registry.register(Box::new(task_tools::AddTaskTool));
+                            exec_registry.register(Box::new(task_tools::DeleteTaskTool));
+                            exec_registry.register(Box::new(task_tools::ModifyTaskTool));
+                            exec_registry.register(Box::new(task_tools::ListScriptsForTaskTool));
+
                             let mut tool_results: Vec<serde_json::Value> = Vec::new();
 
                             for tc in &tool_calls {
@@ -471,7 +502,7 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                                     let name = func.get("name").and_then(|n| n.as_str()).unwrap_or("");
                                     let args = func.get("arguments").and_then(|a| a.as_str()).unwrap_or("{}");
 
-                                    let result = match registry.execute(name, args).await {
+                                    let result = match exec_registry.execute(name, args).await {
                                         Some(r) => r,
                                         None => format!("未知工具: {}", name),
                                     };

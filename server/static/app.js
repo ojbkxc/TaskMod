@@ -1107,9 +1107,29 @@
     });
 
     /* ===== Mirror ===== */
+    let mirrorSps = null;
+    let mirrorPps = null;
+    let mirrorWidth = 0;
+    let mirrorHeight = 0;
+    let mirrorUseFallback = false;
+    let mirrorFallbackTimer = null;
+
     async function startMirror() {
         document.getElementById('mirror-status').style.display = 'flex';
         document.getElementById('mirror-status-text').textContent = '正在启动...';
+        mirrorSps = null; mirrorPps = null;
+        mirrorWidth = 0; mirrorHeight = 0;
+        mirrorUseFallback = false;
+
+        // 获取设备分辨率
+        try {
+            const info = await apiGet('/api/device/info');
+            if (info.ok && info.data && info.data.screen_size) {
+                const m = info.data.screen_size.match(/(\d+)\s*x\s*(\d+)/);
+                if (m) { mirrorWidth = parseInt(m[1]); mirrorHeight = parseInt(m[2]); }
+            }
+        } catch(e) {}
+        if (!mirrorWidth) { mirrorWidth = 1080; mirrorHeight = 1920; }
 
         const res = await apiPost('/api/mirror/start', {});
         if (!res.ok) {
@@ -1130,6 +1150,7 @@
     async function stopMirror() {
         if (mirrorWs) { mirrorWs.close(); mirrorWs = null; }
         if (mirrorDecoder) { try { mirrorDecoder.close(); } catch(e) {} mirrorDecoder = null; }
+        if (mirrorFallbackTimer) { clearInterval(mirrorFallbackTimer); mirrorFallbackTimer = null; }
         await apiPost('/api/mirror/stop', {});
         document.getElementById('mirror-start-btn').style.display = '';
         document.getElementById('mirror-stop-btn').style.display = 'none';
@@ -1149,12 +1170,14 @@
         mirrorWs.onopen = () => {
             document.getElementById('mirror-status-text').textContent = '已连接';
             document.getElementById('mirror-status').style.display = 'none';
-            initMirrorCanvas();
+            if (!mirrorUseFallback) initMirrorDecoder();
         };
 
         mirrorWs.onmessage = (evt) => {
             if (evt.data instanceof ArrayBuffer) {
-                handleMirrorFrame(evt.data);
+                if (!mirrorUseFallback) {
+                    handleMirrorBinary(evt.data);
+                }
             } else {
                 try {
                     const msg = JSON.parse(evt.data);
@@ -1175,65 +1198,168 @@
         };
     }
 
-    let mirrorCanvasCtx = null;
+    /**
+     * 解析后端二进制协议: [3字节tag][4字节大端长度][数据]
+     * tag: "rst"=重置, "sps"=SPS, "pps"=PPS, "key"=IDR帧, "frm"=非IDR帧
+     */
+    function parseMirrorMessage(buffer) {
+        const view = new DataView(buffer);
+        if (buffer.byteLength < 7) return null;
+        const tag = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2));
+        const len = view.getUint32(3, false);
+        const data = new Uint8Array(buffer, 7, Math.min(len, buffer.byteLength - 7));
+        return { tag, data };
+    }
 
-    function initMirrorCanvas() {
+    /** Annex B NALU -> AVC 格式: 把起始码替换为4字节大端长度 */
+    function naluToAvc(nalu) {
+        // NALU 数据本身不含起始码（后端已剥离），直接加长度前缀
+        const avc = new Uint8Array(4 + nalu.length);
+        const view = new DataView(avc.buffer);
+        view.setUint32(0, nalu.length, false);
+        avc.set(nalu, 4);
+        return avc;
+    }
+
+    /** 从 SPS 解析分辨率 */
+    function parseSpsResolution(sps) {
+        if (sps.length < 4) return null;
+        // 简化解析: 从 SPS 的 pic_width/height_in_map_units 推算
+        // 实际上用设备返回的分辨率更可靠，这里做备用
+        return null;
+    }
+
+    /** 构建 avcC 配置 box */
+    function buildAvcC(sps, pps) {
+        const spsLen = sps.length;
+        const ppsLen = pps.length;
+        // avcC box: 5字节固定头 + 3字节SPS头 + sps + 1字节PPS头 + pps
+        const buf = new Uint8Array(5 + 3 + spsLen + 1 + 2 + ppsLen);
+        const v = new DataView(buf.buffer);
+        buf[0] = sps[1]; // AVCProfileIndication
+        buf[1] = sps[2]; // profile_compatibility
+        buf[2] = sps[3]; // AVCLevelIndication
+        buf[3] = 0xFF;   // lengthSizeMinusOne=3 (4字节长度)
+        buf[4] = 0xE1;   // numOfSequenceParameterSets=1
+        v.setUint16(5, spsLen, false);
+        buf.set(sps, 7);
+        const ppsOffset = 7 + spsLen;
+        buf[ppsOffset] = 0x01; // numOfPictureParameterSets=1
+        v.setUint16(ppsOffset + 1, ppsLen, false);
+        buf.set(pps, ppsOffset + 3);
+        return buf;
+    }
+
+    function initMirrorDecoder() {
         const canvas = document.getElementById('mirror-canvas');
-        canvas.width = 1080;
-        canvas.height = 1920;
-        mirrorCanvasCtx = canvas.getContext('2d');
+        canvas.width = mirrorWidth;
+        canvas.height = mirrorHeight;
 
-        if (typeof VideoDecoder !== 'undefined') {
-            try {
-                mirrorDecoder = new VideoDecoder({
-                    output: (frame) => {
-                        mirrorCanvasCtx.drawImage(frame, 0, 0, canvas.width, canvas.height);
-                        frame.close();
-                    },
-                    error: (e) => { console.error('VideoDecoder error:', e); }
-                });
-                mirrorDecoder.configure({
-                    codec: 'avc1.42001E',
-                    codedWidth: 1080,
-                    codedHeight: 1920
-                });
-            } catch (e) {
-                console.warn('VideoDecoder not available, falling back');
-                mirrorDecoder = null;
+        if (typeof VideoDecoder === 'undefined') {
+            console.warn('VideoDecoder 不可用，切换到 JPEG fallback');
+            startMirrorFallback();
+            return;
+        }
+
+        try {
+            if (mirrorDecoder) { try { mirrorDecoder.close(); } catch(e) {} }
+            mirrorDecoder = new VideoDecoder({
+                output: (frame) => {
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+                    frame.close();
+                },
+                error: (e) => {
+                    console.error('VideoDecoder error:', e);
+                    startMirrorFallback();
+                }
+            });
+            // configure 会在收到 SPS/PPS 后调用
+        } catch (e) {
+            console.warn('VideoDecoder 初始化失败，切换到 JPEG fallback');
+            startMirrorFallback();
+        }
+    }
+
+    function handleMirrorBinary(buffer) {
+        const msg = parseMirrorMessage(buffer);
+        if (!msg) return;
+
+        switch (msg.tag) {
+            case 'rst':
+                // 重置信号，清空缓存
+                mirrorSps = null; mirrorPps = null;
+                break;
+            case 'sps':
+                mirrorSps = msg.data;
+                break;
+            case 'pps':
+                mirrorPps = msg.data;
+                if (mirrorSps && mirrorDecoder) {
+                    const avcC = buildAvcC(mirrorSps, mirrorPps);
+                    try {
+                        mirrorDecoder.configure({
+                            codec: 'avc1.42001E',
+                            codedWidth: mirrorWidth,
+                            codedHeight: mirrorHeight,
+                            description: avcC
+                        });
+                    } catch(e) {
+                        console.error('VideoDecoder configure 失败:', e);
+                        startMirrorFallback();
+                    }
+                }
+                break;
+            case 'key':
+            case 'frm': {
+                if (!mirrorDecoder || !mirrorSps) break;
+                const avcData = naluToAvc(msg.data);
+                try {
+                    const chunk = new EncodedVideoChunk({
+                        type: msg.tag === 'key' ? 'key' : 'delta',
+                        timestamp: performance.now() * 1000,
+                        data: avcData
+                    });
+                    mirrorDecoder.decode(chunk);
+                } catch (e) {
+                    // 解码失败，可能需要重新配置
+                    mirrorSps = null; mirrorPps = null;
+                }
+                break;
             }
         }
     }
 
-    function handleMirrorFrame(data) {
-        if (!mirrorDecoder) {
-            handleMirrorFrameFallback(data);
-            return;
-        }
-        try {
-            const chunk = new EncodedVideoChunk({
-                type: 'key',
-                timestamp: performance.now() * 1000,
-                data: new Uint8Array(data)
-            });
-            mirrorDecoder.decode(chunk);
-        } catch (e) {
-            handleMirrorFrameFallback(data);
-        }
-    }
-
-    function handleMirrorFrameFallback(data) {
+    /** JPEG Fallback: 通过 screencap 循环截图 */
+    function startMirrorFallback() {
+        mirrorUseFallback = true;
+        if (mirrorDecoder) { try { mirrorDecoder.close(); } catch(e) {} mirrorDecoder = null; }
         const canvas = document.getElementById('mirror-canvas');
         const ctx = canvas.getContext('2d');
-        const blob = new Blob([data], { type: 'image/jpeg' });
-        const url = URL.createObjectURL(blob);
-        const img = new Image();
-        img.onload = () => {
-            canvas.width = img.width;
-            canvas.height = img.height;
-            ctx.drawImage(img, 0, 0);
-            URL.revokeObjectURL(url);
-        };
-        img.src = url;
+        canvas.width = mirrorWidth;
+        canvas.height = mirrorHeight;
+
+        async function fetchFrame() {
+            if (!mirrorWs || mirrorWs.readyState > 1) return;
+            try {
+                const res = await apiGet('/api/mirror/screencap');
+                if (res.ok && res.data) {
+                    const blob = await (await fetch('data:image/jpeg;base64,' + res.data)).blob();
+                    const url = URL.createObjectURL(blob);
+                    const img = new Image();
+                    img.onload = () => {
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        ctx.drawImage(img, 0, 0);
+                        URL.revokeObjectURL(url);
+                    };
+                    img.src = url;
+                }
+            } catch(e) {}
+        }
+
+        mirrorFallbackTimer = setInterval(fetchFrame, 200); // ~5fps
+        showToast('VideoDecoder 不可用，使用 JPEG 模式（约5fps）', 'warning');
     }
 
     /* Mirror touch/click control */
@@ -1244,8 +1370,8 @@
         canvas.addEventListener('pointerdown', (e) => {
             const rect = canvas.getBoundingClientRect();
             touchStart = {
-                x: Math.round((e.clientX - rect.left) / rect.width * 1080),
-                y: Math.round((e.clientY - rect.top) / rect.height * 1920),
+                x: Math.round((e.clientX - rect.left) / rect.width * mirrorWidth),
+                y: Math.round((e.clientY - rect.top) / rect.height * mirrorHeight),
                 time: Date.now()
             };
         });
@@ -1253,8 +1379,8 @@
         canvas.addEventListener('pointerup', (e) => {
             if (!touchStart) return;
             const rect = canvas.getBoundingClientRect();
-            const x = Math.round((e.clientX - rect.left) / rect.width * 1080);
-            const y = Math.round((e.clientY - rect.top) / rect.height * 1920);
+            const x = Math.round((e.clientX - rect.left) / rect.width * mirrorWidth);
+            const y = Math.round((e.clientY - rect.top) / rect.height * mirrorHeight);
             const dx = x - touchStart.x;
             const dy = y - touchStart.y;
             const dt = Date.now() - touchStart.time;
