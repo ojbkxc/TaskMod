@@ -146,6 +146,14 @@ TaskMod/
 │   │   └── main.rs        # 入口文件（看门狗、Dead Man Switch）
 │   ├── static/            # Web 静态资源
 │   └── Cargo.toml         # 依赖配置
+├── android/               # Android APK 源码
+│   ├── app/               # 应用模块
+│   │   ├── src/main/
+│   │   │   ├── java/com/taskmod/app/  # Kotlin 源码
+│   │   │   └── res/       # 资源文件
+│   │   └── build.gradle   # 应用构建配置
+│   ├── build.gradle       # 项目构建配置
+│   └── settings.gradle    # 项目设置
 ├── customize.sh           # Magisk 安装脚本
 ├── service.sh             # 服务启动脚本
 └── module.prop            # Magisk 模块属性
@@ -164,10 +172,54 @@ TaskMod/
 
 ## 安装方法
 
-1. 下载最新 release 包
-2. 在 Magisk Manager 中刷入模块
-3. 重启设备
-4. 访问 http://设备IP:9527
+### 方式一：Magisk 模块（推荐，完整功能）
+
+1. 从 [Releases](https://github.com/ojbkxc/TaskMod/releases) 下载最新 zip 文件
+   - 文件名格式：`TaskMod-版本号.zip`
+   - 下载地址示例：`https://github.com/ojbkxc/TaskMod/releases/download/v1.0.4/TaskMod-1.0.4.zip`
+2. 打开 Magisk App → 模块 → 从本地安装
+3. 选择下载的 zip 文件
+4. 等待安装完成后重启设备
+5. 浏览器访问 `http://设备IP:9527`
+
+**模块优势：**
+- 内核级后台保活，几乎不会被杀
+- 开机自动启动
+- 完整的 ADB 命令执行权限
+
+### 方式二：APK 安装（无需 Recovery）
+
+1. 从 [Releases](https://github.com/ojbkxc/TaskMod/releases) 下载最新 APK 文件
+   - 文件名格式：`TaskMod-v版本号-debug.apk`
+2. 允许安装未知来源应用
+3. 安装并打开 APK
+4. 首次启动会自动检测环境：
+   - 有 Magisk → 引导下载并刷入模块（推荐）
+   - 无 Magisk → 使用内置服务（功能受限）
+
+**APK 功能：**
+- 通知栏常驻服务（保活）
+- 快捷操作（截屏/解锁/重启）
+- Quick Settings 磁贴（下拉快捷面板）
+- 桌面小组件
+- 内置 WebView 管理面板
+- 自动更新检测
+- Root 检测与 Magisk 模块引导
+
+**APK 注意事项：**
+- 设备控制功能（ADB 命令、截屏、触控）需要 Root 权限
+- AI 聊天功能无需 Root
+- 建议同时安装 Magisk 模块获得完整功能
+
+### 方式三：APK + Magisk 模块组合（最佳体验）
+
+1. 先安装 APK（获取 UI 和快捷操作）
+2. 在 APK 内点击"安装模块"按钮
+3. APK 会自动下载最新 Magisk 模块
+4. 按提示在 Magisk 中刷入模块
+5. 重启设备
+
+这样既有 APK 的便捷操作（通知栏、磁贴、小组件），又有模块的稳定保活。
 
 ## 使用说明
 

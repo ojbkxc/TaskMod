@@ -54,6 +54,12 @@
         <!-- 设置页面 -->
         <activity android:name=".SettingsActivity" />
 
+        <!-- Magisk 模块引导页面 -->
+        <activity
+            android:name=".MagiskGuideActivity"
+            android:theme="@style/Theme.TaskMod"
+            android:screenOrientation="portrait" />
+
         <!-- 前台服务 -->
         <service
             android:name=".TaskModService"

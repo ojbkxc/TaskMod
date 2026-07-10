@@ -188,20 +188,36 @@ class MainActivity : AppCompatActivity() {
     private fun checkRootStatus() {
         Thread {
             val result = RootHelper.checkRoot()
+            val moduleInstalled = RootHelper.isMagiskModuleInstalled()
             handler.post {
                 when {
                     result.hasRoot && result.method == "magisk" -> {
-                        tvRootStatus.text = "已获取 Root (Magisk)"
-                        tvRootStatus.setTextColor(getColor(R.color.success))
-                        btnMagiskGuide.visibility = View.GONE
+                        if (moduleInstalled) {
+                            tvRootStatus.text = "已获取 Root (Magisk) + 模块已安装"
+                            tvRootStatus.setTextColor(getColor(R.color.success))
+                            btnMagiskGuide.visibility = View.GONE
+                        } else {
+                            tvRootStatus.text = "已获取 Root (Magisk) - 模块未安装"
+                            tvRootStatus.setTextColor(getColor(R.color.warning))
+                            btnMagiskGuide.text = "安装模块（推荐）"
+                            btnMagiskGuide.visibility = View.VISIBLE
+                            // 首次启动自动弹出引导
+                            val prefs = getSharedPreferences("taskmod", MODE_PRIVATE)
+                            if (prefs.getBoolean("show_guide_first", true)) {
+                                prefs.edit().putBoolean("show_guide_first", false).apply()
+                                startActivity(Intent(this, MagiskGuideActivity::class.java))
+                            }
+                        }
                     }
                     result.hasRoot -> {
-                        tvRootStatus.text = "已获取 Root (su)"
+                        tvRootStatus.text = "已获取 Root (su) - 建议使用 Magisk"
                         tvRootStatus.setTextColor(getColor(R.color.success))
+                        btnMagiskGuide.visibility = View.VISIBLE
                     }
                     else -> {
-                        tvRootStatus.text = "未获取 Root"
+                        tvRootStatus.text = "未获取 Root - 设备控制功能不可用"
                         tvRootStatus.setTextColor(getColor(R.color.error))
+                        btnMagiskGuide.visibility = View.VISIBLE
                     }
                 }
             }
@@ -238,30 +254,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showMagiskGuide() {
-        MaterialAlertDialogBuilder(this)
-            .setTitle("安装 Magisk 模块")
-            .setMessage("""
-                安装 Magisk 模块可获得完整功能：
-                
-                • ADB 命令执行
-                • 截屏与触控模拟
-                • 应用管理
-                • 内核级后台保活
-                
-                步骤：
-                1. 从 GitHub Releases 下载最新 zip
-                2. 打开 Magisk → 模块 → 从本地安装
-                3. 选择下载的 zip 文件
-                4. 重启设备
-            """.trimIndent())
-            .setPositiveButton("前往下载") { _, _ ->
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(
-                    "https://github.com/${TaskModApp.GITHUB_REPO}/releases"
-                ))
-                startActivity(intent)
-            }
-            .setNegativeButton("取消", null)
-            .show()
+        startActivity(Intent(this, MagiskGuideActivity::class.java))
     }
 
     private fun showAboutDialog() {
