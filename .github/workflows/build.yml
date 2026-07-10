@@ -12,7 +12,7 @@ on:
         default: 'v1.0.1'
 
 jobs:
-  build:
+  build-server:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -76,11 +76,11 @@ jobs:
 
           echo "Updated to $TAG_VERSION (code: $VERSION_CODE)"
 
-      - name: Build
+      - name: Build Server
         working-directory: server
         run: cargo ndk -t arm64-v8a build --release
 
-      - name: Package
+      - name: Package Magisk Module
         id: package
         run: |
           VERSION=${{ steps.version.outputs.version }}
@@ -98,11 +98,71 @@ jobs:
             -x ".gitignore" \
             -x "bin/.gitkeep"
 
-      - name: Upload artifact
+      - name: Upload Server artifact
         uses: actions/upload-artifact@v4
         with:
           name: TaskMod-${{ steps.version.outputs.version }}
           path: TaskMod-${{ steps.version.outputs.version }}.zip
+
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Build Debug APK
+        working-directory: android
+        run: gradle assembleDebug --no-daemon
+
+      - name: Rename APK
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk TaskMod-app.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TaskMod-APK
+          path: TaskMod-app.apk
+
+  release:
+    needs: [build-server, build-apk]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/}
+          echo "tag=$TAG_VERSION" >> $GITHUB_OUTPUT
+          VERSION=${TAG_VERSION#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Download Server artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: TaskMod-${{ steps.version.outputs.version }}
+          path: ./release-files
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: TaskMod-APK
+          path: ./release-files
+
+      - name: List release files
+        run: ls -la ./release-files/
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -127,9 +187,18 @@ jobs:
             - 邮件通知
 
             ### 安装
+
+            **Magisk 模块 (推荐)**
             1. 下载 `TaskMod-${{ steps.version.outputs.version }}.zip`
             2. 通过 Magisk 刷入
             3. 浏览器访问 `http://设备IP:9527`
-          files: TaskMod-${{ steps.version.outputs.version }}.zip
+
+            **APK 安装**
+            1. 下载 `TaskMod-app.apk`
+            2. 允许安装未知来源应用
+            3. 安装并打开
+          files: |
+            release-files/TaskMod-${{ steps.version.outputs.version }}.zip
+            release-files/TaskMod-app.apk
           draft: false
           prerelease: false

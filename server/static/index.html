@@ -2687,10 +2687,11 @@
         try {
             const res = await fetch(url);
             const json = await res.json();
+            json.ok = json.success;
             return json;
         } catch (e) {
             showToast('请求失败: ' + e.message, 'error');
-            return { ok: false, message: e.message };
+            return { ok: false, success: false, message: e.message };
         }
     }
 
@@ -2701,10 +2702,12 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             });
-            return await res.json();
+            const json = await res.json();
+            json.ok = json.success;
+            return json;
         } catch (e) {
             showToast('请求失败: ' + e.message, 'error');
-            return { ok: false, message: e.message };
+            return { ok: false, success: false, message: e.message };
         }
     }
 
@@ -2715,20 +2718,24 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             });
-            return await res.json();
+            const json = await res.json();
+            json.ok = json.success;
+            return json;
         } catch (e) {
             showToast('请求失败: ' + e.message, 'error');
-            return { ok: false, message: e.message };
+            return { ok: false, success: false, message: e.message };
         }
     }
 
     async function apiDelete(url) {
         try {
             const res = await fetch(url, { method: 'DELETE' });
-            return await res.json();
+            const json = await res.json();
+            json.ok = json.success;
+            return json;
         } catch (e) {
             showToast('请求失败: ' + e.message, 'error');
-            return { ok: false, message: e.message };
+            return { ok: false, success: false, message: e.message };
         }
     }
 
