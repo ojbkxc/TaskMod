@@ -4,17 +4,14 @@
 //! 通过 Unix Socket IPC 与 taskmod-daemon 通信
 
 use axum::{
-    extract::{Path, State},
-    http::StatusCode,
+    extract::Path,
     response::Json,
-    routing::{delete, get, post, put},
+    routing::{get, post, put, delete},
     Router,
 };
 use serde::{Deserialize, Serialize};
 use std::os::unix::net::UnixDatagram;
 use std::time::Duration;
-
-use crate::state::AppState;
 
 /// IPC Socket 路径
 const SOCKET_PATH: &str = "/tmp/taskmod.sock";
@@ -63,7 +60,7 @@ pub struct ApiResponse<T: Serialize> {
 }
 
 /// 创建隧道管理 API 路由
-pub fn routes() -> Router<AppState> {
+pub fn routes() -> Router<()> {
     Router::new()
         // 守护进程控制
         .route("/api/daemon/status", get(get_status))

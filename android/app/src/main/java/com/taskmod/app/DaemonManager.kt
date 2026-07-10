@@ -50,12 +50,100 @@ class DaemonManager private constructor(private val context: Context) {
         val isAlive: Boolean
     )
 
+    /** 守护进程整体状态 */
+    data class DaemonStatus(
+        val pid: Int,
+        val uptimeSeconds: Long,
+        val tunnelCount: Int,
+        val activeTunnelCount: Int
+    )
+
     /** API 响应 */
     data class ApiResponse<T>(
         val success: Boolean,
         val data: T?,
         val error: String?
     )
+
+    // ========== 守护进程控制 ==========
+
+    /** 获取守护进程整体状态 */
+    fun getStatus(): ApiResponse<DaemonStatus> {
+        return try {
+            val response = makeRequest("GET", "/api/daemon/status")
+            val json = JSONObject(response)
+
+            if (json.optBoolean("success", false)) {
+                val data = json.optJSONObject("data")
+                if (data != null) {
+                    ApiResponse(true, DaemonStatus(
+                        pid = data.optInt("pid", 0),
+                        uptimeSeconds = data.optLong("uptime_secs", 0),
+                        tunnelCount = data.optInt("tunnel_count", 0),
+                        activeTunnelCount = data.optInt("active_tunnel_count", 0)
+                    ), null)
+                } else {
+                    ApiResponse(true, null, null)
+                }
+            } else {
+                ApiResponse(false, null, json.optString("error", "未知错误"))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "获取守护进程状态失败", e)
+            ApiResponse(false, null, "获取失败: ${e.message}")
+        }
+    }
+
+    /** 启动守护进程（启用所有 enabled 隧道） */
+    fun start(): ApiResponse<String> {
+        return try {
+            val response = makeRequest("POST", "/api/daemon/restart")
+            val json = JSONObject(response)
+
+            if (json.optBoolean("success", false)) {
+                ApiResponse(true, json.optString("data", "已启动"), null)
+            } else {
+                ApiResponse(false, null, json.optString("error", "启动失败"))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "启动守护进程失败", e)
+            ApiResponse(false, null, "启动失败: ${e.message}")
+        }
+    }
+
+    /** 停止守护进程（停止所有隧道） */
+    fun stop(): ApiResponse<String> {
+        return try {
+            val response = makeRequest("POST", "/api/daemon/stop")
+            val json = JSONObject(response)
+
+            if (json.optBoolean("success", false)) {
+                ApiResponse(true, json.optString("data", "已停止"), null)
+            } else {
+                ApiResponse(false, null, json.optString("error", "停止失败"))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "停止守护进程失败", e)
+            ApiResponse(false, null, "停止失败: ${e.message}")
+        }
+    }
+
+    /** 重启守护进程（热重载所有隧道） */
+    fun restart(): ApiResponse<String> {
+        return try {
+            val response = makeRequest("POST", "/api/daemon/restart")
+            val json = JSONObject(response)
+
+            if (json.optBoolean("success", false)) {
+                ApiResponse(true, json.optString("data", "已重启"), null)
+            } else {
+                ApiResponse(false, null, json.optString("error", "重启失败"))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "重启守护进程失败", e)
+            ApiResponse(false, null, "重启失败: ${e.message}")
+        }
+    }
 
     // ========== 隧道管理 ==========
 
