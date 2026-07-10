@@ -324,6 +324,22 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/device/upload-file", post(api::mirror::upload_file_to_device))
         .route("/api/device/clipboard", get(api::mirror::get_device_clipboard).put(api::mirror::set_device_clipboard))
         .route("/api/device/info", get(api::mirror::get_device_info))
+        // 文件管理器
+        .route("/api/files", get(api::files::list_files))
+        .route("/api/files/read", get(api::files::read_file))
+        .route("/api/files/write", put(api::files::write_file))
+        .route("/api/files/info", get(api::files::file_info))
+        .route("/api/files/mkdir", post(api::files::create_dir))
+        .route("/api/files/create", post(api::files::create_file))
+        .route("/api/files/delete", post(api::files::delete_file))
+        .route("/api/files/rename", post(api::files::rename_file))
+        .route("/api/files/copy", post(api::files::copy_file))
+        .route("/api/files/upload", post(api::files::upload_file))
+        .route("/api/files/download", get(api::files::download_file))
+        .route("/api/files/chmod", post(api::files::chmod_file))
+        .route("/api/files/zip", post(api::files::zip_file))
+        .route("/api/files/unzip", post(api::files::unzip_file))
+        .route("/api/files/dir-size", get(api::files::dir_size))
         .merge(mirror_routes)
         .layer(CorsLayer::permissive());
 

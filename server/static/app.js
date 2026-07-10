@@ -13,10 +13,10 @@
     /* ===== Tab Switching ===== */
     function showTab(name) {
         document.querySelectorAll('.side-tab').forEach((t, i) => {
-            const tabs = ['dashboard','chat','mirror','library','tasks','scripts','tts','config','logs'];
+            const tabs = ['dashboard','chat','mirror','library','tasks','scripts','files','tts','config','logs'];
             t.classList.toggle('side-tab-active', tabs[i] === name);
         });
-        ['dashboard','chat','mirror','library','tasks','scripts','tts','config','logs'].forEach(id => {
+        ['dashboard','chat','mirror','library','tasks','scripts','files','tts','config','logs'].forEach(id => {
             const el = document.getElementById('tab-' + id);
             if (el) el.style.display = id === name ? 'flex' : 'none';
         });
@@ -25,6 +25,7 @@
         if (name === 'dashboard') refreshStatus();
         if (name === 'tasks' && !_loaded.tasks) { _loaded.tasks = true; loadTasks(); }
         if (name === 'scripts' && !_loaded.scripts) { _loaded.scripts = true; loadScripts(); }
+        if (name === 'files' && !_loaded.files) { _loaded.files = true; loadFileManager('/'); }
         if (name === 'tts' && !_loaded.tts) { _loaded.tts = true; loadTtsEngines(); loadTtsSettings(); }
         if (name === 'config' && !_loaded.config) { _loaded.config = true; loadEmailConfig(); loadMqttConfig(); loadVoiceSettings(); }
         if (name === 'logs') loadLogs();
@@ -1894,6 +1895,353 @@
         editor.value = editor.value.replace(/[ \t]+$/gm, '').replace(/\n*$/, '\n');
         showToast('已格式化', 'info');
     }
+
+    /* ===== File Manager ===== */
+    let _currentPath = '/';
+    let _fileClipboard = null; // { action: 'copy'|'cut', path: string }
+
+    // 文件类型图标映射
+    function fileIcon(name, isDir) {
+        if (isDir) return '<i class="fas fa-folder" style="color:#f0ad4e;"></i>';
+        const ext = (name.split('.').pop() || '').toLowerCase();
+        const iconMap = {
+            'sh':'fa-file-code','bash':'fa-file-code','py':'fa-file-code','js':'fa-file-code','ts':'fa-file-code',
+            'java':'fa-file-code','kt':'fa-file-code','rs':'fa-file-code','c':'fa-file-code','cpp':'fa-file-code',
+            'go':'fa-file-code','rb':'fa-file-code','php':'fa-file-code',
+            'json':'fa-file-alt','xml':'fa-file-alt','yaml':'fa-file-alt','yml':'fa-file-alt','toml':'fa-file-alt','conf':'fa-file-alt','cfg':'fa-file-alt','ini':'fa-file-alt',
+            'txt':'fa-file-alt','md':'fa-file-alt','log':'fa-file-alt','csv':'fa-file-alt',
+            'png':'fa-file-image','jpg':'fa-file-image','jpeg':'fa-file-image','gif':'fa-file-image','webp':'fa-file-image','svg':'fa-file-image','bmp':'fa-file-image',
+            'mp3':'fa-file-audio','wav':'fa-file-audio','ogg':'fa-file-audio','flac':'fa-file-audio','aac':'fa-file-audio',
+            'mp4':'fa-file-video','mkv':'fa-file-video','avi':'fa-file-video','webm':'fa-file-video','mov':'fa-file-video',
+            'zip':'fa-file-archive','tar':'fa-file-archive','gz':'fa-file-archive','bz2':'fa-file-archive','xz':'fa-file-archive','7z':'fa-file-archive','rar':'fa-file-archive',
+            'apk':'fa-file-archive','deb':'fa-file-archive','rpm':'fa-file-archive',
+            'pdf':'fa-file-pdf','doc':'fa-file-word','docx':'fa-file-word','xls':'fa-file-excel','xlsx':'fa-file-excel','ppt':'fa-file-powerpoint','pptx':'fa-file-powerpoint',
+        };
+        const icon = iconMap[ext] || 'fa-file';
+        const colorMap = {
+            'fa-file-code':'#4fc3f7','fa-file-alt':'#90a4ae','fa-file-image':'#81c784',
+            'fa-file-audio':'#ba68c8','fa-file-video':'#e57373','fa-file-archive':'#ffb74d',
+            'fa-file-pdf':'#e57373','fa-file-word':'#42a5f5','fa-file-excel':'#66bb6a','fa-file-powerpoint':'#ef5350',
+        };
+        const color = colorMap[icon] || '#90a4ae';
+        return '<i class="fas ' + icon + '" style="color:' + color + ';"></i>';
+    }
+
+    // 文件大小格式化
+    function formatSize(bytes) {
+        if (bytes === 0) return '-';
+        const units = ['B','KB','MB','GB','TB'];
+        let i = 0;
+        let size = bytes;
+        while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
+        return size.toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
+    }
+
+    // 时间格式化
+    function formatTimestamp(ts) {
+        if (!ts) return '-';
+        const d = new Date(ts * 1000);
+        const pad = n => String(n).padStart(2, '0');
+        return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    }
+
+    // 加载文件列表
+    async function loadFileManager(path) {
+        _currentPath = path || '/';
+        updateBreadcrumb();
+
+        const list = document.getElementById('file-list');
+        list.innerHTML = '<div style="padding:30px;text-align:center;opacity:0.5;"><i class="fas fa-spinner fa-spin"></i> 加载中...</div>';
+
+        try {
+            const res = await apiGet('/api/files?path=' + encodeURIComponent(_currentPath));
+            if (!res.ok) {
+                list.innerHTML = '<div class="ds-empty-state" style="padding:30px;"><i class="fas fa-exclamation-triangle" style="font-size:2rem;color:var(--ds-warning);"></i><p>' + escapeHtml(res.message || '加载失败') + '</p></div>';
+                return;
+            }
+
+            const files = res.data || [];
+            if (files.length === 0) {
+                list.innerHTML = '<div class="ds-empty-state" style="padding:30px;"><i class="fas fa-folder-open" style="font-size:2rem;opacity:0.3;"></i><p>空目录</p></div>';
+                return;
+            }
+
+            list.innerHTML = files.map(f => {
+                const icon = fileIcon(f.name, f.is_dir);
+                const size = f.is_dir ? '-' : formatSize(f.size);
+                const time = formatTimestamp(f.modified);
+                const nameStyle = f.is_dir ? 'color:var(--ds-blue);cursor:pointer;font-weight:500;' : 'cursor:pointer;';
+                const nameAction = f.is_dir ? 'onclick="loadFileManager(\'' + escapeJs(f.path) + '\')"' : 'onclick="fileOpen(\'' + escapeJs(f.path) + '\')"';
+                const downloadBtn = f.is_dir ? '' : '<a href="/api/files/download?path=' + encodeURIComponent(f.path) + '" download="' + escapeHtml(f.name) + '" style="color:var(--ds-text-secondary);padding:4px;" title="下载"><i class="fas fa-download" style="font-size:12px;"></i></a>';
+                const isZip = (f.name.toLowerCase().endsWith('.zip'));
+                const zipBtn = f.is_dir
+                    ? '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:4px;" onclick="fileZip(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')" title="压缩为zip"><i class="fas fa-file-archive" style="font-size:12px;"></i></button>'
+                    : (isZip
+                        ? '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:4px;" onclick="fileUnzip(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')" title="解压"><i class="fas fa-expand-arrows-alt" style="font-size:12px;"></i></button>'
+                        : '');
+
+                return '<div style="display:grid;grid-template-columns:1fr 100px 140px;gap:0;padding:8px 16px;align-items:center;border-bottom:1px solid var(--ds-border);font-size:13px;" ondblclick=' + (f.is_dir ? '"loadFileManager(\'' + escapeJs(f.path) + '\')"' : '"fileOpen(\'' + escapeJs(f.path) + '\')"') + '>' +
+                    '<div style="display:flex;align-items:center;gap:10px;min-width:0;">' +
+                    '<span style="font-size:16px;width:20px;text-align:center;">' + icon + '</span>' +
+                    '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' + nameStyle + '" ' + nameAction + '>' + escapeHtml(f.name) + '</span>' +
+                    '</div>' +
+                    '<span style="font-size:12px;color:var(--ds-text-tertiary);">' + size + '</span>' +
+                    '<div style="display:flex;align-items:center;gap:8px;">' +
+                    '<span style="font-size:12px;color:var(--ds-text-tertiary);min-width:80px;">' + time + '</span>' +
+                    '<div style="display:flex;gap:2px;flex-wrap:wrap;">' +
+                    '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:3px;" onclick="fileRename(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')" title="重命名"><i class="fas fa-pen" style="font-size:11px;"></i></button>' +
+                    '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:3px;" onclick="fileCopy(\'' + escapeJs(f.path) + '\')" title="复制"><i class="fas fa-copy" style="font-size:11px;"></i></button>' +
+                    '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:3px;" onclick="fileCut(\'' + escapeJs(f.path) + '\')" title="剪切"><i class="fas fa-cut" style="font-size:11px;"></i></button>' +
+                    '<button style="background:none;border:none;color:var(--ds-text-secondary);cursor:pointer;padding:3px;" onclick="fileChmod(\'' + escapeJs(f.path) + '\')" title="权限"><i class="fas fa-key" style="font-size:11px;"></i></button>' +
+                    zipBtn +
+                    downloadBtn +
+                    '<button style="background:none;border:none;color:var(--ds-warning);cursor:pointer;padding:3px;" onclick="fileDelete(\'' + escapeJs(f.path) + '\',\'' + escapeJs(f.name) + '\')" title="删除"><i class="fas fa-trash" style="font-size:11px;"></i></button>' +
+                    '</div></div></div>';
+            }).join('');
+        } catch (e) {
+            list.innerHTML = '<div class="ds-empty-state" style="padding:30px;"><p>请求异常: ' + escapeHtml(e.message) + '</p></div>';
+        }
+    }
+
+    function escapeJs(s) {
+        return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+
+    // 面包屑导航
+    function updateBreadcrumb() {
+        const bc = document.getElementById('file-breadcrumb');
+        const parts = _currentPath.split('/').filter(Boolean);
+        let html = '<span style="cursor:pointer;color:var(--ds-blue);font-weight:600;" onclick="loadFileManager(\'/\')">根目录</span>';
+        let cumPath = '';
+        for (const part of parts) {
+            cumPath += '/' + part;
+            const p = cumPath;
+            html += ' <i class="fas fa-chevron-right" style="font-size:10px;opacity:0.4;"></i> <span style="cursor:pointer;color:var(--ds-blue);" onclick="loadFileManager(\'' + escapeJs(p) + '\')">' + escapeHtml(part) + '</span>';
+        }
+        bc.innerHTML = html;
+    }
+
+    // 导航操作
+    function fileGoUp() {
+        const parts = _currentPath.split('/').filter(Boolean);
+        parts.pop();
+        loadFileManager('/' + parts.join('/'));
+    }
+
+    function fileRefresh() {
+        loadFileManager(_currentPath);
+    }
+
+    // 新建文件
+    async function fileNewFile() {
+        const name = prompt('输入文件名:');
+        if (!name) return;
+        const fullPath = _currentPath.replace(/\/$/, '') + '/' + name;
+        const res = await apiPost('/api/files/create', { path: fullPath });
+        if (res.ok) { showToast('已创建', 'success'); loadFileManager(_currentPath); }
+        else showToast(res.message || '创建失败', 'error');
+    }
+
+    // 新建目录
+    async function fileNewFolder() {
+        const name = prompt('输入目录名:');
+        if (!name) return;
+        const fullPath = _currentPath.replace(/\/$/, '') + '/' + name;
+        const res = await apiPost('/api/files/mkdir', { path: fullPath });
+        if (res.ok) { showToast('已创建', 'success'); loadFileManager(_currentPath); }
+        else showToast(res.message || '创建失败', 'error');
+    }
+
+    // 删除
+    async function fileDelete(path, name) {
+        if (!confirm('确定删除 "' + name + '"？')) return;
+        const res = await apiPost('/api/files/delete', { path });
+        if (res.ok) { showToast('已删除', 'success'); loadFileManager(_currentPath); }
+        else showToast(res.message || '删除失败', 'error');
+    }
+
+    // 重命名
+    async function fileRename(path, oldName) {
+        const newName = prompt('新名称:', oldName);
+        if (!newName || newName === oldName) return;
+        const parent = path.substring(0, path.lastIndexOf('/'));
+        const res = await apiPost('/api/files/rename', { from: path, to: parent + '/' + newName });
+        if (res.ok) { showToast('已重命名', 'success'); loadFileManager(_currentPath); }
+        else showToast(res.message || '重命名失败', 'error');
+    }
+
+    // 复制/剪切
+    function fileCopy(path) {
+        _fileClipboard = { action: 'copy', path };
+        updateClipboardBar();
+    }
+
+    function fileCut(path) {
+        _fileClipboard = { action: 'cut', path };
+        updateClipboardBar();
+    }
+
+    function updateClipboardBar() {
+        const bar = document.getElementById('file-clipboard-bar');
+        const info = document.getElementById('file-clipboard-info');
+        if (_fileClipboard) {
+            const action = _fileClipboard.action === 'copy' ? '复制' : '剪切';
+            info.textContent = '已' + action + ': ' + _fileClipboard.path;
+            bar.style.display = 'flex';
+        } else {
+            bar.style.display = 'none';
+        }
+    }
+
+    function fileClearClipboard() {
+        _fileClipboard = null;
+        updateClipboardBar();
+    }
+
+    // 粘贴
+    async function filePaste() {
+        if (!_fileClipboard) return;
+        const from = _fileClipboard.path;
+        const name = from.split('/').pop();
+        const to = _currentPath.replace(/\/$/, '') + '/' + name;
+
+        if (from === to) { showToast('源和目标相同', 'error'); return; }
+
+        if (_fileClipboard.action === 'copy') {
+            const res = await apiPost('/api/files/copy', { from, to });
+            if (res.ok) { showToast('已复制', 'success'); loadFileManager(_currentPath); }
+            else showToast(res.message || '复制失败', 'error');
+        } else {
+            const res = await apiPost('/api/files/rename', { from, to });
+            if (res.ok) { showToast('已移动', 'success'); fileClearClipboard(); loadFileManager(_currentPath); }
+            else showToast(res.message || '移动失败', 'error');
+        }
+    }
+
+    // 打开文件（编辑）
+    async function fileOpen(path) {
+        const name = path.split('/').pop();
+        document.getElementById('file-editor-title').textContent = '编辑: ' + name;
+        document.getElementById('file-editor-content').value = '加载中...';
+        document.getElementById('file-editor-modal').style.display = 'flex';
+        document.getElementById('file-editor-modal').dataset.path = path;
+
+        const res = await apiGet('/api/files/read?path=' + encodeURIComponent(path));
+        if (res.ok) {
+            document.getElementById('file-editor-content').value = res.data || '';
+            document.getElementById('file-editor-info').textContent = formatSize((res.data || '').length);
+        } else {
+            document.getElementById('file-editor-content').value = '';
+            document.getElementById('file-editor-info').textContent = res.message || '加载失败';
+        }
+    }
+
+    // 文件编辑器保存
+    async function fileEditorSave() {
+        const modal = document.getElementById('file-editor-modal');
+        const path = modal.dataset.path;
+        if (!path) return;
+
+        const content = document.getElementById('file-editor-content').value;
+        const res = await apiPut('/api/files/write', { path, content });
+        if (res.ok) showToast('已保存', 'success');
+        else showToast(res.message || '保存失败', 'error');
+    }
+
+    // 文件上传
+    async function fileUpload(files) {
+        if (!files || files.length === 0) return;
+        const total = files.length;
+        let done = 0;
+
+        for (const file of files) {
+            showToast('上传中 (' + (done + 1) + '/' + total + '): ' + file.name, 'info');
+            const formData = new FormData();
+            formData.append('dir', _currentPath);
+            formData.append('file', file);
+
+            try {
+                const res = await fetch('/api/files/upload', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    done++;
+                } else {
+                    showToast('上传失败: ' + (data.message || ''), 'error');
+                }
+            } catch (e) {
+                showToast('上传异常: ' + e.message, 'error');
+            }
+        }
+
+        if (done > 0) {
+            showToast('已上传 ' + done + '/' + total + ' 个文件', 'success');
+            loadFileManager(_currentPath);
+        }
+        // 清空 input 以便重复选择同一文件
+        document.getElementById('file-upload-input').value = '';
+    }
+
+    // 修改权限
+    async function fileChmod(path) {
+        const mode = prompt('输入权限 (如 755, 644, rwxr-xr-x):', '755');
+        if (!mode) return;
+        const res = await apiPost('/api/files/chmod', { path, mode });
+        if (res.ok) {
+            showToast('权限已修改', 'success');
+            loadFileManager(_currentPath);
+        } else {
+            showToast(res.message || '修改失败', 'error');
+        }
+    }
+
+    // 压缩 zip
+    async function fileZip(path, name) {
+        const defaultName = name + '.zip';
+        const zipName = prompt('zip 文件名:', defaultName);
+        if (!zipName) return;
+        const dest = _currentPath.replace(/\/$/, '') + '/' + zipName;
+        showToast('压缩中...', 'info');
+        const res = await apiPost('/api/files/zip', { source: path, destination: dest });
+        if (res.ok) {
+            showToast(res.message || '已压缩', 'success');
+            loadFileManager(_currentPath);
+        } else {
+            showToast(res.message || '压缩失败', 'error');
+        }
+    }
+
+    // 解压 zip
+    async function fileUnzip(path, name) {
+        const dirName = name.replace(/\.zip$/i, '');
+        const dest = _currentPath.replace(/\/$/, '') + '/' + dirName;
+        showToast('解压中...', 'info');
+        const res = await apiPost('/api/files/unzip', { source: path, destination: dest });
+        if (res.ok) {
+            showToast(res.message || '已解压', 'success');
+            loadFileManager(_currentPath);
+        } else {
+            showToast(res.message || '解压失败', 'error');
+        }
+    }
+
+    // 文件编辑器自动换行切换
+    function fileEditorWordWrap() {
+        const ta = document.getElementById('file-editor-content');
+        ta.style.whiteSpace = ta.style.whiteSpace === 'pre-wrap' ? 'pre' : 'pre-wrap';
+    }
+
+    // 文件编辑器 Ctrl+S
+    document.addEventListener('DOMContentLoaded', () => {
+        const editor = document.getElementById('file-editor-content');
+        if (editor) {
+            editor.addEventListener('keydown', (e) => {
+                if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    fileEditorSave();
+                }
+            });
+        }
+    });
 
     /* ===== TTS ===== */
     async function loadTtsEngines() {

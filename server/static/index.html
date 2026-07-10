@@ -54,6 +54,13 @@
                 <span class="side-tab-label">脚本</span>
                 <span class="side-tab-indicator"></span>
             </button>
+            <button class="side-tab" onclick="showTab('files')">
+                <svg class="side-tab-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                </svg>
+                <span class="side-tab-label">文件</span>
+                <span class="side-tab-indicator"></span>
+            </button>
             <button class="side-tab" onclick="showTab('tts')">
                 <svg class="side-tab-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072M12 6l-4 4H4v4h4l4 4V6z" />
@@ -465,6 +472,60 @@
                 </div>
             </section>
 
+            <!-- ========== File Manager ========== -->
+            <section id="tab-files" class="tab-content page-content" style="display:none;">
+                <div class="ds-page-intro">
+                    <div>
+                        <h1 class="ds-page-intro-title">文件管理</h1>
+                        <p class="ds-page-intro-description">浏览和管理设备文件</p>
+                    </div>
+                    <div class="ds-page-intro-actions">
+                        <button class="ds-btn-secondary" onclick="fileGoUp()" title="上级目录"><i class="fas fa-level-up-alt"></i> 上级</button>
+                        <button class="ds-btn-secondary" onclick="fileRefresh()" title="刷新"><i class="fas fa-sync-alt"></i> 刷新</button>
+                        <button class="ds-btn-secondary" onclick="fileNewFolder()"><i class="fas fa-folder-plus"></i> 新建目录</button>
+                        <button class="ds-btn-secondary" onclick="fileNewFile()"><i class="fas fa-file-medical"></i> 新建文件</button>
+                        <button class="ds-btn-secondary" onclick="document.getElementById('file-upload-input').click()"><i class="fas fa-upload"></i> 上传文件</button>
+                        <input type="file" id="file-upload-input" style="display:none;" multiple onchange="fileUpload(this.files)">
+                    </div>
+                </div>
+
+                <!-- 面包屑导航 -->
+                <div id="file-breadcrumb" style="display:flex;align-items:center;gap:4px;padding:10px 16px;background:var(--ds-surface);border:1px solid var(--ds-border);border-radius:var(--radius-ctrl);margin-bottom:12px;overflow-x:auto;white-space:nowrap;">
+                    <span style="cursor:pointer;color:var(--ds-blue);" onclick="loadFileManager('/')">/</span>
+                </div>
+
+                <!-- 剪贴板状态 -->
+                <div id="file-clipboard-bar" style="display:none;padding:8px 16px;background:var(--ds-blue-light);border:1px solid var(--ds-selected-border);border-radius:var(--radius-ctrl);margin-bottom:12px;font-size:13px;">
+                    <span id="file-clipboard-info"></span>
+                    <button class="ds-btn-primary" style="font-size:12px;padding:4px 12px;margin-left:8px;" onclick="filePaste()"><i class="fas fa-paste"></i> 粘贴</button>
+                    <button class="ds-btn-secondary" style="font-size:12px;padding:4px 12px;" onclick="fileClearClipboard()"><i class="fas fa-times"></i> 取消</button>
+                </div>
+
+                <!-- 文件列表 -->
+                <div id="file-list-container" style="border:1px solid var(--ds-border);border-radius:var(--radius-ctrl);overflow:hidden;">
+                    <div style="display:grid;grid-template-columns:1fr 100px 140px;gap:0;padding:8px 16px;background:var(--ds-surface);font-size:12px;font-weight:600;color:var(--ds-text-secondary);border-bottom:1px solid var(--ds-border);">
+                        <span>名称</span>
+                        <span>大小</span>
+                        <span>修改时间 / 操作</span>
+                    </div>
+                    <div id="file-list">
+                        <div class="ds-empty-state" style="padding:40px;">
+                            <i class="fas fa-folder-open" style="font-size:2rem;opacity:0.3;"></i>
+                            <p>加载中...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 文件属性面板 -->
+                <div id="file-info-panel" style="display:none;margin-top:12px;padding:14px 16px;background:var(--ds-card);border:1px solid var(--ds-border);border-radius:var(--radius-ctrl);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <strong id="file-info-name"></strong>
+                        <button class="ds-btn-secondary" style="font-size:11px;padding:3px 8px;" onclick="document.getElementById('file-info-panel').style.display='none'"><i class="fas fa-times"></i></button>
+                    </div>
+                    <div id="file-info-details" style="margin-top:8px;font-size:13px;color:var(--ds-text-secondary);"></div>
+                </div>
+            </section>
+
             <!-- ========== TTS ========== -->
             <section id="tab-tts" class="tab-content page-content" style="display:none;">
                 <div class="ds-page-intro">
@@ -744,6 +805,29 @@
             <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:12px;">
                 <button class="ds-btn-secondary" onclick="document.getElementById('script-modal').style.display='none'">取消</button>
                 <button class="ds-btn-primary" onclick="saveScript()"><i class="fas fa-save"></i> 保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- File Editor Modal -->
+    <div class="ds-modal-overlay" id="file-editor-modal" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+        <div class="ds-modal-card" style="width:92vw;max-width:900px;height:85vh;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <h3 style="font-weight:700;font-size:1.1rem;" id="file-editor-title">编辑文件</h3>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <span id="file-editor-info" style="font-size:12px;color:var(--ds-text-secondary);"></span>
+                    <button class="ds-btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="fileEditorWordWrap()"><i class="fas fa-text-width"></i> 换行</button>
+                </div>
+            </div>
+            <div class="form-group" style="flex:1;display:flex;flex-direction:column;">
+                <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+                    <span style="font-size:11px;color:var(--ds-text-tertiary);padding:4px 0;">快捷键: Ctrl+S=保存 | Ctrl+Z=撤销</span>
+                </div>
+                <textarea id="file-editor-content" class="ds-code-editor" placeholder="文件内容..."></textarea>
+            </div>
+            <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:12px;">
+                <button class="ds-btn-secondary" onclick="document.getElementById('file-editor-modal').style.display='none'">关闭</button>
+                <button class="ds-btn-primary" onclick="fileEditorSave()"><i class="fas fa-save"></i> 保存</button>
             </div>
         </div>
     </div>
