@@ -43,7 +43,10 @@ jobs:
         id: version
         run: |
           VERSION=$(grep '^version' server/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          echo "version=v${VERSION}" >> $GITHUB_OUTPUT
+          MAJOR=$(echo $VERSION | cut -d. -f1)
+          MINOR=$(echo $VERSION | cut -d. -f2)
+          NEXT_MINOR=$((MINOR + 1))
+          echo "version=v${MAJOR}.${NEXT_MINOR}.0-dev" >> $GITHUB_OUTPUT
 
       - name: Build Server
         working-directory: server
@@ -93,7 +96,10 @@ jobs:
         id: version
         run: |
           VERSION=$(grep '^version' server/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          echo "version=v${VERSION}" >> $GITHUB_OUTPUT
+          MAJOR=$(echo $VERSION | cut -d. -f1)
+          MINOR=$(echo $VERSION | cut -d. -f2)
+          NEXT_MINOR=$((MINOR + 1))
+          echo "version=v${MAJOR}.${NEXT_MINOR}.0-dev" >> $GITHUB_OUTPUT
 
       - name: Build Debug APK
         working-directory: android
@@ -123,7 +129,10 @@ jobs:
         id: version
         run: |
           VERSION=$(grep '^version' server/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          echo "version=v${VERSION}" >> $GITHUB_OUTPUT
+          MAJOR=$(echo $VERSION | cut -d. -f1)
+          MINOR=$(echo $VERSION | cut -d. -f2)
+          NEXT_MINOR=$((MINOR + 1))
+          echo "version=v${MAJOR}.${NEXT_MINOR}.0-dev" >> $GITHUB_OUTPUT
 
       - name: Download Server artifact
         uses: actions/download-artifact@v4
@@ -144,14 +153,14 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const tagPrefix = '${{ steps.version.outputs.version }}-pre';
+            const tagName = '${{ steps.version.outputs.version }}';
             const releases = await github.rest.repos.listReleases({
               owner: context.repo.owner,
               repo: context.repo.repo,
               per_page: 100
             });
             for (const rel of releases.data) {
-              if (rel.prerelease && rel.tag_name === tagPrefix) {
+              if (rel.prerelease && rel.tag_name === tagName) {
                 try {
                   await github.rest.repos.deleteRelease({
                     owner: context.repo.owner,
@@ -169,14 +178,14 @@ jobs:
               await github.rest.git.deleteRef({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                ref: `tags/${tagPrefix}`
+                ref: `tags/${tagName}`
               });
             } catch (e) { /* tag 可能不存在 */ }
 
       - name: Create Pre-release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.version }}-pre
+          tag_name: ${{ steps.version.outputs.version }}
           name: "[预发布] TaskMod ${{ steps.version.outputs.version }}"
           body: |
             ## TaskMod ${{ steps.version.outputs.version }} (预发布)
