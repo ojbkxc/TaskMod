@@ -2167,6 +2167,40 @@
                         <span class="recording-dot"></span> 录制中
                     </div>
                 </div>
+
+                <!-- 设备工具栏 -->
+                <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;">
+                    <button class="ds-btn-primary" onclick="loadDeviceInfo()" style="font-size:13px;padding:8px 16px;"><i class="fas fa-info-circle"></i> 设备信息</button>
+                    <button class="ds-btn-primary" onclick="getDeviceClipboard()" style="font-size:13px;padding:8px 16px;"><i class="fas fa-clipboard"></i> 获取剪贴板</button>
+                    <button class="ds-btn-primary" onclick="setDeviceClipboard()" style="font-size:13px;padding:8px 16px;"><i class="fas fa-paste"></i> 设置剪贴板</button>
+                    <button class="ds-btn-primary" onclick="document.getElementById('file-upload-input').click()" style="font-size:13px;padding:8px 16px;"><i class="fas fa-upload"></i> 上传文件到设备</button>
+                    <input type="file" id="file-upload-input" style="display:none;" multiple onchange="handleFileSelect(this.files)">
+                </div>
+
+                <!-- 设备信息 -->
+                <div id="device-info-container" style="margin-top:12px;display:none;">
+                    <div class="ds-card" style="padding:16px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                            <h3 style="margin:0;font-size:15px;"><i class="fas fa-mobile-alt"></i> 设备信息</h3>
+                            <button onclick="document.getElementById('device-info-container').style.display='none'" style="background:none;border:none;cursor:pointer;font-size:16px;opacity:0.6;">&times;</button>
+                        </div>
+                        <div id="device-info" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;"></div>
+                    </div>
+                </div>
+
+                <!-- 剪贴板 -->
+                <div id="clipboard-container" style="margin-top:12px;display:none;">
+                    <div class="ds-card" style="padding:16px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                            <h3 style="margin:0;font-size:15px;"><i class="fas fa-clipboard"></i> 剪贴板同步</h3>
+                            <button onclick="document.getElementById('clipboard-container').style.display='none'" style="background:none;border:none;cursor:pointer;font-size:16px;opacity:0.6;">&times;</button>
+                        </div>
+                        <textarea id="clipboard-text" rows="3" placeholder="剪贴板内容..." style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--ds-border);background:var(--ds-bg);color:var(--ds-text);resize:vertical;box-sizing:border-box;"></textarea>
+                    </div>
+                </div>
+
+                <!-- 文件上传进度 -->
+                <div id="file-upload-progress" style="margin-top:12px;"></div>
             </section>
 
             <!-- ========== Tasks ========== -->
@@ -2749,6 +2783,91 @@
         const res = await apiPost('/api/command', { command: 'input swipe 540 1800 540 600 300' });
         if (res.ok) showToast('上滑解锁已执行', 'success');
         else showToast(res.message || '解锁失败', 'error');
+    }
+
+    /* ===== 设备工具 (剪贴板/上传/设备信息) ===== */
+    async function loadDeviceInfo() {
+        const container = document.getElementById('device-info-container');
+        const el = document.getElementById('device-info');
+        container.style.display = 'block';
+        el.innerHTML = '<p style="color:var(--ds-text-secondary);">加载中...</p>';
+        try {
+            const res = await apiGet('/api/device/info');
+            if (!res.success) { el.innerHTML = '<p style="color:var(--ds-text-secondary);">获取失败</p>'; return; }
+            const info = res.data;
+            const icons = { model:'📱', android_version:'🤖', screen_size:'🖥️', battery:'🔋', ip:'🌐', storage:'💾' };
+            const labels = { model:'设备型号', android_version:'Android版本', screen_size:'屏幕分辨率', battery:'电池', ip:'IP地址', storage:'存储空间' };
+            el.innerHTML = Object.entries(info).map(([k,v]) =>
+                '<div style="padding:12px;text-align:center;background:var(--ds-bg);border-radius:8px;border:1px solid var(--ds-border);">' +
+                    '<div style="font-size:24px;">' + (icons[k]||'📊') + '</div>' +
+                    '<div style="font-size:16px;font-weight:bold;margin:5px 0;">' + (v||'N/A') + '</div>' +
+                    '<div style="color:var(--ds-text-secondary);font-size:12px;">' + (labels[k]||k) + '</div>' +
+                '</div>'
+            ).join('');
+        } catch(e) {
+            el.innerHTML = '<p style="color:var(--ds-text-secondary);">请求失败: ' + e.message + '</p>';
+        }
+    }
+
+    async function getDeviceClipboard() {
+        const container = document.getElementById('clipboard-container');
+        container.style.display = 'block';
+        try {
+            const res = await apiGet('/api/device/clipboard');
+            if (res.success) {
+                document.getElementById('clipboard-text').value = res.data || '';
+                showToast('已获取设备剪贴板');
+            } else {
+                showToast(res.message || '获取失败', 'error');
+            }
+        } catch(e) {
+            showToast('获取剪贴板失败: ' + e.message, 'error');
+        }
+    }
+
+    async function setDeviceClipboard() {
+        const container = document.getElementById('clipboard-container');
+        container.style.display = 'block';
+        const text = document.getElementById('clipboard-text').value;
+        if (!text) { showToast('请输入文本', 'error'); return; }
+        try {
+            const res = await fetch('/api/device/clipboard', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text })
+            });
+            const data = await res.json();
+            showToast(data.success ? '已设置设备剪贴板' : (data.message || '设置失败'), data.success ? 'success' : 'error');
+        } catch(e) {
+            showToast('设置剪贴板失败: ' + e.message, 'error');
+        }
+    }
+
+    function handleFileSelect(files) {
+        if (files.length > 0) uploadFilesToDevice(files);
+    }
+
+    async function uploadFilesToDevice(files) {
+        const progress = document.getElementById('file-upload-progress');
+        for (const file of files) {
+            progress.innerHTML = '<p style="color:var(--ds-text-secondary);">正在上传: ' + file.name + ' (' + (file.size/1024).toFixed(1) + 'KB)...</p>';
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const base64 = e.target.result.split(',')[1];
+                try {
+                    const res = await apiPost('/api/device/upload-file', { file_base64: base64, filename: file.name });
+                    if (res.success) {
+                        progress.innerHTML += '<p style="color:#28a745;">✓ ' + file.name + ' → ' + res.data + '</p>';
+                    } else {
+                        progress.innerHTML += '<p style="color:#dc3545;">✗ ' + file.name + ': ' + (res.message || '上传失败') + '</p>';
+                    }
+                } catch(err) {
+                    progress.innerHTML += '<p style="color:#dc3545;">✗ ' + file.name + ': ' + err.message + '</p>';
+                }
+            };
+            reader.readAsDataURL(file);
+            await new Promise(r => setTimeout(r, 500));
+        }
     }
 
     /* ===== AI Chat ===== */
