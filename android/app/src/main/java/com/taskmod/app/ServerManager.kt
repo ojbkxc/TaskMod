@@ -127,7 +127,7 @@ class ServerManager private constructor(private val context: Context) {
     }
 
     fun isRunning(): Boolean {
-        // 先检查进程是否存活
+        // 先检查本实例启动的进程是否存活
         val proc = process
         if (proc != null) {
             try {
@@ -137,11 +137,11 @@ class ServerManager private constructor(private val context: Context) {
                 state = ServerState.STOPPED
                 return false
             } catch (e: IllegalThreadStateException) {
-                // 进程仍在运行
+                // 进程仍在运行，继续 HTTP 验证
             }
         }
 
-        // 通过 HTTP 检查服务是否响应
+        // 通过 HTTP 检查服务是否响应（兼容外部启动的进程，如 Magisk 模块）
         return try {
             val url = URL("http://127.0.0.1:$port/api/status")
             val conn = url.openConnection() as HttpURLConnection
@@ -154,6 +154,19 @@ class ServerManager private constructor(private val context: Context) {
             }
             result
         } catch (e: Exception) {
+            // HTTP 检查失败，尝试检查进程列表作为后备方案
+            if (proc == null) {
+                try {
+                    val checkProcess = Runtime.getRuntime().exec(arrayOf("pgrep", "-f", BINARY_NAME))
+                    val exitCode = checkProcess.waitFor()
+                    if (exitCode == 0 && state != ServerState.RUNNING) {
+                        state = ServerState.RUNNING
+                        return true
+                    }
+                } catch (ex: Exception) {
+                    // pgrep 不可用，忽略
+                }
+            }
             false
         }
     }

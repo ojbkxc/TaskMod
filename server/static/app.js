@@ -9,6 +9,57 @@
     let isChatStreaming = false;
     let ttsReplyEnabled = false; // 朗读AI回复开关
 
+    /* ===== Token 速度跟踪 ===== */
+    let _tokenTracker = null;
+    function createTokenSpeedTracker() {
+        let totalTokens = 0;
+        let startTime = 0;
+        let lastUpdateTime = 0;
+        return {
+            start() { totalTokens = 0; startTime = performance.now(); lastUpdateTime = startTime; },
+            addTokens(count) { totalTokens += count; lastUpdateTime = performance.now(); },
+            getSpeed() {
+                const elapsed = (lastUpdateTime - startTime) / 1000;
+                if (elapsed <= 0) return 0;
+                return Math.round(totalTokens / elapsed);
+            },
+            getTotal() { return totalTokens; },
+            getElapsed() { return Math.round((lastUpdateTime - startTime) / 1000); }
+        };
+    }
+
+    /* ===== 语音输入（Web Speech API） ===== */
+    let _speechRecognition = null;
+    let _isListening = false;
+    function startVoiceInput(inputEl) {
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+            showToast('浏览器不支持语音输入', 'error');
+            return;
+        }
+        if (_isListening) { stopVoiceInput(); return; }
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        _speechRecognition = new SpeechRecognition();
+        _speechRecognition.lang = 'zh-CN';
+        _speechRecognition.continuous = true;
+        _speechRecognition.interimResults = true;
+        _speechRecognition.onresult = function(e) {
+            let final = '', interim = '';
+            for (let i = e.resultIndex; i < e.results.length; i++) {
+                if (e.results[i].isFinal) final += e.results[i][0].transcript;
+                else interim += e.results[i][0].transcript;
+            }
+            if (final) inputEl.value += final;
+        };
+        _speechRecognition.onerror = function() { _isListening = false; };
+        _speechRecognition.onend = function() { _isListening = false; };
+        _speechRecognition.start();
+        _isListening = true;
+    }
+    function stopVoiceInput() {
+        if (_speechRecognition) { _speechRecognition.stop(); _speechRecognition = null; }
+        _isListening = false;
+    }
+
     /* ===== WebSocket 自动重连 (参照 Scarlet 指数退避策略) ===== */
     class WsAutoReconnect {
         constructor(url, options = {}) {
@@ -120,7 +171,7 @@
         if (name === 'dashboard') refreshStatus();
         if (name === 'tasks' && !_loaded.tasks) { _loaded.tasks = true; loadTasks(); }
         if (name === 'scripts' && !_loaded.scripts) { _loaded.scripts = true; loadScripts(); }
-        if (name === 'files' && !_loaded.files) { _loaded.files = true; loadFileManager('/'); }
+        if (name === 'files' && !_loaded.files) { _loaded.files = true; loadFileManager('/sdcard'); }
         if (name === 'tts' && !_loaded.tts) { _loaded.tts = true; loadTtsEngines(); loadTtsSettings(); }
         if (name === 'config' && !_loaded.config) { _loaded.config = true; loadEmailConfig(); loadMqttConfig(); loadVoiceSettings(); }
         if (name === 'logs') loadLogs();
@@ -1167,12 +1218,19 @@
             if (!currentAssistantEl) {
                 currentAssistantEl = createMessageRow('assistant', '');
                 container.appendChild(currentAssistantEl);
+                // 启动 token 速度跟踪
+                _tokenTracker = createTokenSpeedTracker();
+                _tokenTracker.start();
             }
             const body = currentAssistantEl.querySelector('.ds-chat-message-content') || currentAssistantEl.querySelector('.markdown-body');
             if (body) {
                 const cursor = body.querySelector('.ds-streaming-cursor');
                 if (cursor) cursor.remove();
                 body.innerHTML += escapeHtml(msg.content) + '<span class="ds-streaming-cursor"></span>';
+                // 跟踪 token 数量
+                if (_tokenTracker) _tokenTracker.addTokens(msg.content.length);
+                // 更新 token 速度指示器
+                updateTokenSpeedIndicator();
             }
             scrollChatToBottom();
         } else if (msg.type === 'thinking') {
@@ -1238,6 +1296,13 @@
                     }
                     // 为代码块添加复制按钮
                     addCodeBlockCopyButtons(body);
+                    // 显示最终统计
+                    if (_tokenTracker) {
+                        const stats = document.createElement('div');
+                        stats.className = 'ds-chat-stats';
+                        stats.textContent = _tokenTracker.getTotal() + ' tokens · ' + _tokenTracker.getSpeed() + ' tokens/s · ' + _tokenTracker.getElapsed() + 's';
+                        body.appendChild(stats);
+                    }
                 }
                 // 自动朗读AI回复
                 if (ttsReplyEnabled && body) {
@@ -1247,6 +1312,8 @@
             }
             currentAssistantEl = null;
             isChatStreaming = false;
+            removeTokenSpeedIndicator();
+            _tokenTracker = null;
         } else if (msg.type === 'title') {
             // 对话标题自动生成
             if (msg.title) {
@@ -1357,6 +1424,25 @@
                 showToast('复制失败', 'error');
             });
         }
+    }
+
+    function updateTokenSpeedIndicator() {
+        if (!_tokenTracker) return;
+        let indicator = document.getElementById('token-speed-indicator');
+        if (!indicator) {
+            indicator = document.createElement('div');
+            indicator.id = 'token-speed-indicator';
+            indicator.className = 'ds-token-speed';
+            const chatContainer = document.getElementById('chat-messages');
+            if (chatContainer) chatContainer.parentElement.appendChild(indicator);
+        }
+        indicator.textContent = _tokenTracker.getSpeed() + ' tokens/s';
+        indicator.style.display = 'block';
+    }
+
+    function removeTokenSpeedIndicator() {
+        const indicator = document.getElementById('token-speed-indicator');
+        if (indicator) indicator.style.display = 'none';
     }
 
     function scrollChatToBottom() {

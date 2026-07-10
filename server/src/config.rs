@@ -8,6 +8,14 @@ pub const AI_CONF: &str = "/sdcard/TaskMod/ai.conf";
 pub const MQTT_CONF: &str = "/sdcard/TaskMod/mqtt.conf";
 pub const LOG_FILE: &str = "/data/adb/modules/TaskMod/TaskMod.log";
 pub const WEB_PORT: u16 = 9527;
+
+/// 获取实际监听端口，优先使用环境变量 TASKMOD_PORT
+pub fn get_listen_port() -> u16 {
+    std::env::var("TASKMOD_PORT")
+        .ok()
+        .and_then(|s| s.parse::<u16>().ok())
+        .unwrap_or(WEB_PORT)
+}
 #[allow(dead_code)]
 pub const MOD_DIR: &str = "/data/adb/modules/TaskMod";
 

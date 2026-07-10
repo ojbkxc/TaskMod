@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 
-use crate::config::WEB_PORT;
+use crate::config::get_listen_port;
 use crate::state::MirrorState;
 
 mod api;
@@ -347,8 +347,9 @@ async fn main() -> anyhow::Result<()> {
         .merge(mirror_routes)
         .layer(CorsLayer::permissive());
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], WEB_PORT));
-    println!("TaskMod Web 管理服务已启动: http://0.0.0.0:{}", WEB_PORT);
+    let listen_port = get_listen_port();
+    let addr = SocketAddr::from(([0, 0, 0, 0], listen_port));
+    println!("TaskMod Web 管理服务已启动: http://0.0.0.0:{}", listen_port);
 
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
