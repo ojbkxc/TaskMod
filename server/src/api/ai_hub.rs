@@ -263,6 +263,12 @@ pub struct Memory {
     pub updated_at: i64,
     #[serde(default)]
     pub pinned: bool,
+    #[serde(default)]
+    pub access_count: i32,
+    #[serde(default)]
+    pub last_accessed_at: i64,
+    #[serde(default)]
+    pub archived: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -275,12 +281,14 @@ pub struct MemoryReq {
     pub project_id: Option<String>,
     pub tags: Option<Vec<String>>,
     pub pinned: Option<bool>,
+    pub archived: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct MemoryQuery {
     pub q: Option<String>,
     pub category: Option<String>,
+    pub include_archived: Option<bool>,
 }
 
 fn memory_path(id: &str) -> String {
@@ -309,6 +317,10 @@ pub fn get_all_memories_sync() -> Vec<Memory> {
 pub async fn list_memories(Query(q): Query<MemoryQuery>) -> Json<ApiResponse<Vec<Memory>>> {
     let mut items: Vec<Memory> = list_json_dir(MEMORY_DIR).await;
 
+    // 默认不显示归档记忆
+    if !q.include_archived.unwrap_or(false) {
+        items.retain(|m| !m.archived);
+    }
     if let Some(ref keyword) = q.q {
         let kw = keyword.to_lowercase();
         items.retain(|m| m.content.to_lowercase().contains(&kw) || m.tags.iter().any(|t| t.to_lowercase().contains(&kw)));
@@ -339,6 +351,9 @@ pub async fn create_memory(Json(req): Json<MemoryReq>) -> Json<ApiResponse<Memor
         created_at: now,
         updated_at: now,
         pinned: req.pinned.unwrap_or(false),
+        access_count: 0,
+        last_accessed_at: 0,
+        archived: false,
     };
     match write_json_file(&memory_path(&mem.id), &mem).await {
         Ok(()) => Json(ApiResponse::ok(mem)),
@@ -363,6 +378,7 @@ pub async fn update_memory(
     if let Some(pid) = req.project_id { mem.project_id = pid; }
     if let Some(tags) = req.tags { mem.tags = tags; }
     if let Some(pinned) = req.pinned { mem.pinned = pinned; }
+    if let Some(archived) = req.archived { mem.archived = archived; }
     mem.updated_at = now_ms();
     match write_json_file(&path, &mem).await {
         Ok(()) => Json(ApiResponse::ok(mem)),
@@ -374,6 +390,188 @@ pub async fn delete_memory(Path(id): Path<String>) -> Json<ApiResponse<String>> 
     match fs::remove_file(&memory_path(&id)).await {
         Ok(()) => Json(ApiResponse::ok("已删除".to_string())),
         Err(_) => Json(ApiResponse::err("删除失败")),
+    }
+}
+
+/// 记忆token预算常量
+const MEMORY_TOKEN_BUDGET: usize = 2000;
+
+/// 估算文本token数量（参照deepseek-pp-main）
+fn estimate_tokens(text: &str) -> usize {
+    let mut tokens: f64 = 0.0;
+    for ch in text.chars() {
+        if (ch as u32) > 0x7F {
+            tokens += 0.6;
+        } else {
+            tokens += 0.3;
+        }
+    }
+    tokens.ceil() as usize
+}
+
+/// 获取记忆token预算（根据prompt长度动态调整）
+pub fn get_memory_budget(prompt_tokens: usize) -> usize {
+    if prompt_tokens > 3000 {
+        MEMORY_TOKEN_BUDGET.saturating_sub((prompt_tokens - 3000) / 5)
+    } else {
+        MEMORY_TOKEN_BUDGET
+    }
+}
+
+/// 格式化单条记忆为文本行
+fn format_memory_line(mem: &Memory) -> String {
+    let scope_prefix = if mem.scope == "project" { "project " } else { "" };
+    format!("- #{} [{}{}{}] {}",
+        mem.id,
+        scope_prefix,
+        mem.memory_type,
+        if mem.archived { ",archived" } else { "" },
+        if mem.name.is_empty() {
+            mem.content.clone()
+        } else {
+            format!("{}: {}", mem.name, mem.content)
+        }
+    )
+}
+
+/// 格式化记忆块
+pub fn format_memories_block(memories: &[Memory]) -> String {
+    if memories.is_empty() {
+        return "暂无相关记忆".to_string();
+    }
+    memories.iter().map(format_memory_line).collect::<Vec<_>>().join("\n")
+}
+
+/// 关键词评分（参照deepseek-pp-main的keywordScore）
+fn keyword_score(prompt_words: &[String], mem: &Memory) -> f64 {
+    let prompt_set: std::collections::HashSet<&str> = prompt_words.iter().map(|s| s.as_str()).collect();
+
+    let mut tag_hits: f64 = 0.0;
+    for tag in &mem.tags {
+        let tag_lower = tag.to_lowercase();
+        if tag_lower.len() > 1 && prompt_set.contains(tag_lower.as_str()) {
+            tag_hits += 1.0;
+        }
+        for pw in prompt_words {
+            if pw.len() > 2 && tag_lower.contains(pw.as_str()) && tag_lower != *pw {
+                tag_hits += 0.5;
+            }
+        }
+    }
+
+    let name_words: Vec<String> = mem.name.to_lowercase()
+        .split(|c: char| c.is_whitespace() || ",.!?;:、-_".contains(c))
+        .filter(|w| w.len() > 1)
+        .map(|s| s.to_string())
+        .collect();
+    let mut name_hits: f64 = 0.0;
+    for w in &name_words {
+        if prompt_set.contains(w.as_str()) {
+            name_hits += 1.0;
+        }
+    }
+
+    let content_words: Vec<String> = mem.content.to_lowercase()
+        .split(|c: char| c.is_whitespace() || ",.!?;:、-_".contains(c))
+        .filter(|w| w.len() > 1)
+        .map(|s| s.to_string())
+        .collect();
+    let mut content_hits: f64 = 0.0;
+    for w in &content_words {
+        if prompt_set.contains(w.as_str()) {
+            content_hits += 1.0;
+        }
+    }
+
+    tag_hits * 20.0 + name_hits * 15.0 + content_hits * 5.0
+}
+
+/// 时间衰减评分（参照deepseek-pp-main的decayScore）
+fn decay_score(mem: &Memory) -> f64 {
+    let now = now_ms();
+    let days_since_access = (now - mem.last_accessed_at) as f64 / 86_400_000.0;
+    let freshness = (10.0 - days_since_access * 0.1).max(0.0);
+    (mem.access_count as f64).min(20.0) + freshness
+}
+
+/// 智能选择记忆（参照deepseek-pp-main的selectMemories）
+pub fn select_memories(prompt: &str, all_memories: &[Memory], budget: Option<usize>) -> Vec<Memory> {
+    if all_memories.is_empty() {
+        return Vec::new();
+    }
+
+    let budget = budget.unwrap_or(MEMORY_TOKEN_BUDGET);
+
+    let candidates: Vec<&Memory> = all_memories.iter()
+        .filter(|m| !m.archived)
+        .collect();
+
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+
+    let prompt_words: Vec<String> = prompt.to_lowercase()
+        .split(|c: char| c.is_whitespace() || ",.!?;:、-_".contains(c))
+        .filter(|w| w.len() > 1)
+        .map(|s| s.to_string())
+        .collect();
+
+    let mut scored: Vec<(&Memory, f64)> = candidates.iter().map(|m| {
+        let score = if m.pinned { 1000.0 } else { 0.0 }
+            + keyword_score(&prompt_words, m)
+            + decay_score(m);
+        (*m, score)
+    }).collect();
+
+    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut selected = Vec::new();
+    let mut remaining = budget;
+
+    for (memory, _) in scored {
+        let cost = estimate_tokens(&format_memory_line(memory));
+        if remaining < cost && !selected.is_empty() {
+            break;
+        }
+        selected.push((*memory).clone());
+        remaining = remaining.saturating_sub(cost);
+    }
+
+    selected
+}
+
+/// 更新记忆访问计数
+pub async fn record_memory_access(id: &str) {
+    let path = memory_path(id);
+    if let Some(mut mem) = read_json_file::<Memory>(&path).await {
+        mem.access_count += 1;
+        mem.last_accessed_at = now_ms();
+        let _ = write_json_file(&path, &mem).await;
+    }
+}
+
+/// 归档过期记忆（参照deepseek-pp-main的archiveStaleMemories）
+pub async fn archive_stale_memories(days_threshold: i64) {
+    let now = now_ms();
+    let threshold_ms = days_threshold * 86_400_000;
+
+    let mut memories: Vec<Memory> = list_json_dir(MEMORY_DIR).await;
+    let mut archived_count = 0;
+
+    for mem in &mut memories {
+        if !mem.pinned && !mem.archived && (now - mem.updated_at) > threshold_ms {
+            mem.archived = true;
+            mem.updated_at = now;
+            if let Err(e) = write_json_file(&memory_path(&mem.id), mem).await {
+                eprintln!("[记忆清理] 归档失败 {}: {}", mem.id, e);
+            } else {
+                archived_count += 1;
+            }
+        }
+    }
+
+    if archived_count > 0 {
+        println!("[记忆清理] 已归档 {} 条过期记忆", archived_count);
     }
 }
 
@@ -1052,64 +1250,29 @@ pub fn select_memories_for_prompt(user_message: &str, project_id: Option<&str>) 
     if !settings.memory_enabled { return Vec::new(); }
 
     let all = get_all_memories_sync();
-    let msg_lower = user_message.to_lowercase();
-    let msg_words: Vec<&str> = msg_lower.split(|c: char| !c.is_alphanumeric() && c != '_')
-        .filter(|w| w.len() > 1)
-        .collect();
 
-    let mut scored: Vec<(f64, Memory)> = all.into_iter().filter_map(|m| {
-        // 作用域过滤
+    // 作用域过滤
+    let filtered: Vec<Memory> = all.into_iter().filter(|m| {
         if m.scope == "project" {
             if let Some(pid) = project_id {
-                if m.project_id != pid { return None; }
+                m.project_id == pid
             } else {
-                return None;
+                false
             }
+        } else {
+            true
         }
-
-        let mut score = 0.0;
-
-        // 标签匹配
-        for tag in &m.tags {
-            let tag_lower = tag.to_lowercase();
-            if msg_words.iter().any(|w| tag_lower.contains(w)) { score += 20.0; }
-        }
-
-        // 名称匹配
-        if !m.name.is_empty() {
-            let name_lower = m.name.to_lowercase();
-            if msg_words.iter().any(|w| name_lower.contains(w)) { score += 15.0; }
-        }
-
-        // 内容匹配
-        let content_lower = m.content.to_lowercase();
-        for w in &msg_words {
-            if content_lower.contains(w) { score += 5.0; }
-        }
-
-        // 置顶加分
-        if m.pinned { score += 30.0; }
-
-        if score > 0.0 { Some((score, m)) } else { None }
     }).collect();
 
-    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-
-    // 取前10条，限制token
-    scored.into_iter().take(10).map(|(_, m)| m).collect()
+    // 使用智能选择算法
+    let prompt_tokens = estimate_tokens(user_message);
+    let budget = Some(get_memory_budget(prompt_tokens));
+    select_memories(user_message, &filtered, budget)
 }
 
 pub fn build_memory_context(memories: &[Memory]) -> String {
     if memories.is_empty() { return String::new(); }
-    let mut ctx = String::from("## 相关记忆\n\n");
-    for m in memories {
-        if !m.name.is_empty() {
-            ctx.push_str(&format!("- **{}**: {}\n", m.name, m.content));
-        } else {
-            ctx.push_str(&format!("- {}\n", m.content));
-        }
-    }
-    ctx
+    format!("## 相关记忆\n\n{}", format_memories_block(memories))
 }
 
 // ==================== 图片上传 ====================

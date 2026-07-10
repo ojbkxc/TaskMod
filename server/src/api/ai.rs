@@ -192,6 +192,13 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                                 "role": "system",
                                 "content": mem_ctx
                             }));
+                            // 记录记忆访问计数
+                            for mem in &memories {
+                                let mid = mem.id.clone();
+                                tokio::spawn(async move {
+                                    crate::api::ai_hub::record_memory_access(&mid).await;
+                                });
+                            }
                         }
 
                         // 强制回复语言
@@ -207,6 +214,19 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                                     "content": lang
                                 }));
                             }
+                        }
+
+                        // 注入已启用的Skill
+                        let skills = crate::api::ai_hub::get_enabled_skills_sync();
+                        if !skills.is_empty() {
+                            let skill_ctx: String = skills.iter()
+                                .map(|s| format!("## Skill: {}\n{}\n\n{}", s.name, s.description, s.prompt_template))
+                                .collect::<Vec<_>>()
+                                .join("\n\n---\n\n");
+                            conversation_messages.insert(1, json!({
+                                "role": "system",
+                                "content": format!("## 可用技能\n\n{}", skill_ctx)
+                            }));
                         }
                     }
 
@@ -419,42 +439,37 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                             messages.push(assistant_msg.clone());
                             conversation_messages.push(assistant_msg);
 
+                            let mut tool_results: Vec<serde_json::Value> = Vec::new();
+
                             for tc in &tool_calls {
                                 if let Some(func) = tc.get("function") {
                                     let name = func.get("name").and_then(|n| n.as_str()).unwrap_or("");
                                     let args = func.get("arguments").and_then(|a| a.as_str()).unwrap_or("{}");
-
-                                    let _ = write.send(axum::extract::ws::Message::Text(
-                                        serde_json::to_string(&json!({
-                                            "type": "tool_call",
-                                            "name": name,
-                                            "arguments": args
-                                        })).unwrap_or_default()
-                                    )).await;
 
                                     let result = match registry.execute(name, args).await {
                                         Some(r) => r,
                                         None => format!("未知工具: {}", name),
                                     };
 
-                                    let tool_result = json!({
+                                    tool_results.push(json!({
                                         "role": "tool",
                                         "tool_call_id": tc.get("id").and_then(|v| v.as_str()).unwrap_or(""),
                                         "content": result
-                                    });
-
-                                    messages.push(tool_result.clone());
-                                    conversation_messages.push(tool_result);
-
-                                    let _ = write.send(axum::extract::ws::Message::Text(
-                                        serde_json::to_string(&json!({
-                                            "type": "tool_result",
-                                            "name": name,
-                                            "result": result
-                                        })).unwrap_or_default()
-                                    )).await;
+                                    }));
                                 }
                             }
+
+                            for tr in &tool_results {
+                                messages.push(tr.clone());
+                                conversation_messages.push(tr.clone());
+                            }
+
+                            let _ = write.send(axum::extract::ws::Message::Text(
+                                serde_json::to_string(&json!({
+                                    "type": "tool_result",
+                                    "results": tool_results
+                                })).unwrap_or_default()
+                            )).await;
                         } else {
                             if !full_response.is_empty() || !full_thinking.is_empty() {
                                 let mut msg = json!({

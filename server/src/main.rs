@@ -22,26 +22,24 @@ fn start_watchdog(heartbeat: Arc<AtomicBool>, timeout_secs: u64) {
         return;
     }
     std::thread::spawn(move || {
-        let mut missed_heartbeats = 0;
-        let max_missed = (timeout_secs / 10) as i32;
+        let mut last_alive = true;
         loop {
-            std::thread::sleep(std::time::Duration::from_secs(10));
+            std::thread::sleep(std::time::Duration::from_secs(5));
             if heartbeat.load(Ordering::Relaxed) {
                 heartbeat.store(false, Ordering::Relaxed);
-                missed_heartbeats = 0;
-            } else {
-                missed_heartbeats += 1;
-                if missed_heartbeats >= max_missed {
-                    let email_conf = utils::email::get_email_config();
-                    if email_conf.enable_notify {
-                        let now = chrono::Local::now();
-                        let subject = format!("[WARNING] TaskMod 可能卡死 - {}", now.format("%Y-%m-%d %H:%M:%S"));
-                        let body = format!(
-                            "TaskMod 主循环已超过 {} 秒未响应心跳。\n\n可能原因：\n- 主线程阻塞\n- 资源耗尽（内存/CPU）\n- 死锁\n\n请检查设备状态。",
-                            timeout_secs
-                        );
-                        let rt = match tokio::runtime::Handle::try_current() {
-                            Ok(h) => h,
+                last_alive = true;
+            } else if last_alive {
+                let email_conf = utils::email::get_email_config();
+                if email_conf.enable_notify {
+                    let now = chrono::Local::now();
+                    let subject = format!("[WARNING] TaskMod 可能卡死 - {}", now.format("%Y-%m-%d %H:%M:%S"));
+                    let body = format!(
+                        "TaskMod 主循环已超过 {} 秒未响应心跳。\n\n可能原因：\n- 主线程阻塞\n- 资源耗尽（内存/CPU）\n- 死锁\n\n请检查设备状态。",
+                        timeout_secs
+                    );
+                    std::thread::spawn(move || {
+                        let rt = match tokio::runtime::Runtime::new() {
+                            Ok(rt) => rt,
                             Err(_) => return,
                         };
                         let _ = rt.block_on(utils::email::send_email(
@@ -50,10 +48,10 @@ fn start_watchdog(heartbeat: Arc<AtomicBool>, timeout_secs: u64) {
                             Some(&body),
                             None,
                         ));
-                    }
-                    eprintln!("[看门狗] 警告: 主循环可能卡死，已超过 {} 秒未响应", timeout_secs);
-                    missed_heartbeats = 0;
+                    });
                 }
+                eprintln!("[看门狗] 警告: 主循环可能卡死，已超过 {} 秒未响应", timeout_secs);
+                last_alive = false;
             }
         }
     });
@@ -218,6 +216,14 @@ async fn main() -> anyhow::Result<()> {
         loop {
             heartbeat_clone.store(true, Ordering::Relaxed);
             tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        }
+    });
+
+    // 启动记忆清理定时任务（每天清理一次，归档30天未更新的记忆）
+    tokio::spawn(async {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(86400)).await;
+            api::ai_hub::archive_stale_memories(30).await;
         }
     });
 
