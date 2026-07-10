@@ -2400,81 +2400,53 @@
         try {
             // 创建 AudioContext: 48000Hz, 16-bit mono PCM
             const AudioCtx = window.AudioContext || window.webkitAudioContext;
-            mirrorAudioCtx = new AudioCtx({ sampleRate: 48000 });
+            mirrorAudioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
 
-            // 使用 AudioWorklet 播放 PCM 数据
-            const workletCode = `
-                class PCMPlayerProcessor extends AudioWorkletProcessor {
-                    constructor() {
-                        super();
-                        this._buffer = new Float32Array(0);
-                        this.port.onmessage = (e) => {
-                            const pcm16 = e.data; // Int16Array
-                            const float32 = new Float32Array(pcm16.length);
-                            for (let i = 0; i < pcm16.length; i++) {
-                                float32[i] = pcm16[i] / 32768.0;
-                            }
-                            // 追加到缓冲区
-                            const newBuf = new Float32Array(this._buffer.length + float32.length);
-                            newBuf.set(this._buffer, 0);
-                            newBuf.set(float32, this._buffer.length);
-                            this._buffer = newBuf;
-                        };
-                    }
-                    process(inputs, outputs) {
-                        const output = outputs[0][0]; // mono
-                        if (this._buffer.length >= output.length) {
-                            output.set(this._buffer.subarray(0, output.length));
-                            this._buffer = this._buffer.subarray(output.length);
-                        } else {
-                            // 缓冲不足时填充静音
-                            output.fill(0);
-                            if (this._buffer.length > 0) {
-                                output.set(this._buffer, 0);
-                                this._buffer = new Float32Array(0);
-                            }
+            // 恢复被浏览器暂停的 AudioContext（自动播放策略）
+            if (mirrorAudioCtx.state === 'suspended') {
+                mirrorAudioCtx.resume();
+            }
+
+            // 使用 AudioBufferSourceNode 播放 PCM（兼容非安全上下文 HTTP）
+            // 不使用 AudioWorklet，因为它在非 HTTPS 非 localhost 下不可用
+
+            // 连接音频 WebSocket (自动重连)
+            let mirrorAudioReconnect = new WsAutoReconnect('/ws/mirror/audio', {
+                initialDelay: 3000,
+                maxDelay: 20000,
+                onOpen: (ws) => {
+                    ws.binaryType = 'arraybuffer';
+                    mirrorAudioWs = ws;
+                },
+                onMessage: (evt) => {
+                    if (evt.data instanceof ArrayBuffer && mirrorAudioCtx) {
+                        // 将 16-bit PCM 转为 Float32Array
+                        const pcm16 = new Int16Array(evt.data);
+                        if (pcm16.length === 0) return;
+                        const float32 = new Float32Array(pcm16.length);
+                        for (let i = 0; i < pcm16.length; i++) {
+                            float32[i] = pcm16[i] / 32768.0;
                         }
-                        return true;
+                        // 创建 AudioBuffer 并播放
+                        const buffer = mirrorAudioCtx.createBuffer(1, float32.length, 48000);
+                        buffer.copyToChannel(float32, 0);
+                        const src = mirrorAudioCtx.createBufferSource();
+                        src.buffer = buffer;
+                        src.connect(mirrorAudioCtx.destination);
+                        src.start();
                     }
+                },
+                onClose: () => {
+                    // 重连由 WsAutoReconnect 自动处理
                 }
-                registerProcessor('pcm-player', PCMPlayerProcessor);
-            `;
-            const blob = new Blob([workletCode], { type: 'application/javascript' });
-            const url = URL.createObjectURL(blob);
-
-            mirrorAudioCtx.audioWorklet.addModule(url).then(() => {
-                mirrorAudioNode = new AudioWorkletNode(mirrorAudioCtx, 'pcm-player');
-                mirrorAudioNode.connect(mirrorAudioCtx.destination);
-                URL.revokeObjectURL(url);
-
-                // 连接音频 WebSocket (自动重连)
-                let mirrorAudioReconnect = new WsAutoReconnect('/ws/mirror/audio', {
-                    initialDelay: 3000,
-                    maxDelay: 20000,
-                    onOpen: (ws) => {
-                        ws.binaryType = 'arraybuffer';
-                        mirrorAudioWs = ws;
-                    },
-                    onMessage: (evt) => {
-                        if (evt.data instanceof ArrayBuffer && mirrorAudioNode) {
-                            const pcm16 = new Int16Array(evt.data);
-                            mirrorAudioNode.port.postMessage(pcm16);
-                        }
-                    },
-                    onClose: () => {
-                        // 重连由 WsAutoReconnect 自动处理
-                    }
-                });
-                mirrorAudioWs = mirrorAudioReconnect.ws;
-
-                mirrorAudioEnabled = true;
-                const btn = document.getElementById('mirror-audio-btn');
-                btn.innerHTML = '<i class="fas fa-volume-mute"></i>';
-                btn.classList.add('ds-btn-active');
-                showToast('设备声音已开启', 'success');
-            }).catch(e => {
-                showToast('AudioWorklet 加载失败: ' + e.message, 'error');
             });
+            mirrorAudioWs = mirrorAudioReconnect.ws;
+
+            mirrorAudioEnabled = true;
+            const btn = document.getElementById('mirror-audio-btn');
+            btn.innerHTML = '<i class="fas fa-volume-mute"></i>';
+            btn.classList.add('ds-btn-active');
+            showToast('设备声音已开启', 'success');
         } catch (e) {
             showToast('音频初始化失败: ' + e.message, 'error');
         }

@@ -93,8 +93,8 @@ pub fn MirrorPage() -> Element {
                 }
             }
 
-            div { class: "flex gap-4",
-                div { class: "hidden md:flex flex-col gap-3 w-60 flex-shrink-0",
+            div { class: "flex gap-4 items-start",
+                div { class: "hidden md:flex flex-col gap-3 w-56 flex-shrink-0",
                     EqCard { class: "p-4",
                         div { class: "flex items-center gap-2 mb-3",
                             svg { class: "w-4 h-4 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
@@ -102,17 +102,15 @@ pub fn MirrorPage() -> Element {
                             }
                             span { class: "text-sm font-semibold text-[var(--ds-text)]", "ADB 命令" }
                         }
-                        div { class: "flex gap-2",
-                            input {
-                                class: "flex-1 min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-sm text-[var(--ds-text)] font-mono outline-none focus:border-[var(--ds-blue)]",
-                                placeholder: "输入命令...",
-                            }
-                            EqButton {
-                                variant: EqButtonVariant::Primary,
-                                "执行"
-                            }
+                        input {
+                            class: "w-full min-h-[36px] px-2.5 py-1.5 border border-[var(--ds-border)] rounded bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] font-mono outline-none focus:border-[var(--ds-blue)] mb-2",
+                            placeholder: "输入命令...",
                         }
-                        div { class: "grid grid-cols-2 gap-2 mt-3",
+                        EqButton {
+                            variant: EqButtonVariant::Primary,
+                            "执行"
+                        }
+                        div { class: "grid grid-cols-2 gap-1.5 mt-3",
                             AdbCommandCard { label: "唤醒屏幕" }
                             AdbCommandCard { label: "息屏" }
                             AdbCommandCard { label: "上滑解锁" }
@@ -121,40 +119,40 @@ pub fn MirrorPage() -> Element {
                         }
                     }
 
-                    EqCard { class: "p-4",
+                    EqCard { class: "p-4 flex-1",
                         div { class: "flex items-center gap-2 mb-3",
                             svg { class: "w-4 h-4 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
                                 path { stroke_linecap: "round", stroke_linejoin: "round", d: "M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" }
                             }
                             span { class: "text-sm font-semibold text-[var(--ds-text)]", "命令输出" }
                         }
-                        div { class: "min-h-[120px] max-h-[200px] overflow-y-auto p-3 bg-[var(--ds-bg)] border border-[var(--ds-border)] rounded-md text-xs font-mono text-[var(--ds-text-secondary)]",
+                        div { class: "min-h-[100px] max-h-[200px] overflow-y-auto p-2.5 bg-[var(--ds-bg)] border border-[var(--ds-border)] rounded text-xs font-mono text-[var(--ds-text-secondary)] whitespace-pre-wrap break-all",
                             "等待执行命令..."
                         }
                     }
                 }
 
-                div { class: "flex-1 flex items-center justify-center min-w-0",
-                    div { class: "border border-[var(--ds-border)] rounded-md overflow-hidden bg-[#0a0a0f] flex items-center justify-center w-full max-w-[420px] aspect-[9/16] max-h-[80vh] shadow-sm",
+                div { class: "flex-1 flex items-center justify-center min-w-0 py-2",
+                    div { class: "relative border border-[var(--ds-border)] rounded-lg overflow-hidden bg-[#0a0a0f] flex items-center justify-center w-full max-w-[400px] aspect-[9/16] max-h-[78vh] mx-auto shadow-lg",
                         if *is_connected.read() {
                             div { class: "flex flex-col items-center gap-3 p-10 text-center",
                                 p { class: "text-sm text-[var(--ds-text-secondary)]", "投屏中..." }
                             }
                         } else {
                             div { class: "flex flex-col items-center gap-3 p-10 text-center",
-                                div { class: "w-20 h-20 flex items-center justify-center bg-[var(--ds-surface)] border border-[var(--ds-border)] rounded-2xl text-3xl text-[var(--ds-text-tertiary)] opacity-60",
-                                    svg { class: "w-8 h-8", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
+                                div { class: "w-16 h-16 flex items-center justify-center bg-[var(--ds-surface)] border border-[var(--ds-border)] rounded-2xl text-2xl text-[var(--ds-text-tertiary)] opacity-60",
+                                    svg { class: "w-7 h-7", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
                                         path { stroke_linecap: "round", stroke_linejoin: "round", d: "M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" }
                                     }
                                 }
-                                p { class: "text-base font-semibold text-[var(--ds-text-secondary)]", "设备未连接" }
-                                p { class: "text-sm text-[var(--ds-text-tertiary)]", "点击上方\"开始投屏\"连接设备屏幕" }
+                                p { class: "text-sm font-semibold text-[var(--ds-text-secondary)]", "设备未连接" }
+                                p { class: "text-xs text-[var(--ds-text-tertiary)]", "点击上方\"开始投屏\"连接设备屏幕" }
                             }
                         }
                     }
                 }
 
-                div { class: "hidden md:flex flex-col gap-3 w-60 flex-shrink-0",
+                div { class: "hidden md:flex flex-col gap-3 w-56 flex-shrink-0",
                     EqCard { class: "p-4",
                         div { class: "flex items-center gap-2 mb-3",
                             svg { class: "w-4 h-4 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
@@ -163,7 +161,7 @@ pub fn MirrorPage() -> Element {
                             }
                             span { class: "text-sm font-semibold text-[var(--ds-text)]", "设备工具" }
                         }
-                        div { class: "grid grid-cols-2 gap-2",
+                        div { class: "grid grid-cols-2 gap-1.5",
                             DeviceToolCard { label: "截屏", icon: "screencap" }
                             DeviceToolCard { label: "电池信息", icon: "battery" }
                             DeviceToolCard { label: "设备型号", icon: "device" }
@@ -180,7 +178,7 @@ pub fn MirrorPage() -> Element {
                             }
                             span { class: "text-sm font-semibold text-[var(--ds-text)]", "应用管理" }
                         }
-                        div { class: "grid grid-cols-2 gap-2",
+                        div { class: "grid grid-cols-2 gap-1.5",
                             DeviceToolCard { label: "启动应用", icon: "start" }
                             DeviceToolCard { label: "停止应用", icon: "stop" }
                         }
@@ -193,7 +191,7 @@ pub fn MirrorPage() -> Element {
                             }
                             span { class: "text-sm font-semibold text-[var(--ds-text)]", "系统操作" }
                         }
-                        div { class: "grid grid-cols-2 gap-2",
+                        div { class: "grid grid-cols-2 gap-1.5",
                             DeviceToolCard { label: "重启设备", icon: "reboot" }
                             DeviceToolCard { label: "关闭设备", icon: "shutdown" }
                         }
@@ -211,7 +209,7 @@ pub fn MirrorPage() -> Element {
                     }
                     div { class: "flex gap-2",
                         input {
-                            class: "flex-1 min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-sm text-[var(--ds-text)] font-mono outline-none focus:border-[var(--ds-blue)]",
+                            class: "flex-1 min-h-[36px] px-2.5 border border-[var(--ds-border)] rounded bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] font-mono outline-none focus:border-[var(--ds-blue)]",
                             placeholder: "输入命令...",
                         }
                         EqButton {
@@ -219,15 +217,33 @@ pub fn MirrorPage() -> Element {
                             "执行"
                         }
                     }
-                    div { class: "grid grid-cols-4 gap-2 mt-3",
-                        AdbCommandCard { label: "唤醒屏幕" }
+                    div { class: "grid grid-cols-3 gap-1.5 mt-3",
+                        AdbCommandCard { label: "唤醒" }
                         AdbCommandCard { label: "息屏" }
-                        AdbCommandCard { label: "上滑解锁" }
+                        AdbCommandCard { label: "解锁" }
                         AdbCommandCard { label: "Home" }
                         AdbCommandCard { label: "返回" }
                         DeviceToolCard { label: "截屏", icon: "screencap" }
-                        DeviceToolCard { label: "电池信息", icon: "battery" }
-                        DeviceToolCard { label: "设备型号", icon: "device" }
+                    }
+                }
+                EqCard { class: "p-4",
+                    div { class: "flex items-center gap-2 mb-3",
+                        svg { class: "w-4 h-4 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
+                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" }
+                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M15 12a3 3 0 11-6 0 3 3 0 016 0z" }
+                        }
+                        span { class: "text-sm font-semibold text-[var(--ds-text)]", "设备工具" }
+                    }
+                    div { class: "grid grid-cols-3 gap-1.5",
+                        DeviceToolCard { label: "截屏", icon: "screencap" }
+                        DeviceToolCard { label: "电池", icon: "battery" }
+                        DeviceToolCard { label: "型号", icon: "device" }
+                        DeviceToolCard { label: "分辨率", icon: "resolution" }
+                        DeviceToolCard { label: "WiFi", icon: "wifi" }
+                        DeviceToolCard { label: "应用", icon: "apps" }
+                        DeviceToolCard { label: "启动", icon: "start" }
+                        DeviceToolCard { label: "停止", icon: "stop" }
+                        DeviceToolCard { label: "重启", icon: "reboot" }
                     }
                 }
             }
@@ -244,7 +260,7 @@ struct AdbCommandCardProps {
 fn AdbCommandCard(props: AdbCommandCardProps) -> Element {
     rsx! {
         button {
-            class: "flex flex-col items-center gap-1.5 p-3 bg-[var(--ds-surface)] border border-[var(--ds-border)] rounded-md cursor-pointer text-[11px] text-[var(--ds-text-secondary)] transition-all hover:bg-[var(--ds-blue-light)] hover:border-[var(--ds-blue)] hover:text-[var(--ds-blue)] active:scale-95",
+            class: "flex items-center justify-center gap-1.5 px-2 py-2 bg-[var(--ds-surface)] border border-[var(--ds-border)] rounded cursor-pointer text-[11px] text-[var(--ds-text-secondary)] transition-all hover:bg-[var(--ds-blue-light)] hover:border-[var(--ds-blue)] hover:text-[var(--ds-blue)] active:scale-95",
             "{props.label}"
         }
     }
@@ -260,7 +276,7 @@ struct DeviceToolCardProps {
 fn DeviceToolCard(props: DeviceToolCardProps) -> Element {
     rsx! {
         button {
-            class: "flex flex-col items-center gap-1.5 p-3 bg-[var(--ds-surface)] border border-[var(--ds-border)] rounded-md cursor-pointer text-[11px] text-[var(--ds-text-secondary)] transition-all hover:bg-[var(--ds-blue-light)] hover:border-[var(--ds-blue)] hover:text-[var(--ds-blue)] active:scale-95",
+            class: "flex flex-col items-center gap-1 px-2 py-2.5 bg-[var(--ds-surface)] border border-[var(--ds-border)] rounded cursor-pointer text-[10px] text-[var(--ds-text-secondary)] transition-all hover:bg-[var(--ds-blue-light)] hover:border-[var(--ds-blue)] hover:text-[var(--ds-blue)] active:scale-95",
             DeviceToolIcon { icon: props.icon },
             "{props.label}"
         }
