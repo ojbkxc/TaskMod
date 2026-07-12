@@ -1,39 +1,16 @@
-//! 隧道管理页面
-//!
-//! 支持多隧道、多服务的增删改查和独立控制
-//! 包含 Token 管理、服务绑定、状态监控
-
 use dioxus::prelude::*;
 use eq_ui::prelude::*;
-use serde::{Deserialize, Serialize};
+use gloo_timers::future::sleep;
+use std::time::Duration;
+use serde_json::Value;
+use crate::api::client::{
+    list_tunnels, list_processes, add_tunnel, enable_tunnel, disable_tunnel,
+    start_tunnel, stop_tunnel, restart_tunnel, delete_tunnel,
+    list_services, add_service, enable_service, disable_service, delete_service,
+    get_daemon_status, stop_daemon, restart_daemon,
+    TunnelInfo, ServiceInfo, ProcessStatus,
+};
 
-/// 隧道信息
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TunnelInfo {
-    pub name: String,
-    pub token: String,
-    pub enabled: bool,
-    pub services: Vec<ServiceInfo>,
-}
-
-/// 服务信息
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ServiceInfo {
-    pub name: String,
-    pub url: String,
-    pub enabled: bool,
-}
-
-/// 进程状态
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ProcessStatus {
-    pub tunnel_name: String,
-    pub pid: u32,
-    pub uptime_secs: u64,
-    pub is_alive: bool,
-}
-
-/// 格式化运行时长
 fn format_uptime(secs: u64) -> String {
     match secs {
         s if s < 60 => format!("{}秒", s),
@@ -43,126 +20,261 @@ fn format_uptime(secs: u64) -> String {
     }
 }
 
-/// 隧道管理页面组件
+#[derive(Debug, Clone, PartialEq)]
+struct DaemonState {
+    tunnels: Vec<TunnelInfo>,
+    processes: Vec<ProcessStatus>,
+    daemon_status: Value,
+    loading: bool,
+    error: Option<String>,
+    show_add_tunnel: bool,
+    auto_refresh: bool,
+    last_refresh: u64,
+}
+
+impl Default for DaemonState {
+    fn default() -> Self {
+        Self {
+            tunnels: Vec::new(),
+            processes: Vec::new(),
+            daemon_status: serde_json::json!({}),
+            loading: false,
+            error: None,
+            show_add_tunnel: false,
+            auto_refresh: true,
+            last_refresh: 0,
+        }
+    }
+}
+
 #[component]
 pub fn DaemonPage() -> Element {
-    let mut tunnels = use_signal(|| Vec::<TunnelInfo>::new());
-    let mut processes = use_signal(|| Vec::<ProcessStatus>::new());
-    let mut loading = use_signal(|| false);
-    let mut error = use_signal(|| None::<String>);
-    let mut show_add_tunnel = use_signal(|| false);
-    let mut refresh = use_signal(|| 0u32);
+    let state = use_signal(DaemonState::default);
+    let refresh_trigger = use_signal(|| 0u32);
 
-    // 加载数据（由 refresh signal 触发）
+    let load_data = move || {
+        let state = state.clone();
+        async move {
+            state.write().loading = true;
+            state.write().error = None;
+
+            let (tunnels_res, processes_res, status_res) = join(
+                list_tunnels(),
+                list_processes(),
+                get_daemon_status()
+            ).await;
+
+            let mut s = state.write();
+            match tunnels_res {
+                Ok(list) => s.tunnels = list,
+                Err(e) => s.error = Some(format!("加载隧道失败: {}", e)),
+            }
+            match processes_res {
+                Ok(list) => s.processes = list,
+                Err(e) => if s.error.is_none() { s.error = Some(format!("加载进程失败: {}", e)) },
+            }
+            match status_res {
+                Ok(status) => s.daemon_status = status,
+                Err(e) => if s.error.is_none() { s.error = Some(format!("加载守护进程状态失败: {}", e)) },
+            }
+            s.loading = false;
+            s.last_refresh = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+        }
+    };
+
     use_effect(move || {
-        let _ = *refresh.read();
-
+        let _ = *refresh_trigger.read();
         spawn(async move {
-            loading.set(true);
-            error.set(None);
-
-            // 加载隧道列表
-            match reqwest::get("/api/tunnels").await {
-                Ok(resp) => {
-                    if let Ok(data) = resp.json::<serde_json::Value>().await {
-                        if let Some(arr) = data["data"].as_array() {
-                            let list: Vec<TunnelInfo> = arr
-                                .iter()
-                                .filter_map(|v| serde_json::from_value(v.clone()).ok())
-                                .collect();
-                            tunnels.set(list);
-                        }
-                    }
-                }
-                Err(e) => {
-                    error.set(Some(format!("加载隧道失败: {}", e)));
-                }
-            }
-
-            // 加载进程状态
-            match reqwest::get("/api/processes").await {
-                Ok(resp) => {
-                    if let Ok(data) = resp.json::<serde_json::Value>().await {
-                        if let Some(arr) = data["data"].as_array() {
-                            let list: Vec<ProcessStatus> = arr
-                                .iter()
-                                .filter_map(|v| serde_json::from_value(v.clone()).ok())
-                                .collect();
-                            processes.set(list);
-                        }
-                    }
-                }
-                Err(_) => {}
-            }
-
-            loading.set(false);
+            load_data().await;
         });
     });
 
-    rsx! {
-        div { class: "p-4 space-y-4",
-            // 页面标题
-            div { class: "flex items-start justify-between gap-3 pb-4 border-b border-[var(--ds-border)]",
-                div {
-                    h1 { class: "text-lg font-bold text-[var(--ds-text)]", "隧道管理" }
-                    p { class: "text-xs text-[var(--ds-text-secondary)] mt-2", "隧道与服务配置、状态监控" }
+    use_effect(move || {
+        let state = state.clone();
+        async move {
+            loop {
+                sleep(Duration::from_secs(5)).await;
+                if state.read().auto_refresh && !state.read().loading {
+                    spawn(async move {
+                        load_data().await;
+                    });
                 }
-                div { class: "flex gap-1.5",
+            }
+        }
+    });
+
+    let daemon_is_running = state.read().daemon_status.get("running")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let daemon_uptime = state.read().daemon_status.get("uptime")
+        .and_then(|v| v.as_str())
+        .unwrap_or("未知");
+
+    rsx! {
+        div { class: "flex flex-col h-full",
+            div { class: "flex items-start justify-between gap-3 pb-4 border-b border-[var(--ds-border)] px-4",
+                div {
+                    h1 { class: "text-lg font-bold text-[var(--ds-text)]", "Cloudflare Tunnels" }
+                    p { class: "text-xs text-[var(--ds-text-secondary)] mt-1", "隧道与服务配置、状态监控" }
+                }
+                div { class: "flex items-center gap-2",
+                    div { class: "flex items-center gap-2 px-3 py-1.5 rounded-md",
+                        class: if daemon_is_running {
+                            "bg-[color-mix(in_srgb,var(--ds-success)_15%,transparent)]"
+                        } else {
+                            "bg-[color-mix(in_srgb,var(--ds-danger)_15%,transparent)]"
+                        },
+                        div {
+                            class: "w-2 h-2 rounded-full animate-pulse",
+                            background_color: if daemon_is_running {
+                                "var(--ds-success)"
+                            } else {
+                                "var(--ds-danger)"
+                            }
+                        }
+                        span { class: "text-xs font-medium",
+                            if daemon_is_running {
+                                format!("守护进程运行中 - {}", daemon_uptime)
+                            } else {
+                                "守护进程未运行".to_string()
+                            }
+                        }
+                    }
                     EqButton {
-                        variant: EqButtonVariant::Secondary,
-                        onclick: move |_| refresh.set(*refresh.read() + 1),
+                        variant: EqButtonVariant::Ghost,
+                        size: EqButtonSize::Sm,
+                        onclick: move |_| refresh_trigger.set(*refresh_trigger.read() + 1),
                         "刷新"
                     }
                     EqButton {
                         variant: EqButtonVariant::Primary,
-                        onclick: move |_| show_add_tunnel.set(true),
+                        size: EqButtonSize::Sm,
+                        onclick: move |_| state.write().show_add_tunnel = true,
                         "添加隧道"
                     }
                 }
             }
 
-            // 错误提示
-            if let Some(err) = error.read().clone() {
-                div { class: "p-3 border border-[var(--ds-danger)] bg-[color-mix(in_srgb,var(--ds-danger)_10%,transparent)] text-[var(--ds-danger)] rounded-md text-sm",
-                    "{err}"
+            div { class: "flex-1 overflow-y-auto p-4 space-y-4",
+                DaemonControl {
+                    is_running: daemon_is_running,
+                    on_stop: move |_| {
+                        let state = state.clone();
+                        spawn(async move {
+                            let _ = stop_daemon().await;
+                            load_data().await;
+                        });
+                    },
+                    on_restart: move |_| {
+                        let state = state.clone();
+                        spawn(async move {
+                            let _ = restart_daemon().await;
+                            load_data().await;
+                        });
+                    },
                 }
-            }
 
-            // 添加隧道对话框
-            if *show_add_tunnel.read() {
-                AddTunnelDialog {
-                    on_close: move |_| show_add_tunnel.set(false),
-                    on_success: move |_| {
-                        show_add_tunnel.set(false);
-                        refresh.set(*refresh.read() + 1);
+                if let Some(err) = state.read().error.clone() {
+                    div { class: "p-3 border border-[var(--ds-danger)] bg-[color-mix(in_srgb,var(--ds-danger)_10%,transparent)] text-[var(--ds-danger)] rounded-md text-sm",
+                        "{err}"
                     }
                 }
-            }
 
-            // 隧道列表
-            if tunnels.read().is_empty() && !*loading.read() {
-                div { class: "flex flex-col items-center justify-center min-h-[280px] gap-2.5 p-6 text-center",
-                    div { class: "flex items-center justify-center w-7 h-7 border border-[var(--ds-border)] rounded-md text-[var(--ds-text-tertiary)]",
-                        svg { class: "w-5 h-5", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
-                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M13 10V3L4 14h7v7l9-11h-7z" }
+                if *state.read().loading.read() {
+                    div { class: "space-y-3",
+                        for _ in 0..3 {
+                            div { class: "h-44 bg-[var(--ds-surface)] rounded-lg animate-pulse" }
                         }
                     }
-                    p { class: "text-sm font-semibold text-[var(--ds-text)]", "暂无隧道配置" }
-                    p { class: "text-xs text-[var(--ds-text-tertiary)]", "点击\"添加隧道\"开始配置" }
+                } else if state.read().tunnels.is_empty() {
+                    div { class: "flex flex-col items-center justify-center min-h-[320px] gap-2.5 p-6 text-center",
+                        div { class: "flex items-center justify-center w-16 h-16 border-2 border-[var(--ds-border)] rounded-xl text-[var(--ds-text-tertiary)]",
+                            svg { class: "w-8 h-8", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "1.5",
+                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M13 10V3L4 14h7v7l9-11h-7z" }
+                            }
+                        }
+                        p { class: "text-base font-semibold text-[var(--ds-text)]", "暂无隧道配置" }
+                        p { class: "text-xs text-[var(--ds-text-tertiary)] max-w-xs", "点击\"添加隧道\"开始配置 Cloudflare Tunnel" }
+                        div { class: "mt-4 text-xs text-[var(--ds-text-secondary)] bg-[var(--ds-surface)] px-3 py-2 rounded-md",
+                            "提示: 需要先在 Cloudflare 控制台创建隧道并获取 Token"
+                        }
+                    }
+                } else {
+                    div { class: "space-y-3",
+                        for tunnel in state.read().tunnels.clone() {
+                            let process = state.read().processes
+                                .iter()
+                                .find(|p| p.tunnel_name == tunnel.name)
+                                .cloned();
+                            TunnelCard {
+                                key: "{tunnel.name}",
+                                tunnel: tunnel.clone(),
+                                process: process,
+                                on_refresh: move |_| refresh_trigger.set(*refresh_trigger.read() + 1),
+                            }
+                        }
+                    }
                 }
-            } else {
-                div { class: "space-y-3",
-                    for tunnel in tunnels.read().clone() {
-                        let process = processes
-                            .read()
-                            .iter()
-                            .find(|p| p.tunnel_name == tunnel.name)
-                            .cloned();
-                        TunnelCard {
-                            key: "{tunnel.name}",
-                            tunnel: tunnel.clone(),
-                            process: process,
-                            on_refresh: move |_| refresh.set(*refresh.read() + 1),
+            }
+
+            if *state.read().show_add_tunnel.read() {
+                AddTunnelDialog {
+                    on_close: move |_| state.write().show_add_tunnel = false,
+                    on_success: move |_| {
+                        state.write().show_add_tunnel = false;
+                        refresh_trigger.set(*refresh_trigger.read() + 1);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Props, PartialEq, Clone)]
+struct DaemonControlProps {
+    is_running: bool,
+    on_stop: EventHandler<()>,
+    on_restart: EventHandler<()>,
+}
+
+#[component]
+fn DaemonControl(props: DaemonControlProps) -> Element {
+    rsx! {
+        EqCard {
+            div { class: "flex items-center justify-between p-4",
+                div {
+                    h3 { class: "font-semibold text-[var(--ds-text)]", "守护进程控制" }
+                    p { class: "text-xs text-[var(--ds-text-tertiary)] mt-0.5",
+                        "管理 taskmod-daemon 服务状态"
+                    }
+                }
+                div { class: "flex gap-2",
+                    if props.is_running {
+                        rsx! {
+                            EqButton {
+                                variant: EqButtonVariant::Secondary,
+                                size: EqButtonSize::Sm,
+                                onclick: props.on_restart,
+                                "重启"
+                            }
+                            EqButton {
+                                variant: EqButtonVariant::Danger,
+                                size: EqButtonSize::Sm,
+                                onclick: props.on_stop,
+                                "停止"
+                            }
+                        }
+                    } else {
+                        rsx! {
+                            EqButton {
+                                variant: EqButtonVariant::Primary,
+                                size: EqButtonSize::Sm,
+                                disabled: true,
+                                "启动"
+                            }
                         }
                     }
                 }
@@ -171,7 +283,6 @@ pub fn DaemonPage() -> Element {
     }
 }
 
-/// 隧道卡片组件
 #[derive(Props, PartialEq, Clone)]
 struct TunnelCardProps {
     tunnel: TunnelInfo,
@@ -183,90 +294,63 @@ struct TunnelCardProps {
 fn TunnelCard(props: TunnelCardProps) -> Element {
     let mut expanded = use_signal(|| false);
     let mut loading = use_signal(|| false);
-
     let tunnel_name = props.tunnel.name.clone();
 
-    // 启用/禁用隧道
     let toggle_enabled = move |_| {
         let name = tunnel_name.clone();
         let enabled = !props.tunnel.enabled;
         let on_refresh = props.on_refresh.clone();
         loading.set(true);
-
         spawn(async move {
-            let url = if enabled {
-                format!("/api/tunnels/{}/enable", name)
+            if enabled {
+                let _ = enable_tunnel(&name).await;
             } else {
-                format!("/api/tunnels/{}/disable", name)
-            };
-            let _ = reqwest::Client::new().post(&url).body("").send().await;
+                let _ = disable_tunnel(&name).await;
+            }
             loading.set(false);
             on_refresh.call(());
         });
     };
 
-    // 启动隧道
-    let start_tunnel = move |_| {
+    let start_tunnel_fn = move |_| {
         let name = tunnel_name.clone();
         let on_refresh = props.on_refresh.clone();
         loading.set(true);
-
         spawn(async move {
-            let _ = reqwest::Client::new()
-                .post(&format!("/api/tunnels/{}/start", name))
-                .body("")
-                .send()
-                .await;
+            let _ = start_tunnel(&name).await;
             loading.set(false);
             on_refresh.call(());
         });
     };
 
-    // 停止隧道
-    let stop_tunnel = move |_| {
+    let stop_tunnel_fn = move |_| {
         let name = tunnel_name.clone();
         let on_refresh = props.on_refresh.clone();
         loading.set(true);
-
         spawn(async move {
-            let _ = reqwest::Client::new()
-                .post(&format!("/api/tunnels/{}/stop", name))
-                .body("")
-                .send()
-                .await;
+            let _ = stop_tunnel(&name).await;
             loading.set(false);
             on_refresh.call(());
         });
     };
 
-    // 重启隧道
-    let restart_tunnel = move |_| {
+    let restart_tunnel_fn = move |_| {
         let name = tunnel_name.clone();
         let on_refresh = props.on_refresh.clone();
         loading.set(true);
-
         spawn(async move {
-            let _ = reqwest::Client::new()
-                .post(&format!("/api/tunnels/{}/restart", name))
-                .body("")
-                .send()
-                .await;
+            let _ = restart_tunnel(&name).await;
             loading.set(false);
             on_refresh.call(());
         });
     };
 
-    // 删除隧道
-    let delete_tunnel = move |_| {
+    let delete_tunnel_fn = move |_| {
         let name = tunnel_name.clone();
         let on_refresh = props.on_refresh.clone();
         loading.set(true);
-
         spawn(async move {
-            let _ = reqwest::Client::new()
-                .delete(&format!("/api/tunnels/{}", name))
-                .send()
-                .await;
+            let _ = delete_tunnel(&name).await;
             loading.set(false);
             on_refresh.call(());
         });
@@ -277,28 +361,33 @@ fn TunnelCard(props: TunnelCardProps) -> Element {
     let uptime = props.process.as_ref().map(|p| p.uptime_secs).unwrap_or(0);
 
     rsx! {
-        EqCard { class: "overflow-hidden",
-            // 头部
+        EqCard { class: "overflow-hidden transition-all",
             div { class: "p-4 flex items-center justify-between",
                 div { class: "flex items-center space-x-3",
-                    // 状态指示器
-                    div {
-                        class: "w-2.5 h-2.5 rounded-full",
-                        background_color: if is_running {
-                            "var(--ds-success)"
-                        } else if props.tunnel.enabled {
-                            "var(--ds-warning)"
-                        } else {
-                            "var(--ds-text-tertiary)"
+                    div { class: "relative",
+                        div {
+                            class: "w-3 h-3 rounded-full",
+                            background_color: if is_running {
+                                "var(--ds-success)"
+                            } else if props.tunnel.enabled {
+                                "var(--ds-warning)"
+                            } else {
+                                "var(--ds-text-tertiary)"
+                            }
+                        }
+                        if is_running {
+                            div {
+                                class: "absolute inset-0 w-3 h-3 rounded-full bg-[var(--ds-success)] animate-ping opacity-75"
+                            }
                         }
                     }
                     div {
                         h3 { class: "font-semibold text-[var(--ds-text)]", "{props.tunnel.name}" }
                         p { class: "text-xs text-[var(--ds-text-tertiary)]",
                             if is_running {
-                                "运行中 - PID: {pid} - {format_uptime(uptime)}"
+                                "运行中 · PID: {pid} · {format_uptime(uptime)}"
                             } else if props.tunnel.enabled {
-                                "已启用 - 未运行"
+                                "已启用 · 未运行"
                             } else {
                                 "已禁用"
                             }
@@ -306,50 +395,51 @@ fn TunnelCard(props: TunnelCardProps) -> Element {
                     }
                 }
                 div { class: "flex items-center gap-2",
-                    // 启用/禁用开关
                     button {
-                        class: format!("px-2.5 py-1 rounded text-xs {}",
+                        class: format!("px-2.5 py-1 rounded text-xs font-medium transition-colors {}",
                             if props.tunnel.enabled {
-                                "bg-[color-mix(in_srgb,var(--ds-success)_15%,transparent)] text-[var(--ds-success)]"
+                                "bg-[color-mix(in_srgb,var(--ds-success)_15%,transparent)] text-[var(--ds-success)] hover:bg-[color-mix(in_srgb,var(--ds-success)_25%,transparent)]"
                             } else {
-                                "bg-[var(--ds-surface)] text-[var(--ds-text-tertiary)]"
+                                "bg-[var(--ds-surface)] text-[var(--ds-text-tertiary)] hover:bg-[color-mix(in_srgb,var(--ds-text-tertiary)_10%,transparent)]"
                             }
                         ),
                         onclick: toggle_enabled,
                         disabled: *loading.read(),
                         if props.tunnel.enabled { "启用中" } else { "已禁用" }
                     }
-                    // 展开/收起
                     button {
-                        class: "px-2 py-1 text-[var(--ds-text-tertiary)] hover:text-[var(--ds-text)] text-xs",
+                        class: "p-1.5 text-[var(--ds-text-tertiary)] hover:text-[var(--ds-text)] hover:bg-[var(--ds-surface)] rounded transition-colors",
                         onclick: move |_| expanded.set(!*expanded.read()),
-                        if *expanded.read() { "收起" } else { "展开" }
+                        svg { class: "w-4 h-4", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
+                            path { stroke_linecap: "round", stroke_linejoin: "round", d: if *expanded.read() { "M5 15l7-7 7 7" } else { "M19 9l-7 7-7-7" } }
+                        }
                     }
                 }
             }
 
-            // 控制按钮
             div { class: "px-4 pb-3 flex gap-2",
                 if is_running {
-                    EqButton {
-                        variant: EqButtonVariant::Secondary,
-                        size: EqButtonSize::Sm,
-                        onclick: stop_tunnel,
-                        disabled: *loading.read(),
-                        "停止"
+                    rsx! {
+                        EqButton {
+                            variant: EqButtonVariant::Secondary,
+                            size: EqButtonSize::Sm,
+                            onclick: stop_tunnel_fn,
+                            disabled: *loading.read(),
+                            "停止"
+                        }
+                        EqButton {
+                            variant: EqButtonVariant::Secondary,
+                            size: EqButtonSize::Sm,
+                            onclick: restart_tunnel_fn,
+                            disabled: *loading.read(),
+                            "重启"
+                        }
                     }
-                    EqButton {
-                        variant: EqButtonVariant::Secondary,
-                        size: EqButtonSize::Sm,
-                        onclick: restart_tunnel,
-                        disabled: *loading.read(),
-                        "重启"
-                    }
-                } else {
+                } else if props.tunnel.enabled {
                     EqButton {
                         variant: EqButtonVariant::Primary,
                         size: EqButtonSize::Sm,
-                        onclick: start_tunnel,
+                        onclick: start_tunnel_fn,
                         disabled: *loading.read(),
                         "启动"
                     }
@@ -357,18 +447,45 @@ fn TunnelCard(props: TunnelCardProps) -> Element {
                 EqButton {
                     variant: EqButtonVariant::Ghost,
                     size: EqButtonSize::Sm,
-                    onclick: delete_tunnel,
+                    onclick: delete_tunnel_fn,
                     disabled: *loading.read(),
                     "删除"
                 }
             }
 
-            // 展开的服务列表
             if *expanded.read() {
                 div { class: "border-t border-[var(--ds-border)] p-4",
-                    h4 { class: "font-medium mb-3 text-[var(--ds-text)]", "绑定的服务" }
+                    div { class: "grid grid-cols-3 gap-4 mb-4",
+                        div { class: "bg-[var(--ds-surface)] rounded-lg p-3",
+                            div { class: "text-[10px] text-[var(--ds-text-tertiary)] uppercase tracking-wider mb-1", "状态" }
+                            div { class: "text-sm font-semibold",
+                                if is_running {
+                                    span { class: "text-[var(--ds-success)]", "运行中" }
+                                } else {
+                                    span { class: "text-[var(--ds-text-tertiary)]", "已停止" }
+                                }
+                            }
+                        }
+                        div { class: "bg-[var(--ds-surface)] rounded-lg p-3",
+                            div { class: "text-[10px] text-[var(--ds-text-tertiary)] uppercase tracking-wider mb-1", "进程ID" }
+                            div { class: "text-sm font-mono", if pid > 0 { "{pid}" } else { "-" } }
+                        }
+                        div { class: "bg-[var(--ds-surface)] rounded-lg p-3",
+                            div { class: "text-[10px] text-[var(--ds-text-tertiary)] uppercase tracking-wider mb-1", "运行时间" }
+                            div { class: "text-sm", "{format_uptime(uptime)}" }
+                        }
+                    }
+
+                    h4 { class: "font-medium mb-3 text-[var(--ds-text)] flex items-center gap-2",
+                        svg { class: "w-4 h-4", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
+                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M9.375 16.5l-1.5 1.5L4.5 12l3.375-3 1.5 1.5L12 12l-1.5 1.5" }
+                        }
+                        "绑定的服务"
+                    }
                     if props.tunnel.services.is_empty() {
-                        p { class: "text-sm text-[var(--ds-text-tertiary)]", "暂无服务配置" }
+                        div { class: "text-sm text-[var(--ds-text-tertiary)] bg-[var(--ds-surface)] p-3 rounded-md text-center",
+                            "暂无服务配置"
+                        }
                     } else {
                         div { class: "space-y-2",
                             for service in props.tunnel.services.clone() {
@@ -391,7 +508,6 @@ fn TunnelCard(props: TunnelCardProps) -> Element {
     }
 }
 
-/// 服务项组件
 #[derive(Props, PartialEq, Clone)]
 struct ServiceItemProps {
     tunnel_name: String,
@@ -402,59 +518,54 @@ struct ServiceItemProps {
 #[component]
 fn ServiceItem(props: ServiceItemProps) -> Element {
     let mut loading = use_signal(|| false);
-
     let tunnel_name = props.tunnel_name.clone();
     let service_name = props.service.name.clone();
 
-    // 启用/禁用服务
     let toggle_service = move |_| {
         let tn = tunnel_name.clone();
         let sn = service_name.clone();
         let enabled = !props.service.enabled;
         let on_refresh = props.on_refresh.clone();
         loading.set(true);
-
         spawn(async move {
-            let url = if enabled {
-                format!("/api/tunnels/{}/services/{}/enable", tn, sn)
+            if enabled {
+                let _ = enable_service(&tn, &sn).await;
             } else {
-                format!("/api/tunnels/{}/services/{}/disable", tn, sn)
-            };
-            let _ = reqwest::Client::new().post(&url).body("").send().await;
+                let _ = disable_service(&tn, &sn).await;
+            }
             loading.set(false);
             on_refresh.call(());
         });
     };
 
-    let tn2 = tunnel_name.clone();
-    let sn2 = service_name.clone();
-
-    // 删除服务
-    let delete_service = move |_| {
-        let tn = tn2.clone();
-        let sn = sn2.clone();
+    let delete_service_fn = move |_| {
+        let tn = tunnel_name.clone();
+        let sn = service_name.clone();
         let on_refresh = props.on_refresh.clone();
         loading.set(true);
-
         spawn(async move {
-            let _ = reqwest::Client::new()
-                .delete(&format!("/api/tunnels/{}/services/{}", tn, sn))
-                .send()
-                .await;
+            let _ = delete_service(&tn, &sn).await;
             loading.set(false);
             on_refresh.call(());
         });
     };
 
     rsx! {
-        div { class: "flex items-center justify-between p-2.5 bg-[var(--ds-surface)] rounded-md",
+        div { class: "flex items-center justify-between p-3 bg-[var(--ds-surface)] rounded-lg hover:bg-[color-mix(in_srgb,var(--ds-surface)_80%,transparent)] transition-colors",
             div { class: "flex items-center space-x-3",
-                div {
-                    class: "w-2 h-2 rounded-full",
-                    background_color: if props.service.enabled {
-                        "var(--ds-success)"
-                    } else {
-                        "var(--ds-text-tertiary)"
+                div { class: "relative",
+                    div {
+                        class: "w-2 h-2 rounded-full",
+                        background_color: if props.service.enabled {
+                            "var(--ds-success)"
+                        } else {
+                            "var(--ds-text-tertiary)"
+                        }
+                    }
+                    if props.service.enabled {
+                        div {
+                            class: "absolute inset-0 w-2 h-2 rounded-full bg-[var(--ds-success)] animate-ping opacity-50"
+                        }
                     }
                 }
                 div {
@@ -464,11 +575,11 @@ fn ServiceItem(props: ServiceItemProps) -> Element {
             }
             div { class: "flex gap-1.5",
                 button {
-                    class: format!("px-2 py-1 rounded text-xs {}",
+                    class: format!("px-2 py-1 rounded text-xs font-medium transition-colors {}",
                         if props.service.enabled {
-                            "bg-[color-mix(in_srgb,var(--ds-success)_15%,transparent)] text-[var(--ds-success)]"
+                            "bg-[color-mix(in_srgb,var(--ds-success)_15%,transparent)] text-[var(--ds-success)] hover:bg-[color-mix(in_srgb,var(--ds-success)_25%,transparent)]"
                         } else {
-                            "bg-[var(--ds-bg)] text-[var(--ds-text-tertiary)]"
+                            "bg-[var(--ds-bg)] text-[var(--ds-text-tertiary)] hover:bg-[color-mix(in_srgb,var(--ds-text-tertiary)_10%,transparent)]"
                         }
                     ),
                     onclick: toggle_service,
@@ -476,8 +587,8 @@ fn ServiceItem(props: ServiceItemProps) -> Element {
                     if props.service.enabled { "启用" } else { "禁用" }
                 }
                 button {
-                    class: "px-2 py-1 bg-[color-mix(in_srgb,var(--ds-danger)_15%,transparent)] text-[var(--ds-danger)] rounded text-xs hover:bg-[color-mix(in_srgb,var(--ds-danger)_25%,transparent)]",
-                    onclick: delete_service,
+                    class: "px-2 py-1 bg-[color-mix(in_srgb,var(--ds-danger)_15%,transparent)] text-[var(--ds-danger)] rounded text-xs font-medium hover:bg-[color-mix(in_srgb,var(--ds-danger)_25%,transparent)] transition-colors",
+                    onclick: delete_service_fn,
                     disabled: *loading.read(),
                     "删除"
                 }
@@ -486,7 +597,6 @@ fn ServiceItem(props: ServiceItemProps) -> Element {
     }
 }
 
-/// 添加服务表单
 #[derive(Props, PartialEq, Clone)]
 struct AddServiceFormProps {
     tunnel_name: String,
@@ -506,25 +616,13 @@ fn AddServiceForm(props: AddServiceFormProps) -> Element {
         let tn = tunnel_name.clone();
         let n = name.read().clone();
         let u = url.read().clone();
-
         if n.is_empty() || u.is_empty() {
             return;
         }
-
         let on_success = props.on_success.clone();
         loading.set(true);
-
         spawn(async move {
-            let body = serde_json::json!({
-                "name": n,
-                "url": u,
-                "enabled": true
-            });
-            let _ = reqwest::Client::new()
-                .post(&format!("/api/tunnels/{}/services", tn))
-                .json(&body)
-                .send()
-                .await;
+            let _ = add_service(&tn, &n, &u, true).await;
             loading.set(false);
             show_form.set(false);
             name.set(String::new());
@@ -535,16 +633,16 @@ fn AddServiceForm(props: AddServiceFormProps) -> Element {
 
     if *show_form.read() {
         rsx! {
-            div { class: "mt-3 p-3 bg-[var(--ds-surface)] rounded-md",
-                div { class: "flex gap-2 mb-2",
+            div { class: "mt-3 p-4 bg-[var(--ds-surface)] rounded-lg",
+                div { class: "flex gap-2 mb-3",
                     input {
-                        class: "flex-1 px-2.5 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
+                        class: "flex-1 px-3 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                         placeholder: "服务名称",
                         value: "{name}",
                         oninput: move |e| name.set(e.value.clone()),
                     }
                     input {
-                        class: "flex-1 px-2.5 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
+                        class: "flex-1 px-3 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                         placeholder: "http://localhost:8080",
                         value: "{url}",
                         oninput: move |e| url.set(e.value.clone()),
@@ -570,15 +668,17 @@ fn AddServiceForm(props: AddServiceFormProps) -> Element {
     } else {
         rsx! {
             button {
-                class: "mt-3 text-xs text-[var(--ds-blue)] hover:opacity-80",
+                class: "mt-3 text-xs text-[var(--ds-blue)] hover:opacity-80 flex items-center gap-1",
                 onclick: move |_| show_form.set(true),
+                svg { class: "w-3.5 h-3.5", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
+                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M12 4v16m8-8H4" }
+                }
                 "+ 添加服务"
             }
         }
     }
 }
 
-/// 添加隧道对话框
 #[derive(Props, PartialEq, Clone)]
 struct AddTunnelDialogProps {
     on_close: EventHandler<()>,
@@ -595,37 +695,17 @@ fn AddTunnelDialog(props: AddTunnelDialogProps) -> Element {
     let submit = move |_| {
         let n = name.read().clone();
         let t = token.read().clone();
-
         if n.is_empty() || t.is_empty() {
             error.set(Some("名称和Token不能为空".to_string()));
             return;
         }
-
         let on_success = props.on_success.clone();
         loading.set(true);
         error.set(None);
-
         spawn(async move {
-            let body = serde_json::json!({
-                "name": n,
-                "token": t,
-                "enabled": true
-            });
-            match reqwest::Client::new().post("/api/tunnels").json(&body).send().await {
-                Ok(resp) => {
-                    if let Ok(data) = resp.json::<serde_json::Value>().await {
-                        if data["success"].as_bool().unwrap_or(false) {
-                            on_success.call(());
-                        } else {
-                            error.set(Some(
-                                data["error"].as_str().unwrap_or("添加失败").to_string(),
-                            ));
-                        }
-                    }
-                }
-                Err(e) => {
-                    error.set(Some(format!("请求失败: {}", e)));
-                }
+            match add_tunnel(&n, &t, true).await {
+                Ok(_) => on_success.call(()),
+                Err(e) => error.set(Some(format!("添加失败: {}", e))),
             }
             loading.set(false);
         });
@@ -633,8 +713,8 @@ fn AddTunnelDialog(props: AddTunnelDialogProps) -> Element {
 
     rsx! {
         div { class: "fixed inset-0 bg-black/50 flex items-center justify-center z-50",
-            div { class: "bg-[var(--ds-card)] rounded-lg p-6 w-full max-w-md border border-[var(--ds-border)] shadow-xl",
-                h2 { class: "text-lg font-bold mb-4 text-[var(--ds-text)]", "添加隧道" }
+            div { class: "bg-[var(--ds-card)] rounded-xl p-6 w-full max-w-md border border-[var(--ds-border)] shadow-xl",
+                h2 { class: "text-lg font-bold mb-4 text-[var(--ds-text)]", "添加 Cloudflare Tunnel" }
                 if let Some(err) = error.read().clone() {
                     div { class: "p-2.5 border border-[var(--ds-danger)] text-[var(--ds-danger)] rounded-md mb-4 text-sm bg-[color-mix(in_srgb,var(--ds-danger)_10%,transparent)]",
                         "{err}"
@@ -646,7 +726,7 @@ fn AddTunnelDialog(props: AddTunnelDialogProps) -> Element {
                             "隧道名称"
                         }
                         input {
-                            class: "w-full px-2.5 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
+                            class: "w-full px-3 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                             placeholder: "my-tunnel",
                             value: "{name}",
                             oninput: move |e| name.set(e.value.clone()),
@@ -657,10 +737,13 @@ fn AddTunnelDialog(props: AddTunnelDialogProps) -> Element {
                             "Tunnel Token"
                         }
                         textarea {
-                            class: "w-full px-2.5 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-sm text-[var(--ds-text)] font-mono outline-none focus:border-[var(--ds-blue)] h-24",
+                            class: "w-full px-3 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-sm text-[var(--ds-text)] font-mono outline-none focus:border-[var(--ds-blue)] h-28",
                             placeholder: "eyJhIjoixxxxxxxxx...",
                             value: "{token}",
                             oninput: move |e| token.set(e.value.clone()),
+                        }
+                        p { class: "text-[10px] text-[var(--ds-text-tertiary)] mt-1",
+                            "在 Cloudflare 控制台创建隧道后获取此 Token"
                         }
                     }
                 }

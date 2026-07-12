@@ -126,47 +126,59 @@ class ServerManager private constructor(private val context: Context) {
         state = ServerState.STOPPED
     }
 
+    @Volatile
+    private var lastCheckTime: Long = 0
+    @Volatile
+    private var lastCheckResult: Boolean = false
+
     fun isRunning(): Boolean {
-        // 先检查本实例启动的进程是否存活
+        val now = System.currentTimeMillis()
+        if (now - lastCheckTime < 3000 && lastCheckResult && state == ServerState.RUNNING) {
+            return true
+        }
+
         val proc = process
         if (proc != null) {
             try {
                 proc.exitValue()
-                // 如果能获取退出值，说明进程已结束
                 process = null
                 state = ServerState.STOPPED
+                lastCheckResult = false
+                lastCheckTime = now
                 return false
             } catch (e: IllegalThreadStateException) {
-                // 进程仍在运行，继续 HTTP 验证
             }
         }
 
-        // 通过 HTTP 检查服务是否响应（兼容外部启动的进程，如 Magisk 模块）
+        lastCheckTime = now
         return try {
             val url = URL("http://127.0.0.1:$port/api/status")
             val conn = url.openConnection() as HttpURLConnection
-            conn.connectTimeout = 2000
-            conn.readTimeout = 2000
+            conn.connectTimeout = 500
+            conn.readTimeout = 1000
+            conn.requestMethod = "HEAD"
+            conn.setRequestProperty("Connection", "close")
             val result = conn.responseCode == 200
             conn.disconnect()
             if (result && state != ServerState.RUNNING) {
                 state = ServerState.RUNNING
             }
+            lastCheckResult = result
             result
         } catch (e: Exception) {
-            // HTTP 检查失败，尝试检查进程列表作为后备方案
             if (proc == null) {
                 try {
                     val checkProcess = Runtime.getRuntime().exec(arrayOf("pgrep", "-f", BINARY_NAME))
                     val exitCode = checkProcess.waitFor()
                     if (exitCode == 0 && state != ServerState.RUNNING) {
                         state = ServerState.RUNNING
+                        lastCheckResult = true
                         return true
                     }
                 } catch (ex: Exception) {
-                    // pgrep 不可用，忽略
                 }
             }
+            lastCheckResult = false
             false
         }
     }
@@ -192,6 +204,42 @@ class ServerManager private constructor(private val context: Context) {
             urls.add("自定义: http://${config.customIp}:$port")
         }
         return urls
+    }
+
+    fun discoverLanServers(): List<NetworkHelper.DiscoveredServer> {
+        val results = mutableListOf<NetworkHelper.DiscoveredServer>()
+        results.addAll(NetworkHelper.scanLanForServer(port, 200))
+        results.addAll(NetworkHelper.discoverViaBroadcast(port))
+        results.distinctBy { it.ip }.forEach {
+            Log.i(TAG, "发现服务: ${it.ip}:${it.port} (${it.type})")
+        }
+        return results.distinctBy { it.ip }
+    }
+
+    fun findAvailableServer(): String? {
+        if (isRunning()) {
+            return getLocalUrl()
+        }
+
+        val servers = discoverLanServers()
+        for (server in servers) {
+            if (NetworkHelper.isReachable(server.ip, server.port, 500)) {
+                return "http://${server.ip}:${server.port}"
+            }
+        }
+
+        val config = ConfigManager.load()
+        if (config.customUrl.isNotBlank()) {
+            if (NetworkHelper.isReachable(config.customUrl.replace("http://", "").split(":")[0], port, 500)) {
+                return config.customUrl
+            }
+        } else if (config.customIp.isNotBlank()) {
+            if (NetworkHelper.isReachable(config.customIp, port, 500)) {
+                return "http://${config.customIp}:$port"
+            }
+        }
+
+        return null
     }
 
     fun executeCommand(command: String): Pair<Boolean, String> {

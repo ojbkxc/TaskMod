@@ -72,6 +72,45 @@ async fn ensure_dirs() {
     api::ai_hub::init_dirs().await;
 }
 
+async fn start_discovery_server(port: u16) {
+    use tokio::net::UdpSocket;
+
+    let socket = match UdpSocket::bind(&format!("0.0.0.0:{}", port)).await {
+        Ok(s) => {
+            if let Err(e) = s.set_reuseaddr(true) {
+                eprintln!("[Discovery] 设置SO_REUSEADDR失败: {}", e);
+            }
+            s
+        }
+        Err(e) => {
+            eprintln!("[Discovery] 无法绑定UDP端口 {}: {}", port, e);
+            return;
+        }
+    };
+
+    println!("[Discovery] UDP服务发现已启动: 0.0.0.0:{}", port);
+
+    let mut buf = [0u8; 256];
+    loop {
+        match socket.recv_from(&mut buf).await {
+            Ok((len, addr)) => {
+                let msg = String::from_utf8_lossy(&buf[..len]);
+                if msg.starts_with("TASKMOD_DISCOVERY") {
+                    let response = "TASKMOD_SERVER";
+                    if let Err(e) = socket.send_to(response.as_bytes(), addr).await {
+                        eprintln!("[Discovery] 发送响应失败: {}", e);
+                    } else {
+                        println!("[Discovery] 响应服务发现请求: {}", addr.ip());
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("[Discovery] 接收失败: {}", e);
+            }
+        }
+    }
+}
+
 fn handle_event(event: utils::event_monitor::SystemEvent) {
     use utils::event_monitor::SystemEvent;
     
@@ -240,6 +279,10 @@ async fn main() -> anyhow::Result<()> {
 
     tokio::spawn(async {
         utils::mqtt::start_mqtt().await;
+    });
+
+    tokio::spawn(async {
+        start_discovery_server(listen_port).await;
     });
 
     let mirror_routes = Router::new()

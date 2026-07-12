@@ -1,9 +1,8 @@
 use dioxus::prelude::*;
 use eq_ui::prelude::*;
 use serde_json::{json, Value};
-use web_sys::{WebSocket, MessageEvent, CloseEvent, ErrorEvent};
+use web_sys::{WebSocket, MessageEvent, CloseEvent, ErrorEvent, KeyboardEvent};
 use wasm_bindgen::JsCast;
-use futures::future::join;
 use gloo_timers::future::sleep;
 use std::time::Duration;
 use crate::api::client::{
@@ -39,6 +38,7 @@ struct ChatState {
     ws_connected: bool,
     loading_providers: bool,
     loading_sessions: bool,
+    reconnect_attempts: usize,
 }
 
 impl Default for ChatState {
@@ -49,13 +49,14 @@ impl Default for ChatState {
             selected_provider: None,
             providers: Vec::new(),
             sessions: Vec::new(),
-            current_session: None,
+            current_session: Option::None,
             is_typing: false,
             current_thinking: String::new(),
             error: None,
             ws_connected: false,
             loading_providers: true,
             loading_sessions: true,
+            reconnect_attempts: 0,
         }
     }
 }
@@ -176,13 +177,17 @@ pub fn ChatPage() -> Element {
                 return;
             }
 
-            let host = web_sys::window().unwrap().location().host().unwrap_or_default();
-            let ws_url = format!("ws://{}/ws/ai-chat", host);
+            let window = web_sys::window().unwrap();
+            let protocol = window.location().protocol().unwrap_or_default();
+            let ws_protocol = if protocol == "https:" { "wss:" } else { "ws:" };
+            let host = window.location().host().unwrap_or_default();
+            let ws_url = format!("{}//{}/ws/ai-chat", ws_protocol, host);
 
             let socket = match WebSocket::new(&ws_url) {
                 Ok(s) => s,
                 Err(e) => {
                     state.write().error = Some(format!("WebSocket连接失败: {}", e.as_string().unwrap_or_default()));
+                    schedule_reconnect(&state, &ws, &message_container).await;
                     return;
                 }
             };
@@ -194,6 +199,12 @@ pub fn ChatPage() -> Element {
             
             let on_message = Closure::wrap(Box::new(move |event: MessageEvent| {
                 if let Ok(text) = event.data().as_string() {
+                    if text == "ping" {
+                        if let Some(s) = ws_clone.read().as_ref() {
+                            let _ = s.send_with_str("pong");
+                        }
+                        return;
+                    }
                     let mut state = state_clone.write();
                     if let Ok(data) = serde_json::from_str::<Value>(&text) {
                         match data.get("type").and_then(|t| t.as_str()) {
@@ -289,22 +300,34 @@ pub fn ChatPage() -> Element {
 
             let state_clone2 = state.clone();
             let ws_clone2 = ws.clone();
+            let message_container_clone2 = message_container.clone();
             let on_close = Closure::wrap(Box::new(move |_event: CloseEvent| {
                 let mut state = state_clone2.write();
                 state.is_typing = false;
                 state.ws_connected = false;
+                state.reconnect_attempts += 1;
                 ws_clone2.write().take();
+                spawn(async move {
+                    schedule_reconnect(&state_clone2, &ws_clone2, &message_container_clone2).await;
+                });
             }) as Box<dyn FnMut(_)>);
 
             socket.set_onclose(Some(on_close.as_ref().unchecked_ref()));
             on_close.forget();
 
             let state_clone3 = state.clone();
+            let ws_clone3 = ws.clone();
+            let message_container_clone3 = message_container.clone();
             let on_error = Closure::wrap(Box::new(move |_event: ErrorEvent| {
                 let mut state = state_clone3.write();
                 state.is_typing = false;
                 state.error = Some("WebSocket连接失败".to_string());
                 state.ws_connected = false;
+                state.reconnect_attempts += 1;
+                ws_clone3.write().take();
+                spawn(async move {
+                    schedule_reconnect(&state_clone3, &ws_clone3, &message_container_clone3).await;
+                });
             }) as Box<dyn FnMut(_)>);
 
             socket.set_onerror(Some(on_error.as_ref().unchecked_ref()));
@@ -312,19 +335,56 @@ pub fn ChatPage() -> Element {
 
             let state_clone4 = state.clone();
             let on_open = Closure::wrap(Box::new(move || {
-                state_clone4.write().ws_connected = true;
+                let mut state = state_clone4.write();
+                state.ws_connected = true;
+                state.reconnect_attempts = 0;
+                state.error = None;
             }) as Box<dyn FnMut()>);
 
             socket.set_onopen(Some(on_open.as_ref().unchecked_ref()));
             on_open.forget();
 
             ws.write().replace(socket);
+
+            start_heartbeat(&ws, &state);
         }
+    };
+
+    let schedule_reconnect = move |state: &Signal<ChatState>, ws: &Signal<Option<WebSocket>>, message_container: &Signal<Option<MountedData>>| {
+        async move {
+            let attempts = state.read().reconnect_attempts;
+            let delay = std::cmp::min(attempts * 2, 16);
+            sleep(Duration::from_secs(delay)).await;
+            if ws.read().is_none() {
+                connect_ws().await;
+            }
+        }
+    };
+
+    let start_heartbeat = move |ws: &Signal<Option<WebSocket>>, state: &Signal<ChatState>| {
+        spawn(async move {
+            loop {
+                sleep(Duration::from_secs(30)).await;
+                if let Some(socket) = ws.read().as_ref() {
+                    if socket.ready_state() == 1 {
+                        let _ = socket.send_with_str("ping");
+                    } else {
+                        state.write().ws_connected = false;
+                        ws.write().take();
+                        connect_ws().await;
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+        });
     };
 
     let send_message = move |message: String| {
         let state = state.clone();
         let ws = ws.clone();
+        let message_container = message_container.clone();
         async move {
             let provider = match state.read().selected_provider.clone() {
                 Some(p) => p,
@@ -343,11 +403,11 @@ pub fn ChatPage() -> Element {
             state_mut.current_message = String::new();
             state_mut.is_typing = true;
             state_mut.error = None;
+            state_mut.current_thinking = String::new();
 
             if ws.read().is_none() {
                 drop(state_mut);
                 connect_ws().await;
-                // 等待WebSocket连接建立
                 for _ in 0..20 {
                     sleep(Duration::from_millis(100)).await;
                     if ws.read().is_some() && ws.read().as_ref().map(|s| s.ready_state() == 1).unwrap_or(false) {
@@ -415,6 +475,10 @@ pub fn ChatPage() -> Element {
         let state = state.clone();
         let message_container = message_container.clone();
         spawn(async move {
+            let mut state_mut = state.write();
+            state_mut.current_thinking = String::new();
+            drop(state_mut);
+
             match get_chat_session(&session.id).await {
                 Ok(full_session) => {
                     state.write().current_session = Some(full_session.clone());
@@ -460,8 +524,11 @@ pub fn ChatPage() -> Element {
     };
 
     let new_session = move || {
-        state.write().current_session = None;
-        state.write().messages = Vec::new();
+        let mut state_mut = state.write();
+        state_mut.current_session = None;
+        state_mut.messages = Vec::new();
+        state_mut.current_thinking = String::new();
+        state_mut.error = None;
     };
 
     let delete_session = move |session_id: String| {
@@ -474,6 +541,7 @@ pub fn ChatPage() -> Element {
                 if s.id == session_id {
                     state_mut.current_session = None;
                     state_mut.messages = Vec::new();
+                    state_mut.current_thinking = String::new();
                 }
             }
         }
@@ -481,6 +549,7 @@ pub fn ChatPage() -> Element {
 
     let handle_screenshot_analyze = move || {
         let state = state.clone();
+        let message_container = message_container.clone();
         async move {
             let provider = match state.read().selected_provider.clone() {
                 Some(p) => p,
@@ -491,6 +560,7 @@ pub fn ChatPage() -> Element {
             };
 
             state.write().is_typing = true;
+            state.write().current_thinking = String::new();
             state.write().messages.push(ChatMessage::User { content: "截图分析".to_string() });
 
             match screenshot_analyze(None).await {
@@ -683,6 +753,7 @@ pub fn ChatPage() -> Element {
                                         size: EqButtonSize::Sm,
                                         onclick: move |_| {
                                             state.write().ws_connected = false;
+                                            state.write().reconnect_attempts = 0;
                                             ws.write().take();
                                             spawn(async move {
                                                 connect_ws().await;
@@ -758,7 +829,7 @@ pub fn ChatPage() -> Element {
                             div { class: "flex-1 border border-[var(--ds-border)] rounded-xl bg-[var(--ds-card)] shadow-sm overflow-hidden",
                                 textarea {
                                     class: "w-full min-h-[44px] max-h-[160px] px-4 py-3 resize-none bg-transparent text-sm text-[var(--ds-text)] outline-none placeholder:text-[var(--ds-text-tertiary)]",
-                                    placeholder: "输入消息...",
+                                    placeholder: "输入消息... (Shift+Enter换行)",
                                     value: state.read().current_message.clone(),
                                     oninput: move |e| state.write().current_message = e.value(),
                                     onkeydown: handle_keydown,

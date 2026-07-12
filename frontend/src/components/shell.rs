@@ -14,7 +14,6 @@ pub struct AppShellProps {
 pub fn AppShell(props: AppShellProps) -> Element {
     rsx! {
         div { class: "flex flex-col h-screen min-w-[320px]",
-            // 顶部导航栏
             Sidebar {
                 theme: props.theme,
                 active_page: props.active_page,

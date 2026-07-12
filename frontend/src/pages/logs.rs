@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 use eq_ui::prelude::*;
+use gloo_timers::callback::Interval;
 
 #[component]
 pub fn LogsPage() -> Element {
@@ -20,19 +21,15 @@ pub fn LogsPage() -> Element {
         });
     });
 
-    // 自动刷新定时器
     use_effect(move || {
         if *auto_refresh.read() {
-            spawn(async move {
-                loop {
-                    gloo_timers::future::TimeoutFuture::new(3000).await;
-                    if !*auto_refresh.read() { break; }
-                    match crate::api::client::get_logs(200).await {
-                        Ok(list) => logs.set(list),
-                        Err(_) => {}
-                    }
-                }
+            let refresh_clone = refresh.clone();
+            let interval = Interval::new(3000, move || {
+                refresh_clone.set(*refresh_clone.read() + 1);
             });
+            Some(move || drop(interval))
+        } else {
+            None
         }
     });
 
@@ -54,7 +51,7 @@ pub fn LogsPage() -> Element {
                     }
                     EqButton {
                         variant: EqButtonVariant::Secondary,
-                        onclick: move |_| refresh += 1,
+                        onclick: move |_| refresh.set(*refresh.read() + 1),
                         "刷新"
                     }
                     EqButton {
@@ -62,7 +59,7 @@ pub fn LogsPage() -> Element {
                         onclick: move |_| {
                             spawn(async move {
                                 let _ = crate::api::client::clear_logs().await;
-                                refresh += 1;
+                                refresh.set(*refresh.read() + 1);
                             });
                         },
                         "清除"

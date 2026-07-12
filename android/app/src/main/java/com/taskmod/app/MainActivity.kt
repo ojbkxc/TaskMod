@@ -140,12 +140,15 @@ class MainActivity : AppCompatActivity() {
                 isPageLoaded = false
             } else {
                 TaskModService.start(this)
-                // 等服务启动后加载页面
                 handler.postDelayed({ loadWebView() }, 1500)
             }
         }
 
         btnMenu.setOnClickListener { showPopupMenu(it) }
+
+        placeholder.setOnClickListener {
+            tryDiscoverServer()
+        }
     }
 
     private fun showPopupMenu(anchor: View) {
@@ -260,7 +263,6 @@ class MainActivity : AppCompatActivity() {
             tvAddress.text = serverManager.getLocalUrl()
             btnToggle.text = "停止"
             btnToggle.backgroundTintList = ColorStateList.valueOf(getColor(R.color.error))
-            // 自动加载 WebView
             if (!isPageLoaded) loadWebView()
         } else {
             tvAddress.text = "--"
@@ -271,11 +273,29 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun tryDiscoverServer() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val serverUrl = serverManager.findAvailableServer()
+            withContext(Dispatchers.Main) {
+                if (serverUrl != null) {
+                    Log.i("MainActivity", "发现可用服务: $serverUrl")
+                    webView.loadUrl(serverUrl)
+                    webView.visibility = View.VISIBLE
+                    placeholder.visibility = View.GONE
+                    tvAddress.text = serverUrl
+                    tvStatusText.text = "已连接"
+                    tvStatusText.setTextColor(getColor(R.color.success))
+                    statusDot.setBackgroundResource(R.drawable.status_dot_running)
+                }
+            }
+        }
+    }
+
     private fun startStatusCheck() {
         statusCheckRunnable = object : Runnable {
             override fun run() {
                 updateUI()
-                handler.postDelayed(this, 5000)
+                handler.postDelayed(this, 10000)
             }
         }
         handler.post(statusCheckRunnable!!)

@@ -9,7 +9,7 @@ use crate::api::client::{
     list_projects, create_project, update_project, delete_project,
     list_scenarios, list_saved_items, create_saved_item, update_saved_item, delete_saved_item,
     list_mcp_servers, create_mcp_server, update_mcp_server, delete_mcp_server,
-    get_prompt_settings, update_prompt_settings, PromptSettings,
+    list_screenshots, get_prompt_settings, update_prompt_settings, PromptSettings,
     Memory, Preset, Skill, Project, Scenario, SavedItem, McpServer,
 };
 
@@ -36,6 +36,7 @@ struct LibraryState {
     scenarios: Vec<Scenario>,
     saved_items: Vec<SavedItem>,
     mcp_servers: Vec<McpServer>,
+    screenshots: Vec<String>,
     prompt_settings: PromptSettings,
     search_query: String,
     show_create_modal: bool,
@@ -53,6 +54,7 @@ impl Default for LibraryState {
             scenarios: Vec::new(),
             saved_items: Vec::new(),
             mcp_servers: Vec::new(),
+            screenshots: Vec::new(),
             prompt_settings: PromptSettings {
                 memory_enabled: true,
                 system_prompt_enabled: true,
@@ -413,8 +415,14 @@ pub fn LibraryPage() -> Element {
                     }
                     TabType::Screenshot => {
                         rsx! {
-                            div { class: "flex-1 flex items-center justify-center text-[var(--ds-text-tertiary)]",
-                                "截图管理开发中..."
+                            ScreenshotList {
+                                screenshots: state.read().screenshots.clone(),
+                                search_query: state.read().search_query.clone(),
+                                on_search: handle_search,
+                                on_refresh: move || {
+                                    let state = state.clone();
+                                    spawn(async move { load_data(state).await; });
+                                },
                             }
                         }
                     }
@@ -456,6 +464,7 @@ async fn load_data(state: Signal<LibraryState>) {
     let scenarios_res = list_scenarios().await;
     let saved_items_res = list_saved_items().await;
     let mcp_servers_res = list_mcp_servers().await;
+    let screenshots_res = list_screenshots().await;
     let prompt_settings_res = get_prompt_settings().await;
 
     let mut s = state.write();
@@ -493,6 +502,11 @@ async fn load_data(state: Signal<LibraryState>) {
         s.mcp_servers = mcp;
     } else if let Err(e) = mcp_servers_res {
         eprintln!("加载MCP服务器失败: {}", e);
+    }
+    if let Ok(ss) = screenshots_res {
+        s.screenshots = ss;
+    } else if let Err(e) = screenshots_res {
+        eprintln!("加载截图失败: {}", e);
     }
     if let Ok(ps) = prompt_settings_res {
         s.prompt_settings = ps;
@@ -1133,6 +1147,81 @@ fn PromptControlPanel(props: PromptControlPanelProps) -> Element {
                     size: EqButtonSize::Md,
                     onclick: handle_save,
                     "保存设置"
+                }
+            }
+        }
+    }
+}
+
+#[derive(Props, PartialEq, Clone)]
+struct ScreenshotListProps {
+    screenshots: Vec<String>,
+    search_query: String,
+    on_search: EventHandler<String>,
+    on_refresh: EventHandler<()>,
+}
+
+#[component]
+fn ScreenshotList(props: ScreenshotListProps) -> Element {
+    rsx! {
+        div { class: "flex flex-col h-full",
+            div { class: "flex gap-2 p-3 border-b border-[var(--ds-border)]",
+                input {
+                    class: "flex-1 min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
+                    placeholder: "搜索截图...",
+                    value: props.search_query.clone(),
+                    oninput: move |e| props.on_search.call(e.value()),
+                }
+                EqButton {
+                    variant: EqButtonVariant::Ghost,
+                    size: EqButtonSize::Sm,
+                    onclick: move |_| props.on_refresh.call(()),
+                    "刷新"
+                }
+            }
+            div { class: "flex-1 overflow-y-auto p-4",
+                if props.screenshots.is_empty() {
+                    div { class: "flex flex-col items-center justify-center py-12 text-[var(--ds-text-tertiary)]",
+                        div { class: "w-16 h-16 rounded-full bg-[var(--ds-surface)] flex items-center justify-center mb-4",
+                            svg { class: "w-8 h-8", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
+                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" }
+                            }
+                        }
+                        p { class: "text-sm", "暂无截图" }
+                    }
+                } else {
+                    div { class: "grid grid-cols-3 gap-3",
+                        for (idx, screenshot) in props.screenshots.iter().enumerate() {
+                            let image_url = if screenshot.starts_with("http") {
+                                screenshot.clone()
+                            } else {
+                                format!("/screenshots/{}", screenshot)
+                            };
+                            div {
+                                class: "relative group rounded-lg overflow-hidden border border-[var(--ds-border)] bg-[var(--ds-card)] cursor-pointer hover:border-[var(--ds-blue)] transition-colors",
+                                img {
+                                    src: "{image_url}",
+                                    class: "w-full h-32 object-cover",
+                                    alt: "截图",
+                                }
+                                div { class: "absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100",
+                                    button {
+                                        class: "p-2 bg-white/90 rounded-full hover:bg-white transition-colors",
+                                        onclick: move |_| {
+                                            let window = web_sys::window().unwrap();
+                                            let _ = window.open_with_url_and_target(&image_url, "_blank");
+                                        },
+                                        svg { class: "w-4 h-4 text-gray-700", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
+                                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" }
+                                        }
+                                    }
+                                }
+                                div { class: "absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2",
+                                    span { class: "text-[10px] text-white truncate block", "{screenshot}" }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// API 基础 URL（相对路径，因为前端和后端在同一服务器）
 const API_BASE: &str = "/api";
@@ -246,7 +247,7 @@ pub async fn save_mqtt_config(config: &MqttConfig) -> Result<String, reqwest::Er
 }
 
 /// 执行系统命令
-pub async fn exec_command(command: &str) -> Result<String, reqwest::Error> {
+pub async fn execute_command(command: &str) -> Result<String, reqwest::Error> {
     let url = format!("{}/command", API_BASE);
     let resp: ApiResponse<String> = reqwest::Client::new()
         .post(&url)
@@ -339,15 +340,15 @@ pub async fn delete_ai_provider(id: &str) -> Result<String, reqwest::Error> {
     Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
 }
 
-/// 测试 AI 连接（传入 base_url, api_key, model）
-pub async fn test_ai_connection(base_url: &str, api_key: &str, model: Option<&str>) -> Result<String, reqwest::Error> {
+/// 测试 AI 连接
+pub async fn test_ai_connection(provider: &AiProvider) -> Result<u64, reqwest::Error> {
     let url = format!("{}/ai/test-connection", API_BASE);
     let mut body = serde_json::json!({
-        "base_url": base_url,
-        "api_key": api_key,
+        "base_url": provider.base_url,
+        "api_key": provider.api_key,
     });
-    if let Some(m) = model {
-        body["model"] = serde_json::json!(m);
+    if !provider.model.is_empty() {
+        body["model"] = serde_json::json!(&provider.model);
     }
     let resp: ApiResponse<serde_json::Value> = reqwest::Client::new()
         .post(&url)
@@ -356,7 +357,15 @@ pub async fn test_ai_connection(base_url: &str, api_key: &str, model: Option<&st
         .await?
         .json()
         .await?;
-    Ok(resp.message.or(resp.data.map(|d| d.to_string())).unwrap_or_else(|| if resp.success { "连接成功".into() } else { "连接失败".into() }))
+    if resp.success {
+        let latency = resp.data.and_then(|d| d.get("latency").and_then(|l| l.as_u64())).unwrap_or(0);
+        Ok(latency)
+    } else {
+        Err(reqwest::Error::new(
+            reqwest::error::Kind::Other,
+            std::io::Error::new(std::io::ErrorKind::Other, resp.message.unwrap_or_else(|| "连接失败".to_string()))
+        ))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -787,26 +796,14 @@ pub async fn list_files(path: &str) -> Result<Vec<serde_json::Value>, reqwest::E
     Ok(resp.data.unwrap_or_default())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SavedItem {
-    pub id: String,
-    pub title: String,
-    pub content: String,
-    pub kind: String,
-    pub tags: Vec<String>,
-    pub source_url: String,
-    pub created_at: i64,
-    pub updated_at: i64,
-}
-
 pub async fn list_saved_items() -> Result<Vec<SavedItem>, reqwest::Error> {
-    let url = format!("{}/ai/saved-items", API_BASE);
+    let url = format!("{}/ai/saved", API_BASE);
     let resp: ApiResponse<Vec<SavedItem>> = reqwest::get(&url).await?.json().await?;
     Ok(resp.data.unwrap_or_default())
 }
 
 pub async fn create_saved_item(title: &str, content: &str, kind: Option<&str>, tags: Option<&[String]>, source_url: Option<&str>) -> Result<SavedItem, reqwest::Error> {
-    let url = format!("{}/ai/saved-items", API_BASE);
+    let url = format!("{}/ai/saved", API_BASE);
     let mut body = serde_json::json!({
         "title": title,
         "content": content,
@@ -825,7 +822,7 @@ pub async fn create_saved_item(title: &str, content: &str, kind: Option<&str>, t
 }
 
 pub async fn update_saved_item(id: &str, title: &str, content: &str, kind: Option<&str>, tags: Option<&[String]>, source_url: Option<&str>) -> Result<SavedItem, reqwest::Error> {
-    let url = format!("{}/ai/saved-items/{}", API_BASE, id);
+    let url = format!("{}/ai/saved/{}", API_BASE, id);
     let mut body = serde_json::json!({
         "title": title,
         "content": content,
@@ -844,7 +841,7 @@ pub async fn update_saved_item(id: &str, title: &str, content: &str, kind: Optio
 }
 
 pub async fn delete_saved_item(id: &str) -> Result<String, reqwest::Error> {
-    let url = format!("{}/ai/saved-items/{}", API_BASE, id);
+    let url = format!("{}/ai/saved/{}", API_BASE, id);
     let resp: ApiResponse<String> = reqwest::Client::new()
         .delete(&url)
         .send()
@@ -871,13 +868,13 @@ pub struct McpServer {
 }
 
 pub async fn list_mcp_servers() -> Result<Vec<McpServer>, reqwest::Error> {
-    let url = format!("{}/ai/mcp-servers", API_BASE);
+    let url = format!("{}/ai/mcp", API_BASE);
     let resp: ApiResponse<Vec<McpServer>> = reqwest::get(&url).await?.json().await?;
     Ok(resp.data.unwrap_or_default())
 }
 
 pub async fn create_mcp_server(name: &str, transport: Option<&str>, command: Option<&str>, args: Option<&[String]>, url: Option<&str>, enabled: Option<bool>, auto_connect: Option<bool>) -> Result<McpServer, reqwest::Error> {
-    let url_path = format!("{}/ai/mcp-servers", API_BASE);
+    let url_path = format!("{}/ai/mcp", API_BASE);
     let mut body = serde_json::json!({ "name": name });
     if let Some(t) = transport { body["transport"] = serde_json::json!(t); }
     if let Some(c) = command { body["command"] = serde_json::json!(c); }
@@ -896,7 +893,7 @@ pub async fn create_mcp_server(name: &str, transport: Option<&str>, command: Opt
 }
 
 pub async fn update_mcp_server(id: &str, name: Option<&str>, transport: Option<&str>, command: Option<&str>, args: Option<&[String]>, url: Option<&str>, enabled: Option<bool>, auto_connect: Option<bool>) -> Result<McpServer, reqwest::Error> {
-    let url_path = format!("{}/ai/mcp-servers/{}", API_BASE, id);
+    let url_path = format!("{}/ai/mcp/{}", API_BASE, id);
     let mut body = serde_json::json!({});
     if let Some(n) = name { body["name"] = serde_json::json!(n); }
     if let Some(t) = transport { body["transport"] = serde_json::json!(t); }
@@ -916,7 +913,7 @@ pub async fn update_mcp_server(id: &str, name: Option<&str>, transport: Option<&
 }
 
 pub async fn delete_mcp_server(id: &str) -> Result<String, reqwest::Error> {
-    let url = format!("{}/ai/mcp-servers/{}", API_BASE, id);
+    let url = format!("{}/ai/mcp/{}", API_BASE, id);
     let resp: ApiResponse<String> = reqwest::Client::new()
         .delete(&url)
         .send()
@@ -931,4 +928,215 @@ pub async fn list_screenshots() -> Result<Vec<String>, reqwest::Error> {
     let url = format!("{}/screenshots", API_BASE);
     let resp: ApiResponse<Vec<String>> = reqwest::get(&url).await?.json().await?;
     Ok(resp.data.unwrap_or_default())
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TunnelInfo {
+    pub name: String,
+    pub token: String,
+    pub enabled: bool,
+    pub services: Vec<ServiceInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ServiceInfo {
+    pub name: String,
+    pub url: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProcessStatus {
+    pub tunnel_name: String,
+    pub pid: u32,
+    pub uptime_secs: u64,
+    pub is_alive: bool,
+}
+
+pub async fn list_tunnels() -> Result<Vec<TunnelInfo>, reqwest::Error> {
+    let url = format!("{}/daemon/tunnels", API_BASE);
+    let resp: ApiResponse<Vec<TunnelInfo>> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn list_processes() -> Result<Vec<ProcessStatus>, reqwest::Error> {
+    let url = format!("{}/daemon/processes", API_BASE);
+    let resp: ApiResponse<Vec<ProcessStatus>> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn add_tunnel(name: &str, token: &str, enabled: bool) -> Result<String, reqwest::Error> {
+    let url = format!("{}/daemon/tunnels", API_BASE);
+    let body = serde_json::json!({
+        "name": name,
+        "token": token,
+        "enabled": enabled,
+    });
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+pub async fn enable_tunnel(name: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/daemon/tunnels/{}/enable", API_BASE, name);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .body("")
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+pub async fn disable_tunnel(name: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/daemon/tunnels/{}/disable", API_BASE, name);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .body("")
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+pub async fn start_tunnel(name: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/daemon/tunnels/{}/start", API_BASE, name);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .body("")
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+pub async fn stop_tunnel(name: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/daemon/tunnels/{}/stop", API_BASE, name);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .body("")
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+pub async fn restart_tunnel(name: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/daemon/tunnels/{}/restart", API_BASE, name);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .body("")
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+pub async fn delete_tunnel(name: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/daemon/tunnels/{}", API_BASE, name);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .delete(&url)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+pub async fn list_services(tunnel_name: &str) -> Result<Vec<ServiceInfo>, reqwest::Error> {
+    let url = format!("{}/daemon/tunnels/{}/services", API_BASE, tunnel_name);
+    let resp: ApiResponse<Vec<ServiceInfo>> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn add_service(tunnel_name: &str, name: &str, url: &str, enabled: bool) -> Result<String, reqwest::Error> {
+    let url_path = format!("{}/daemon/tunnels/{}/services", API_BASE, tunnel_name);
+    let body = serde_json::json!({
+        "name": name,
+        "url": url,
+        "enabled": enabled,
+    });
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url_path)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+pub async fn enable_service(tunnel_name: &str, service_name: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/daemon/tunnels/{}/services/{}/enable", API_BASE, tunnel_name, service_name);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .body("")
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+pub async fn disable_service(tunnel_name: &str, service_name: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/daemon/tunnels/{}/services/{}/disable", API_BASE, tunnel_name, service_name);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .body("")
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+pub async fn delete_service(tunnel_name: &str, service_name: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/daemon/tunnels/{}/services/{}", API_BASE, tunnel_name, service_name);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .delete(&url)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+pub async fn get_daemon_status() -> Result<serde_json::Value, reqwest::Error> {
+    let url = format!("{}/daemon/status", API_BASE);
+    let resp: ApiResponse<serde_json::Value> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn stop_daemon() -> Result<String, reqwest::Error> {
+    let url = format!("{}/daemon/stop", API_BASE);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .body("")
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+pub async fn restart_daemon() -> Result<String, reqwest::Error> {
+    let url = format!("{}/daemon/restart", API_BASE);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .body("")
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
 }
