@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 use eq_ui::prelude::*;
 use serde_json::json;
+use chrono::prelude::*;
 use crate::api::client::{
     list_memories, create_memory, update_memory, delete_memory,
     list_presets, save_preset, update_preset, delete_preset,
@@ -338,26 +339,39 @@ pub fn LibraryPage() -> Element {
 }
 
 async fn load_data(state: Signal<LibraryState>) {
+    let (memories_res, presets_res, skills_res, projects_res, scenarios_res) = tokio::join!(
+        list_memories(None, None),
+        list_presets(),
+        list_skills(),
+        list_projects(),
+        list_scenarios()
+    );
+
     let mut s = state.write();
-    match list_memories(None, None).await {
-        Ok(m) => s.memories = m,
-        Err(e) => eprintln!("加载记忆失败: {}", e),
+    if let Ok(m) = memories_res {
+        s.memories = m;
+    } else if let Err(e) = memories_res {
+        eprintln!("加载记忆失败: {}", e);
     }
-    match list_presets().await {
-        Ok(p) => s.presets = p,
-        Err(e) => eprintln!("加载预设失败: {}", e),
+    if let Ok(p) = presets_res {
+        s.presets = p;
+    } else if let Err(e) = presets_res {
+        eprintln!("加载预设失败: {}", e);
     }
-    match list_skills().await {
-        Ok(sl) => s.skills = sl,
-        Err(e) => eprintln!("加载技能失败: {}", e),
+    if let Ok(sl) = skills_res {
+        s.skills = sl;
+    } else if let Err(e) = skills_res {
+        eprintln!("加载技能失败: {}", e);
     }
-    match list_projects().await {
-        Ok(p) => s.projects = p,
-        Err(e) => eprintln!("加载项目失败: {}", e),
+    if let Ok(p) = projects_res {
+        s.projects = p;
+    } else if let Err(e) = projects_res {
+        eprintln!("加载项目失败: {}", e);
     }
-    match list_scenarios().await {
-        Ok(sc) => s.scenarios = sc,
-        Err(e) => eprintln!("加载场景失败: {}", e),
+    if let Ok(sc) = scenarios_res {
+        s.scenarios = sc;
+    } else if let Err(e) = scenarios_res {
+        eprintln!("加载场景失败: {}", e);
     }
 }
 
@@ -764,6 +778,7 @@ fn CreateModal(props: CreateModalProps) -> Element {
     let category = use_signal(|| editing.get("category").and_then(|c| c.as_str()).unwrap_or("").to_string());
     let enabled = use_signal(|| editing.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true));
     let auto_inject = use_signal(|| editing.get("auto_inject").and_then(|a| a.as_bool()).unwrap_or(false));
+    let first_input_ref = use_signal(|| None::<ElementRef>);
 
     let handle_submit = move |_| {
         let data = match props.tab {
@@ -804,6 +819,12 @@ fn CreateModal(props: CreateModalProps) -> Element {
         }
     };
 
+    let handle_keydown = move |ev: Event<KeyboardEvent>| {
+        if ev.key() == "Escape" {
+            props.on_close.call(());
+        }
+    };
+
     let title = match (props.tab, is_editing) {
         (TabType::Memory, true) => "编辑记忆",
         (TabType::Memory, false) => "新建记忆",
@@ -817,8 +838,18 @@ fn CreateModal(props: CreateModalProps) -> Element {
     };
 
     rsx! {
-        div { class: "fixed inset-0 bg-black/50 flex items-center justify-center z-50",
+        div {
+            class: "fixed inset-0 bg-black/50 flex items-center justify-center z-50",
             onclick: move |_| props.on_close.call(()),
+            onkeydown: handle_keydown,
+            tabindex: "0",
+            onmounted: move |_| {
+                if let Some(el) = first_input_ref.read().as_ref() {
+                    if let Some(input) = el.get_element() {
+                        input.focus();
+                    }
+                }
+            },
             div {
                 class: "bg-[var(--ds-bg)] border border-[var(--ds-border)] rounded-lg shadow-xl w-full max-w-lg p-4",
                 onclick: move |e| e.stop_propagation(),
@@ -839,6 +870,7 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                 div {
                                     label { class: "block text-xs font-medium text-[var(--ds-text-secondary)] mb-1", "名称" }
                                     input {
+                                        ref: first_input_ref,
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: name.read().clone(),
                                         oninput: move |e| name.write(e.value()),
@@ -867,6 +899,7 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                 div {
                                     label { class: "block text-xs font-medium text-[var(--ds-text-secondary)] mb-1", "名称" }
                                     input {
+                                        ref: first_input_ref,
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: name.read().clone(),
                                         oninput: move |e| name.write(e.value()),
@@ -903,6 +936,7 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                 div {
                                     label { class: "block text-xs font-medium text-[var(--ds-text-secondary)] mb-1", "名称" }
                                     input {
+                                        ref: first_input_ref,
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: name.read().clone(),
                                         oninput: move |e| name.write(e.value()),
@@ -939,6 +973,7 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                 div {
                                     label { class: "block text-xs font-medium text-[var(--ds-text-secondary)] mb-1", "名称" }
                                     input {
+                                        ref: first_input_ref,
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: name.read().clone(),
                                         oninput: move |e| name.write(e.value()),
@@ -999,8 +1034,10 @@ fn CreateModal(props: CreateModalProps) -> Element {
 }
 
 fn format_time(ts: i64) -> String {
-    let secs = ts / 1000;
-    let tm = std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs as u64);
-    let dt = chrono::DateTime::from(tm);
+    let secs = (ts / 1000) as i64;
+    let dt = chrono::DateTime::<chrono::Utc>::from_utc(
+        chrono::NaiveDateTime::from_timestamp_opt(secs, 0).unwrap_or_default(),
+        chrono::Utc,
+    );
     dt.format("%Y-%m-%d").to_string()
 }
