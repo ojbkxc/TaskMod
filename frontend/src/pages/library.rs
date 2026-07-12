@@ -2,6 +2,7 @@ use dioxus::prelude::*;
 use eq_ui::prelude::*;
 use serde_json::json;
 use chrono::prelude::*;
+use futures::future::join_all;
 use crate::api::client::{
     list_memories, create_memory, update_memory, delete_memory,
     list_presets, save_preset, update_preset, delete_preset,
@@ -339,38 +340,38 @@ pub fn LibraryPage() -> Element {
 }
 
 async fn load_data(state: Signal<LibraryState>) {
-    let (memories_res, presets_res, skills_res, projects_res, scenarios_res) = tokio::join!(
+    let results = join_all(vec![
         list_memories(None, None),
         list_presets(),
         list_skills(),
         list_projects(),
         list_scenarios()
-    );
+    ]).await;
 
     let mut s = state.write();
-    if let Ok(m) = memories_res {
+    if let Ok(m) = results[0].clone() {
         s.memories = m;
-    } else if let Err(e) = memories_res {
+    } else if let Err(e) = &results[0] {
         eprintln!("加载记忆失败: {}", e);
     }
-    if let Ok(p) = presets_res {
+    if let Ok(p) = results[1].clone() {
         s.presets = p;
-    } else if let Err(e) = presets_res {
+    } else if let Err(e) = &results[1] {
         eprintln!("加载预设失败: {}", e);
     }
-    if let Ok(sl) = skills_res {
+    if let Ok(sl) = results[2].clone() {
         s.skills = sl;
-    } else if let Err(e) = skills_res {
+    } else if let Err(e) = &results[2] {
         eprintln!("加载技能失败: {}", e);
     }
-    if let Ok(p) = projects_res {
+    if let Ok(p) = results[3].clone() {
         s.projects = p;
-    } else if let Err(e) = projects_res {
+    } else if let Err(e) = &results[3] {
         eprintln!("加载项目失败: {}", e);
     }
-    if let Ok(sc) = scenarios_res {
+    if let Ok(sc) = results[4].clone() {
         s.scenarios = sc;
-    } else if let Err(e) = scenarios_res {
+    } else if let Err(e) = &results[4] {
         eprintln!("加载场景失败: {}", e);
     }
 }

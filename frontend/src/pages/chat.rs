@@ -3,7 +3,7 @@ use eq_ui::prelude::*;
 use serde_json::{json, Value};
 use web_sys::{WebSocket, MessageEvent, CloseEvent, ErrorEvent};
 use wasm_bindgen::JsCast;
-use wasm_bindgen_futures::spawn_local;
+use futures::future::join;
 use crate::api::client::{
     get_ai_providers, list_chat_sessions, delete_chat_session, create_chat_session,
     screenshot_analyze, AiProvider, ChatSession,
@@ -62,15 +62,15 @@ impl Default for ChatState {
 pub fn ChatPage() -> Element {
     let state = use_signal(ChatState::default);
     let ws = use_signal(|| Option::<WebSocket>::None);
-    let message_container = use_signal(|| None::<ElementRef>);
+    let message_container = use_signal(|| None::<MountedData>);
 
     use_effect(move || {
         let state = state.clone();
         async move {
-            let (providers_res, sessions_res) = tokio::join!(
+            let (providers_res, sessions_res) = join(
                 get_ai_providers(),
                 list_chat_sessions()
-            );
+            ).await;
 
             let mut new_state = state.write();
             new_state.loading_providers = false;
@@ -100,8 +100,10 @@ pub fn ChatPage() -> Element {
 
     let scroll_to_bottom = move || {
         if let Some(container) = message_container.read().as_ref() {
-            if let Some(element) = container.get_element() {
-                element.set_scroll_top(element.scroll_height());
+            if let Ok(element) = container.get() {
+                if let Some(elem) = element.dyn_ref::<web_sys::HtmlDivElement>() {
+                    elem.set_scroll_top(elem.scroll_height());
+                }
             }
         }
     };
@@ -309,7 +311,7 @@ pub fn ChatPage() -> Element {
         if ev.key() == "Enter" && !ev.shift_key() {
             ev.prevent_default();
             let msg = state.read().current_message.clone();
-            spawn_local(async move {
+            spawn(async move {
                 send_message(msg).await;
             });
         }
@@ -407,7 +409,7 @@ pub fn ChatPage() -> Element {
                     EqButton {
                         variant: EqButtonVariant::Ghost,
                         size: EqButtonSize::Sm,
-                        onclick: move |_| spawn_local(async move { handle_screenshot_analyze().await; }),
+                        onclick: move |_| spawn(async move { handle_screenshot_analyze().await; }),
                         "截图分析"
                     }
                     EqButton {
@@ -461,7 +463,7 @@ pub fn ChatPage() -> Element {
                                                 },
                                                 onclick: move |ev| {
                                                     ev.stop_propagation();
-                                                    spawn_local(async move { delete_session(session.id.clone()).await; });
+                                                    spawn(async move { delete_session(session.id.clone()).await; });
                                                 },
                                                 svg { class: "w-3.5 h-3.5 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
                                                     path { stroke_linecap: "round", stroke_linejoin: "round", d: "M6 18L18 6M6 6l12 12" }
@@ -524,10 +526,10 @@ pub fn ChatPage() -> Element {
                                 "选择一个AI提供商，然后输入消息控制设备。支持截图分析、设备控制等功能。"
                             }
                             div { class: "grid grid-cols-2 gap-2 mt-6 max-w-sm",
-                                QuickPromptCard { label: "查看设备状态", on_click: move |_| spawn_local(async move { send_message("查看设备状态".to_string()).await; }) }
-                                QuickPromptCard { label: "截图分析", on_click: move |_| spawn_local(async move { handle_screenshot_analyze().await; }) }
-                                QuickPromptCard { label: "打开设置", on_click: move |_| spawn_local(async move { send_message("打开设置".to_string()).await; }) }
-                                QuickPromptCard { label: "列出应用", on_click: move |_| spawn_local(async move { send_message("列出应用".to_string()).await; }) }
+                                QuickPromptCard { label: "查看设备状态", on_click: move |_| spawn(async move { send_message("查看设备状态".to_string()).await; }) }
+                                QuickPromptCard { label: "截图分析", on_click: move |_| spawn(async move { handle_screenshot_analyze().await; }) }
+                                QuickPromptCard { label: "打开设置", on_click: move |_| spawn(async move { send_message("打开设置".to_string()).await; }) }
+                                QuickPromptCard { label: "列出应用", on_click: move |_| spawn(async move { send_message("列出应用".to_string()).await; }) }
                             }
                         }
                     } else {
@@ -627,7 +629,7 @@ pub fn ChatPage() -> Element {
                                 disabled: state.read().is_typing || state.read().current_message.trim().is_empty(),
                                 onclick: move |_| {
                                     let msg = state.read().current_message.clone();
-                                    spawn_local(async move { send_message(msg).await; });
+                                    spawn(async move { send_message(msg).await; });
                                 },
                                 svg { class: "w-4 h-4", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
                                     path { stroke_linecap: "round", stroke_linejoin: "round", d: "M12 19l9 2-9-18-9 18 9-2zm0 0v-8" }

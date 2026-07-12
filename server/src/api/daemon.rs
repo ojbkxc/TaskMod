@@ -12,6 +12,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::os::unix::net::UnixDatagram;
 use std::time::Duration;
+use crate::data::response::ApiResponse;
 
 /// IPC Socket 路径
 const SOCKET_PATH: &str = "/tmp/taskmod.sock";
@@ -51,14 +52,6 @@ enum IpcResponse {
     Json(serde_json::Value),
 }
 
-/// API 响应包装
-#[derive(Debug, Serialize)]
-pub struct ApiResponse<T: Serialize> {
-    pub success: bool,
-    pub data: Option<T>,
-    pub error: Option<String>,
-}
-
 /// 创建隧道管理 API 路由
 pub fn routes() -> Router<()> {
     Router::new()
@@ -87,50 +80,50 @@ pub fn routes() -> Router<()> {
 /// 查询守护进程状态
 async fn get_status() -> Json<ApiResponse<serde_json::Value>> {
     match send_ipc(&IpcCommand::Status) {
-        Ok(IpcResponse::Json(data)) => Json(ApiResponse { success: true, data: Some(data), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Json(data)) => Json(ApiResponse { success: true, data: Some(data), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
 /// 停止守护进程
 async fn stop_daemon() -> Json<ApiResponse<String>> {
     match send_ipc(&IpcCommand::Stop) {
-        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
 /// 重启所有隧道
 async fn restart_all() -> Json<ApiResponse<String>> {
     match send_ipc(&IpcCommand::RestartAll) {
-        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
 /// 列出所有隧道
 async fn list_tunnels() -> Json<ApiResponse<serde_json::Value>> {
     match send_ipc(&IpcCommand::ListTunnels) {
-        Ok(IpcResponse::Json(data)) => Json(ApiResponse { success: true, data: Some(data), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Json(data)) => Json(ApiResponse { success: true, data: Some(data), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
 /// 获取隧道详情
 async fn get_tunnel(Path(name): Path<String>) -> Json<ApiResponse<serde_json::Value>> {
     match send_ipc(&IpcCommand::GetTunnel { name }) {
-        Ok(IpcResponse::Json(data)) => Json(ApiResponse { success: true, data: Some(data), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Json(data)) => Json(ApiResponse { success: true, data: Some(data), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
@@ -148,10 +141,10 @@ fn default_true() -> bool { true }
 /// 添加隧道
 async fn add_tunnel(Json(req): Json<AddTunnelRequest>) -> Json<ApiResponse<String>> {
     match send_ipc(&IpcCommand::AddTunnel { name: req.name, token: req.token, enabled: req.enabled }) {
-        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
@@ -174,80 +167,80 @@ async fn update_tunnel(
         token: req.token,
         enabled: req.enabled,
     }) {
-        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
 /// 删除隧道
 async fn delete_tunnel(Path(name): Path<String>) -> Json<ApiResponse<String>> {
     match send_ipc(&IpcCommand::DeleteTunnel { name }) {
-        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
 /// 启用隧道
 async fn enable_tunnel(Path(name): Path<String>) -> Json<ApiResponse<String>> {
     match send_ipc(&IpcCommand::EnableTunnel { name }) {
-        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
 /// 禁用隧道
 async fn disable_tunnel(Path(name): Path<String>) -> Json<ApiResponse<String>> {
     match send_ipc(&IpcCommand::DisableTunnel { name }) {
-        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
 /// 重启隧道
 async fn restart_tunnel(Path(name): Path<String>) -> Json<ApiResponse<String>> {
     match send_ipc(&IpcCommand::RestartTunnel { name }) {
-        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
 /// 启动隧道进程
 async fn start_tunnel(Path(name): Path<String>) -> Json<ApiResponse<String>> {
     match send_ipc(&IpcCommand::StartTunnel { name }) {
-        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
 /// 停止隧道进程
 async fn stop_tunnel(Path(name): Path<String>) -> Json<ApiResponse<String>> {
     match send_ipc(&IpcCommand::StopTunnel { name }) {
-        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
 /// 列出隧道下的服务
 async fn list_services(Path(tunnel_name): Path<String>) -> Json<ApiResponse<serde_json::Value>> {
     match send_ipc(&IpcCommand::ListServices { tunnel_name }) {
-        Ok(IpcResponse::Json(data)) => Json(ApiResponse { success: true, data: Some(data), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Json(data)) => Json(ApiResponse { success: true, data: Some(data), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
@@ -256,10 +249,10 @@ async fn get_service(
     Path((tunnel_name, service_name)): Path<(String, String)>,
 ) -> Json<ApiResponse<serde_json::Value>> {
     match send_ipc(&IpcCommand::GetService { tunnel_name, service_name }) {
-        Ok(IpcResponse::Json(data)) => Json(ApiResponse { success: true, data: Some(data), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Json(data)) => Json(ApiResponse { success: true, data: Some(data), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
@@ -283,10 +276,10 @@ async fn add_service(
         url: req.url,
         enabled: req.enabled,
     }) {
-        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
@@ -310,10 +303,10 @@ async fn update_service(
         url: req.url,
         enabled: req.enabled,
     }) {
-        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
@@ -322,10 +315,10 @@ async fn delete_service(
     Path((tunnel_name, service_name)): Path<(String, String)>,
 ) -> Json<ApiResponse<String>> {
     match send_ipc(&IpcCommand::DeleteService { tunnel_name, service_name }) {
-        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
@@ -334,10 +327,10 @@ async fn enable_service(
     Path((tunnel_name, service_name)): Path<(String, String)>,
 ) -> Json<ApiResponse<String>> {
     match send_ipc(&IpcCommand::EnableService { tunnel_name, service_name }) {
-        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
@@ -346,30 +339,30 @@ async fn disable_service(
     Path((tunnel_name, service_name)): Path<(String, String)>,
 ) -> Json<ApiResponse<String>> {
     match send_ipc(&IpcCommand::DisableService { tunnel_name, service_name }) {
-        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
 /// 列出所有进程
 async fn list_processes() -> Json<ApiResponse<serde_json::Value>> {
     match send_ipc(&IpcCommand::ListProcesses) {
-        Ok(IpcResponse::Json(data)) => Json(ApiResponse { success: true, data: Some(data), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Json(data)) => Json(ApiResponse { success: true, data: Some(data), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
 /// 获取指定隧道进程状态
 async fn get_process_status(Path(tunnel_name): Path<String>) -> Json<ApiResponse<serde_json::Value>> {
     match send_ipc(&IpcCommand::GetProcessStatus { tunnel_name }) {
-        Ok(IpcResponse::Json(data)) => Json(ApiResponse { success: true, data: Some(data), error: None }),
-        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        Err(e) => Json(ApiResponse { success: false, data: None, error: Some(e) }),
-        _ => Json(ApiResponse { success: false, data: None, error: Some("未知响应".to_string()) }),
+        Ok(IpcResponse::Json(data)) => Json(ApiResponse { success: true, data: Some(data), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
     }
 }
 
