@@ -225,11 +225,37 @@ pub async fn create_capture(codec: AudioCodec) -> Result<Box<dyn AudioCapture>, 
 // ==================== 工具函数 ====================
 
 /// 查找 WAV 文件中 "data" 块的偏移位置
+/// 正确解析 RIFF/WAV chunk 结构，避免误匹配 metadata 中的 "data" 字串
 fn find_wav_data_offset(data: &[u8]) -> Option<usize> {
-    for i in 0..data.len().saturating_sub(4) {
-        if &data[i..i + 4] == b"data" {
-            return Some(i);
+    // WAV 结构: RIFF(4) + size(4) + WAVE(4) + [chunk_id(4) + chunk_size(4) + chunk_data...]*
+    // 需要找到 chunk_id == "data" 的位置
+    if data.len() < 12 {
+        return None;
+    }
+    // 验证 RIFF 头
+    if &data[0..4] != b"RIFF" || &data[8..12] != b"WAVE" {
+        // 不是标准 WAV，回退到简单搜索但跳过前 12 字节
+        for i in 12..data.len().saturating_sub(4) {
+            if &data[i..i + 4] == b"data" {
+                return Some(i);
+            }
         }
+        return None;
+    }
+    // 从偏移 12 开始遍历 chunks
+    let mut pos = 12;
+    while pos + 8 <= data.len() {
+        let chunk_id = &data[pos..pos + 4];
+        let chunk_size = u32::from_le_bytes([data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]]) as usize;
+        if chunk_id == b"data" {
+            return Some(pos);
+        }
+        // 跳到下一个 chunk (chunk 头 8 字节 + 数据，对齐到偶数字节)
+        let next = pos + 8 + chunk_size + (chunk_size % 2);
+        if next <= pos {
+            break; // 防止无限循环
+        }
+        pos = next;
     }
     None
 }

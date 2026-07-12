@@ -76,7 +76,13 @@ pub async fn get_ai_provider_api(AxumPath(id): AxumPath<String>) -> Json<ApiResp
 
 pub async fn add_ai_provider(Json(req): Json<AiProviderRequest>) -> Json<ApiResponse<String>> {
     let mut providers = load_ai_providers();
-    let id = format!("{}", providers.len() + 1);
+    let id = format!(
+        "{}",
+        providers.iter()
+            .filter_map(|p| p.id.parse::<usize>().ok())
+            .max()
+            .unwrap_or(0) + 1
+    );
     providers.push(AiProvider {
         id,
         name: req.name,

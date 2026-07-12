@@ -3,9 +3,46 @@ use eq_ui::prelude::*;
 
 #[component]
 pub fn DashboardPage() -> Element {
+    let mut battery = use_signal(|| "--%".to_string());
+    let mut battery_status = use_signal(|| String::new());
+    let mut uptime = use_signal(|| "--".to_string());
+    let mut disk = use_signal(|| "--".to_string());
+    let mut tasks_count = use_signal(|| "--".to_string());
+    let mut screenshots_count = use_signal(|| "--".to_string());
+    let mut loading = use_signal(|| false);
+    let mut refresh = use_signal(|| 0u32);
+
+    use_effect(move || {
+        let _ = *refresh.read();
+        spawn(async move {
+            loading.set(true);
+            match crate::api::client::get_status().await {
+                Ok(status) => {
+                    if let Some(bat) = status.battery {
+                        battery.set(bat.capacity.clone());
+                        battery_status.set(bat.status.clone());
+                    }
+                    if let Some(u) = status.uptime {
+                        uptime.set(u);
+                    }
+                    if let Some(d) = status.disk {
+                        disk.set(d);
+                    }
+                    if let Some(t) = status.tasks_count {
+                        tasks_count.set(t.to_string());
+                    }
+                    if let Some(s) = status.screenshots_count {
+                        screenshots_count.set(s.to_string());
+                    }
+                }
+                Err(_) => {}
+            }
+            loading.set(false);
+        });
+    });
+
     rsx! {
         div { class: "p-4 space-y-4",
-            // 页面标题
             div { class: "flex items-start justify-between gap-3 pb-4 border-b border-[var(--ds-border)]",
                 div {
                     h1 { class: "text-lg font-bold text-[var(--ds-text)]", "仪表盘" }
@@ -13,38 +50,42 @@ pub fn DashboardPage() -> Element {
                 }
             }
 
-            // 状态卡片网格
             div { class: "grid grid-cols-2 md:grid-cols-4 gap-2",
                 StatusCard {
                     label: "电池",
-                    value: "--%",
-                    detail: "电量状态",
+                    value: battery(),
+                    detail: battery_status(),
                 }
                 StatusCard {
-                    label: "CPU",
-                    value: "--%",
-                    detail: "使用率",
+                    label: "任务",
+                    value: tasks_count(),
+                    detail: "定时任务数",
                 }
                 StatusCard {
-                    label: "内存",
-                    value: "--",
-                    detail: "MB 使用中",
+                    label: "截图",
+                    value: screenshots_count(),
+                    detail: "已保存截图",
                 }
                 StatusCard {
                     label: "运行",
-                    value: "--",
+                    value: uptime(),
                     detail: "运行时间",
                 }
             }
 
-            // 快捷操作
             div { class: "flex gap-2 flex-wrap",
                 EqButton {
                     variant: EqButtonVariant::Secondary,
-                    "刷新状态"
+                    onclick: move |_| refresh += 1,
+                    if *loading.read() { "刷新中..." } else { "刷新状态" }
                 }
                 EqButton {
                     variant: EqButtonVariant::Secondary,
+                    onclick: move |_| {
+                        spawn(async move {
+                            let _ = crate::api::client::clear_logs().await;
+                        });
+                    },
                     "清除日志"
                 }
             }
@@ -55,8 +96,8 @@ pub fn DashboardPage() -> Element {
 #[derive(Props, PartialEq, Clone)]
 struct StatusCardProps {
     label: &'static str,
-    value: &'static str,
-    detail: &'static str,
+    value: String,
+    detail: String,
 }
 
 #[component]

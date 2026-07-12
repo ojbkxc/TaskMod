@@ -665,5 +665,20 @@ fn normalize_path(path: &str) -> String {
     if result.len() > 1 && result.ends_with('/') {
         result.pop();
     }
-    result
+    // 防止路径穿越：按组件解析，去掉 "." 和 ".."
+    let components: Vec<&str> = result.split('/').collect();
+    let mut stack: Vec<&str> = Vec::new();
+    for c in &components {
+        match *c {
+            "" | "." => {}
+            ".." => { stack.pop(); }
+            _ => stack.push(c),
+        }
+    }
+    let normalized = if result.starts_with('/') {
+        format!("/{}", stack.join("/"))
+    } else {
+        stack.join("/")
+    };
+    if normalized.is_empty() { "/".to_string() } else { normalized }
 }

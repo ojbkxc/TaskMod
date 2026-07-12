@@ -50,9 +50,10 @@ impl InputController for AndroidInput {
     }
 
     async fn input_text(&self, text: &str) -> Result<(), String> {
-        // Android input text 不支持空格等特殊字符，需要转义
-        let escaped = text.replace(' ', "%s").replace("'", "\\'").replace('"', "\\\"");
-        run_cmd("input", &["text", &escaped]).await
+        // Android input text 中空格需要用引号包裹，或用 %s 但需要先加双引号
+        // 最可靠的方式: 用单引号包裹整个文本，内部单号用 '\''' 转义
+        let escaped = text.replace('\'', "'\\''");
+        run_cmd("input", &["text", &format!("'{}'", escaped)]).await
     }
 
     async fn get_clipboard(&self) -> Result<String, String> {

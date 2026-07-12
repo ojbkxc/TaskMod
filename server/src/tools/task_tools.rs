@@ -113,7 +113,7 @@ impl AiTool for AddTaskTool {
             let script = match parse_arg::<String>(&args, "script") { Ok(v) => v, Err(e) => return e };
             let weeks = parse_arg::<String>(&args, "weeks").unwrap_or_else(|_| "*".to_string());
             let task_type = parse_arg::<String>(&args, "task_type").unwrap_or_else(|_| "daily".to_string());
-            let interval = parse_arg::<i64>(&args, "interval").ok().map(|v| v as u32);
+            let interval = parse_arg::<i64>(&args, "interval").ok().and_then(|v| u32::try_from(v).ok());
 
             // 检查脚本是否存在
             let script_path = format!("{}/{}", SCRIPTS_DIR, script);
@@ -198,7 +198,7 @@ impl AiTool for ModifyTaskTool {
                 task.2 = script;
             }
             if let Ok(task_type) = parse_arg::<String>(&args, "task_type") { task.3 = task_type; }
-            if let Ok(interval) = parse_arg::<i64>(&args, "interval") { task.4 = Some(interval as u32); }
+            if let Ok(interval) = parse_arg::<i64>(&args, "interval") { task.4 = u32::try_from(interval).ok(); }
 
             let desc = format!("{} {} {} [{}]", task.0, task.1, task.2, task.3);
             match write_tasks(&tasks) {

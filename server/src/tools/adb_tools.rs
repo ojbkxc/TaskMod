@@ -365,10 +365,20 @@ impl AiTool for AdbUnlockTool {
     fn execute(&self, _args: &str) -> BoxFuture<'_, String> {
         Box::pin(async move {
             // 先唤醒屏幕，再上滑解锁
-            let _ = adb::keyevent("wakeup").await;
+            let _ = adb::keyevent("224").await;
             tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-            // 从屏幕底部 80% 处滑到 30% 处，适配大多数手机
-            adb::swipe(540, 1800, 540, 600).await
+            // 动态获取屏幕分辨率，按比例计算滑动坐标
+            let size_str = adb::get_screen_size().await;
+            let parts: Vec<&str> = size_str.split('x').collect();
+            let (w, h) = if parts.len() == 2 {
+                (parts[0].parse::<i32>().unwrap_or(1080), parts[1].parse::<i32>().unwrap_or(1920))
+            } else {
+                (1080, 1920)
+            };
+            let x = w / 2;
+            let y_start = h * 80 / 100;  // 底部 80%
+            let y_end = h * 30 / 100;    // 滑到 30%
+            adb::swipe(x, y_start, x, y_end).await
         })
     }
 }

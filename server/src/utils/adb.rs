@@ -10,10 +10,10 @@ pub async fn run_command(cmd: &str) -> Result<String, String> {
         Ok(o) => {
             let stdout = String::from_utf8_lossy(&o.stdout);
             let stderr = String::from_utf8_lossy(&o.stderr);
-            if stderr.is_empty() {
+            if o.status.success() {
                 Ok(stdout.to_string())
             } else {
-                Ok(format!("{}\nstderr: {}", stdout, stderr))
+                Err(format!("{}\nstderr: {}", stdout, stderr))
             }
         }
         Err(e) => Err(format!("命令执行失败: {}", e)),
@@ -273,7 +273,7 @@ pub async fn input_text(text: &str) -> String {
         .replace("\\", "\\\\")
         .replace("\"", "\\\"")
         .replace("'", "\\'")
-        .replace(" ", "%s")
+        .replace(" ", "' '")
         .replace("&", "\\&")
         .replace("<", "\\<")
         .replace(">", "\\>")
@@ -374,11 +374,12 @@ pub async fn tts(text: &str) -> String {
         Err(_) => {}
     }
     
-    // 方法3: 使用 service call 方式（兼容更多设备）
+    // 方法3: 使用 content provider 触发 TTS（兼容更多设备）
     match Command::new("sh")
         .arg("-c")
         .arg(format!(
-            "service call isms 7 i32 0 s16 {} s16 null s16 null s16 null",
+            "content call --uri content://com.android.providers.settings/system --method GET_system --arg tts_default_synth --extra _value:s:{} 2>/dev/null || am startservice -a android.intent.action.TTS_SERVICE --es text '{}'",
+            text.replace('\'', "'\\''"),
             text.replace('\'', "'\\''")
         ))
         .output()
@@ -386,7 +387,7 @@ pub async fn tts(text: &str) -> String {
     {
         Ok(o) => {
             let output = String::from_utf8_lossy(&o.stdout);
-            if !output.contains("error") && !output.contains("Error") {
+            if !output.contains("error") && !output.contains("Error") && !output.contains("Unknown") {
                 return format!("TTS语音播放成功: {}", text);
             }
         }

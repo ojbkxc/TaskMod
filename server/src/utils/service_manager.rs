@@ -154,7 +154,14 @@ where
     F: FnOnce() -> T,
 {
     load_service(id)?;
-    let result = f();
-    unload_service(id)?;
-    Ok(result)
+    // 使用 catch_unwind 防止 f() panic 导致 ref_count 泄漏
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+    let _ = unload_service(id); // 确保无论如何都尝试卸载
+    match result {
+        Ok(val) => Ok(val),
+        Err(e) => {
+            // 重新抛出 panic，但 unload_service 已经执行过了
+            std::panic::resume_unwind(e);
+        }
+    }
 }

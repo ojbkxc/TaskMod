@@ -51,10 +51,14 @@ where
 }
 
 fn notify_event(event: SystemEvent) {
-    let handlers = EVENT_HANDLERS.lock().unwrap_or_else(|e| e.into_inner());
-    for handler in handlers.iter() {
-        handler(event.clone());
-    }
+    // 在 spawn_blocking 中调用 handler，避免阻塞 tokio 异步线程
+    // handler 是 Send+Sync 的，spawn_blocking 是安全的
+    tokio::task::spawn_blocking(move || {
+        let handlers = EVENT_HANDLERS.lock().unwrap_or_else(|e| e.into_inner());
+        for handler in handlers.iter() {
+            handler(event.clone());
+        }
+    });
 }
 
 pub async fn get_wifi_state() -> WifiState {

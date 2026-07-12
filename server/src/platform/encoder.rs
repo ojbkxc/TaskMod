@@ -58,6 +58,7 @@ pub struct NaluParser {
     residual: Vec<u8>,
     frame_seq: u64,
     frame_timestamp: u64,
+    start_time: u64,  // 流开始时的 epoch ms，用于计算相对时间戳
 }
 
 impl NaluParser {
@@ -67,6 +68,7 @@ impl NaluParser {
             residual: Vec::with_capacity(1024 * 1024), // 1MB 预分配
             frame_seq: 0,
             frame_timestamp: 0,
+            start_time: now_millis(),
         }
     }
 
@@ -75,8 +77,9 @@ impl NaluParser {
         self.frame_seq as u32
     }
 
+    /// 返回相对时间戳（从流开始的毫秒数），避免 u32 溢出
     pub fn current_timestamp_ms(&self) -> u32 {
-        self.frame_timestamp as u32
+        (self.frame_timestamp - self.start_time) as u32
     }
 
     /// 喂入新数据，返回解析出的 NALU 列表
@@ -120,7 +123,8 @@ impl NaluParser {
                             let nalu_type = self.extract_nalu_type(nalu_data);
                             self.frame_seq += 1;
                             self.frame_timestamp = now_millis();
-                            nalus.push((nalu_type, nalu_data.to_vec(), self.frame_seq as u32, self.frame_timestamp as u32));
+                            let rel_ts = (self.frame_timestamp - self.start_time) as u32;
+                            nalus.push((nalu_type, nalu_data.to_vec(), self.frame_seq as u32, rel_ts));
                         }
                         processed = pos + code_len;
                         continue;

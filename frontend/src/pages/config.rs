@@ -134,10 +134,10 @@ pub fn ConfigPage() -> Element {
             match result {
                 Ok(resp) => {
                     if let Ok(data) = resp.json::<serde_json::Value>().await {
-                        if data["ok"].as_bool() == Some(true) {
+                        if data["success"].as_bool() == Some(true) {
                             show_form.set(false);
                             reset_form();
-                            refresh += 1;
+                            refresh.set(*refresh.read() + 1);
                         } else {
                             let msg = data["message"]
                                 .as_str()
@@ -183,7 +183,7 @@ pub fn ConfigPage() -> Element {
             {
                 Ok(resp) => {
                     if let Ok(data) = resp.json::<serde_json::Value>().await {
-                        if data["ok"].as_bool() == Some(true) {
+                        if data["success"].as_bool() == Some(true) {
                             let latency = data["data"]["latency"]
                                 .as_u64()
                                 .unwrap_or(0);
@@ -234,7 +234,7 @@ pub fn ConfigPage() -> Element {
             {
                 Ok(resp) => {
                     if let Ok(data) = resp.json::<serde_json::Value>().await {
-                        if data["ok"].as_bool() == Some(true) {
+                        if data["success"].as_bool() == Some(true) {
                             let latency = data["data"]["latency"].as_u64().unwrap_or(0);
                             test_status.set(TestStatus::Success(latency));
                         } else {
@@ -258,8 +258,8 @@ pub fn ConfigPage() -> Element {
             match reqwest::Client::new().delete(&url).send().await {
                 Ok(resp) => {
                     if let Ok(data) = resp.json::<serde_json::Value>().await {
-                        if data["ok"].as_bool() == Some(true) {
-                            refresh += 1;
+                        if data["success"].as_bool() == Some(true) {
+                            refresh.set(*refresh.read() + 1);
                             if editing_id.read().as_deref() == Some(&id) {
                                 show_form.set(false);
                                 reset_form();
@@ -479,7 +479,7 @@ pub fn ConfigPage() -> Element {
                                 }
                                 EqButton {
                                     variant: EqButtonVariant::Ghost,
-                                    onclick: move |_| on_test(()),
+                                    onclick: on_test,
                                     "测试连接"
                                 }
                             }

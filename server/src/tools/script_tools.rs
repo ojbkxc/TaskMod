@@ -100,10 +100,11 @@ impl AiTool for WriteScriptTool {
                         let script_path = format!("{}/{}", SCRIPTS_DIR, filename);
                         match fs::write(&script_path, content) {
                             Ok(_) => {
-                                let _ = std::process::Command::new("chmod")
+                                let _ = Command::new("chmod")
                                     .arg("+x")
                                     .arg(&script_path)
-                                    .status();
+                                    .status()
+                                    .await;
                                 format!("脚本保存成功: {}", filename)
                             }
                             Err(e) => format!("保存脚本失败: {}", e),

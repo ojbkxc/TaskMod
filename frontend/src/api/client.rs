@@ -3,47 +3,41 @@ use serde::{Deserialize, Serialize};
 /// API 基础 URL（相对路径，因为前端和后端在同一服务器）
 const API_BASE: &str = "/api";
 
-/// 通用 API 响应
+/// 通用 API 响应（字段名必须匹配后端: success, 不是 ok）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiResponse<T> {
-    pub ok: bool,
+    pub success: bool,
     pub data: Option<T>,
     pub message: Option<String>,
 }
 
-/// 系统状态
+/// 系统状态（匹配后端 system_status 返回格式）
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SystemStatus {
-    pub battery: Option<BatteryInfo>,
-    pub cpu_usage: Option<f64>,
-    pub memory_used: Option<u64>,
-    pub memory_total: Option<u64>,
     pub uptime: Option<String>,
+    pub disk: Option<String>,
+    pub tasks_count: Option<usize>,
+    pub screenshots_count: Option<usize>,
+    pub battery: Option<BatteryInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BatteryInfo {
-    pub level: u32,
+    pub capacity: String,
+    pub temperature: String,
     pub status: String,
-    pub temperature: f64,
 }
 
-/// 任务
+/// 任务（匹配后端 Task 模型: id, time, weeks, script, task_type, interval）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
-    pub id: String,
-    pub name: String,
-    pub command: String,
-    pub schedule: String,
-    pub enabled: bool,
-}
-
-/// 脚本
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Script {
-    pub name: String,
-    pub size: u64,
-    pub modified: String,
+    pub id: usize,
+    pub time: String,
+    pub weeks: String,
+    pub script: String,
+    pub task_type: String,
+    #[serde(default)]
+    pub interval: Option<u32>,
 }
 
 /// AI 提供商
@@ -57,6 +51,52 @@ pub struct AiProvider {
     pub model: String,
     #[serde(default)]
     pub enabled: bool,
+}
+
+/// 邮件配置（匹配后端 EmailConfig）
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct EmailConfig {
+    #[serde(default)]
+    pub enable_notify: bool,
+    #[serde(default)]
+    pub smtp_server: String,
+    #[serde(default)]
+    pub smtp_port: u16,
+    #[serde(default)]
+    pub username: String,
+    #[serde(default)]
+    pub password: String,
+    #[serde(default)]
+    pub from: String,
+    #[serde(default)]
+    pub to: String,
+    #[serde(default)]
+    pub subject: String,
+    #[serde(default)]
+    pub body: String,
+    #[serde(default)]
+    pub timeout_secs: u64,
+    #[serde(default)]
+    pub max_retries: u32,
+    #[serde(default)]
+    pub retry_interval: u64,
+}
+
+/// MQTT 配置（匹配后端 MqttConfig）
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MqttConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub broker: String,
+    #[serde(default)]
+    pub topic_prefix: String,
+    #[serde(default)]
+    pub username: String,
+    #[serde(default)]
+    pub password: String,
+    #[serde(default)]
+    pub client_id: String,
 }
 
 /// 获取系统状态
@@ -73,16 +113,262 @@ pub async fn get_tasks() -> Result<Vec<Task>, reqwest::Error> {
     Ok(resp.data.unwrap_or_default())
 }
 
-/// 获取脚本列表
-pub async fn get_scripts() -> Result<Vec<Script>, reqwest::Error> {
+/// 添加任务
+pub async fn add_task(time: &str, weeks: &str, script: &str, task_type: &str, interval: Option<u32>) -> Result<String, reqwest::Error> {
+    let url = format!("{}/tasks", API_BASE);
+    let mut body = serde_json::json!({
+        "time": time,
+        "weeks": weeks,
+        "script": script,
+        "task_type": task_type,
+    });
+    if let Some(iv) = interval {
+        body["interval"] = serde_json::json!(iv);
+    }
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+/// 删除任务
+pub async fn delete_task(id: usize) -> Result<String, reqwest::Error> {
+    let url = format!("{}/tasks/{}", API_BASE, id);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .delete(&url)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+/// 获取脚本列表（后端返回 Vec<String> 文件名列表）
+pub async fn get_scripts() -> Result<Vec<String>, reqwest::Error> {
     let url = format!("{}/scripts", API_BASE);
-    let resp: ApiResponse<Vec<Script>> = reqwest::get(&url).await?.json().await?;
+    let resp: ApiResponse<Vec<String>> = reqwest::get(&url).await?.json().await?;
     Ok(resp.data.unwrap_or_default())
 }
 
-/// 获取日志
-pub async fn get_logs() -> Result<String, reqwest::Error> {
-    let url = format!("{}/logs", API_BASE);
-    let text = reqwest::get(&url).await?.text().await?;
-    Ok(text)
+/// 获取脚本内容
+pub async fn get_script_content(name: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/scripts/{}", API_BASE, name);
+    let resp: ApiResponse<String> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+/// 保存脚本
+pub async fn save_script(name: &str, content: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/scripts/{}", API_BASE, name);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .put(&url)
+        .json(&serde_json::json!({"content": content}))
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+/// 删除脚本
+pub async fn delete_script(name: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/scripts/{}", API_BASE, name);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .delete(&url)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+/// 获取日志（后端返回 Vec<String>）
+pub async fn get_logs(limit: usize) -> Result<Vec<String>, reqwest::Error> {
+    let url = format!("{}/logs?limit={}", API_BASE, limit);
+    let resp: ApiResponse<Vec<String>> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+/// 清空日志
+pub async fn clear_logs() -> Result<String, reqwest::Error> {
+    let url = format!("{}/logs/clear", API_BASE);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+/// 获取邮件配置
+pub async fn get_email_config() -> Result<EmailConfig, reqwest::Error> {
+    let url = format!("{}/email/config", API_BASE);
+    let resp: ApiResponse<EmailConfig> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+/// 保存邮件配置
+pub async fn save_email_config(config: &EmailConfig) -> Result<String, reqwest::Error> {
+    let url = format!("{}/email/config", API_BASE);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .put(&url)
+        .json(config)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+/// 获取 MQTT 配置
+pub async fn get_mqtt_config() -> Result<MqttConfig, reqwest::Error> {
+    let url = format!("{}/mqtt/config", API_BASE);
+    let resp: ApiResponse<MqttConfig> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+/// 保存 MQTT 配置
+pub async fn save_mqtt_config(config: &MqttConfig) -> Result<String, reqwest::Error> {
+    let url = format!("{}/mqtt/config", API_BASE);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .put(&url)
+        .json(config)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+/// 执行系统命令
+pub async fn exec_command(command: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/command", API_BASE);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .json(&serde_json::json!({"command": command}))
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.data.or(resp.message).unwrap_or_else(|| "无输出".into()))
+}
+
+/// 获取 TTS 引擎列表
+pub async fn get_tts_engines() -> Result<Vec<serde_json::Value>, reqwest::Error> {
+    let url = format!("{}/tts/engines", API_BASE);
+    let resp: ApiResponse<Vec<serde_json::Value>> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+/// TTS 语音播放
+pub async fn tts_speak(text: &str, engine: Option<&str>) -> Result<String, reqwest::Error> {
+    let url = format!("{}/tts/speak", API_BASE);
+    let mut body = serde_json::json!({"text": text});
+    if let Some(e) = engine {
+        body["engine"] = serde_json::json!(e);
+    }
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+/// TTS 停止
+pub async fn tts_stop() -> Result<String, reqwest::Error> {
+    let url = format!("{}/tts/stop", API_BASE);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+/// 获取 AI 提供商列表
+pub async fn get_ai_providers() -> Result<Vec<AiProvider>, reqwest::Error> {
+    let url = format!("{}/ai/providers", API_BASE);
+    let resp: ApiResponse<Vec<AiProvider>> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+/// 保存 AI 提供商
+pub async fn save_ai_provider(provider: &AiProvider) -> Result<String, reqwest::Error> {
+    let url = format!("{}/ai/providers/{}", API_BASE, provider.id);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .put(&url)
+        .json(provider)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+/// 添加 AI 提供商
+pub async fn add_ai_provider(provider: &AiProvider) -> Result<String, reqwest::Error> {
+    let url = format!("{}/ai/providers", API_BASE);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .json(provider)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+/// 删除 AI 提供商
+pub async fn delete_ai_provider(id: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/ai/providers/{}", API_BASE, id);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .delete(&url)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+/// 测试 AI 连接（传入 base_url, api_key, model）
+pub async fn test_ai_connection(base_url: &str, api_key: &str, model: Option<&str>) -> Result<String, reqwest::Error> {
+    let url = format!("{}/ai/test-connection", API_BASE);
+    let mut body = serde_json::json!({
+        "base_url": base_url,
+        "api_key": api_key,
+    });
+    if let Some(m) = model {
+        body["model"] = serde_json::json!(m);
+    }
+    let resp: ApiResponse<serde_json::Value> = reqwest::Client::new()
+        .post(&url)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.or(resp.data.map(|d| d.to_string())).unwrap_or_else(|| if resp.success { "连接成功".into() } else { "连接失败".into() }))
+}
+
+/// 获取文件列表
+pub async fn list_files(path: &str) -> Result<Vec<serde_json::Value>, reqwest::Error> {
+    let url = format!("{}/files?path={}", API_BASE, path);
+    let resp: ApiResponse<Vec<serde_json::Value>> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+/// 获取截图列表
+pub async fn list_screenshots() -> Result<Vec<String>, reqwest::Error> {
+    let url = format!("{}/screenshots", API_BASE);
+    let resp: ApiResponse<Vec<String>> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
 }

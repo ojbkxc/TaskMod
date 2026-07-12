@@ -210,6 +210,7 @@ pub async fn get_email_config() -> Json<serde_json::Value> {
             "smtp_server": config.smtp_server,
             "smtp_port": config.smtp_port,
             "username": config.username,
+            "password": config.password,
             "from": config.from,
             "to": config.to,
             "subject": config.subject,
@@ -734,9 +735,13 @@ fn evaluate_condition(expr: &str) -> bool {
     } else if left == "false" {
         return op == "==" && right == "false" || op == "!=" && right != "false";
     } else {
-        return left == right;
+        return match op {
+            "==" => left == right,
+            "!=" => left != right,
+            _ => false,
+        };
     };
-    
+
     let right_val = if let Ok(n) = right.parse::<i32>() {
         n
     } else if let Ok(n) = right.parse::<f64>() {
@@ -746,7 +751,11 @@ fn evaluate_condition(expr: &str) -> bool {
     } else if right == "false" {
         0
     } else {
-        return left == right;
+        return match op {
+            "==" => left == right,
+            "!=" => left != right,
+            _ => false,
+        };
     };
     
     match op {

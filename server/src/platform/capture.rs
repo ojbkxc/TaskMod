@@ -234,7 +234,7 @@ impl ScreenCapture for DesktopScreenCapture {
                     "-tune", "zerolatency",
                     "-g", "30",  // GOP size = 30 帧（每30帧一个关键帧）
                     "-bf", "0",  // 无 B 帧（降低延迟）
-                    "-f", "h264",
+                    "-f", if encoder.starts_with("hevc") || encoder == "libx265" { "hevc" } else { "h264" },
                     "pipe:1",
                 ])
                 .stdout(std::process::Stdio::piped())
