@@ -359,6 +359,425 @@ pub async fn test_ai_connection(base_url: &str, api_key: &str, model: Option<&st
     Ok(resp.message.or(resp.data.map(|d| d.to_string())).unwrap_or_else(|| if resp.success { "连接成功".into() } else { "连接失败".into() }))
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatSession {
+    pub id: String,
+    pub title: String,
+    pub provider_id: String,
+    pub provider_name: String,
+    pub model: String,
+    pub messages: Vec<serde_json::Value>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub pinned: bool,
+    pub archived: bool,
+    pub project_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Preset {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub system_prompt: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Memory {
+    pub id: String,
+    pub name: String,
+    pub content: String,
+    pub category: String,
+    pub memory_type: String,
+    pub scope: String,
+    pub project_id: String,
+    pub tags: Vec<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub pinned: bool,
+    pub access_count: i32,
+    pub last_accessed_at: i64,
+    pub archived: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Skill {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub prompt_template: String,
+    pub variables: Vec<SkillVariable>,
+    pub enabled: bool,
+    pub category: String,
+    pub source: String,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillVariable {
+    pub name: String,
+    pub description: String,
+    pub required: bool,
+    pub default: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedItem {
+    pub id: String,
+    pub title: String,
+    pub content: String,
+    pub kind: String,
+    pub tags: Vec<String>,
+    pub source_url: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Project {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub instructions: String,
+    pub enabled: bool,
+    pub auto_inject: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Scenario {
+    pub id: String,
+    pub label: String,
+    pub template: String,
+    pub enabled: bool,
+    pub built_in: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptSettings {
+    pub memory_enabled: bool,
+    pub system_prompt_enabled: bool,
+    pub preset_cadence: String,
+    pub force_response_language: String,
+    pub active_preset_id: String,
+}
+
+pub async fn list_chat_sessions() -> Result<Vec<ChatSession>, reqwest::Error> {
+    let url = format!("{}/ai/sessions", API_BASE);
+    let resp: ApiResponse<Vec<ChatSession>> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn get_chat_session(id: &str) -> Result<ChatSession, reqwest::Error> {
+    let url = format!("{}/ai/sessions/{}", API_BASE, id);
+    let resp: ApiResponse<ChatSession> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn create_chat_session(title: &str, provider_id: &str) -> Result<ChatSession, reqwest::Error> {
+    let url = format!("{}/ai/sessions", API_BASE);
+    let body = serde_json::json!({
+        "title": title,
+        "provider_id": provider_id,
+    });
+    let resp: ApiResponse<ChatSession> = reqwest::Client::new()
+        .post(&url)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn update_chat_session(id: &str, title: Option<&str>, pinned: Option<bool>, archived: Option<bool>) -> Result<ChatSession, reqwest::Error> {
+    let url = format!("{}/ai/sessions/{}", API_BASE, id);
+    let mut body = serde_json::json!({});
+    if let Some(t) = title { body["title"] = serde_json::json!(t); }
+    if let Some(p) = pinned { body["pinned"] = serde_json::json!(p); }
+    if let Some(a) = archived { body["archived"] = serde_json::json!(a); }
+    let resp: ApiResponse<ChatSession> = reqwest::Client::new()
+        .put(&url)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn delete_chat_session(id: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/ai/sessions/{}", API_BASE, id);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .delete(&url)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+pub async fn list_presets() -> Result<Vec<Preset>, reqwest::Error> {
+    let url = format!("{}/ai/presets", API_BASE);
+    let resp: ApiResponse<Vec<Preset>> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn save_preset(name: &str, description: &str, system_prompt: &str, enabled: bool) -> Result<Preset, reqwest::Error> {
+    let url = format!("{}/ai/presets", API_BASE);
+    let body = serde_json::json!({
+        "name": name,
+        "description": description,
+        "system_prompt": system_prompt,
+        "enabled": enabled,
+    });
+    let resp: ApiResponse<Preset> = reqwest::Client::new()
+        .post(&url)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn update_preset(id: &str, name: &str, description: &str, system_prompt: &str, enabled: bool) -> Result<Preset, reqwest::Error> {
+    let url = format!("{}/ai/presets/{}", API_BASE, id);
+    let body = serde_json::json!({
+        "name": name,
+        "description": description,
+        "system_prompt": system_prompt,
+        "enabled": enabled,
+    });
+    let resp: ApiResponse<Preset> = reqwest::Client::new()
+        .put(&url)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn delete_preset(id: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/ai/presets/{}", API_BASE, id);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .delete(&url)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+pub async fn list_memories(query: Option<&str>, category: Option<&str>) -> Result<Vec<Memory>, reqwest::Error> {
+    let mut url = format!("{}/ai/memories", API_BASE);
+    let mut params = Vec::new();
+    if let Some(q) = query { params.push(format!("q={}", q)); }
+    if let Some(c) = category { params.push(format!("category={}", c)); }
+    if !params.is_empty() {
+        url.push('?');
+        url.push_str(&params.join("&"));
+    }
+    let resp: ApiResponse<Vec<Memory>> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn create_memory(content: &str, name: Option<&str>, category: Option<&str>, tags: Option<&[String]>) -> Result<Memory, reqwest::Error> {
+    let url = format!("{}/ai/memories", API_BASE);
+    let mut body = serde_json::json!({
+        "content": content,
+    });
+    if let Some(n) = name { body["name"] = serde_json::json!(n); }
+    if let Some(c) = category { body["category"] = serde_json::json!(c); }
+    if let Some(t) = tags { body["tags"] = serde_json::json!(t); }
+    let resp: ApiResponse<Memory> = reqwest::Client::new()
+        .post(&url)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn update_memory(id: &str, content: &str, name: Option<&str>, category: Option<&str>, tags: Option<&[String]>) -> Result<Memory, reqwest::Error> {
+    let url = format!("{}/ai/memories/{}", API_BASE, id);
+    let mut body = serde_json::json!({
+        "content": content,
+    });
+    if let Some(n) = name { body["name"] = serde_json::json!(n); }
+    if let Some(c) = category { body["category"] = serde_json::json!(c); }
+    if let Some(t) = tags { body["tags"] = serde_json::json!(t); }
+    let resp: ApiResponse<Memory> = reqwest::Client::new()
+        .put(&url)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn delete_memory(id: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/ai/memories/{}", API_BASE, id);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .delete(&url)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+pub async fn list_skills() -> Result<Vec<Skill>, reqwest::Error> {
+    let url = format!("{}/ai/skills", API_BASE);
+    let resp: ApiResponse<Vec<Skill>> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn create_skill(name: &str, description: &str, prompt_template: &str, enabled: bool) -> Result<Skill, reqwest::Error> {
+    let url = format!("{}/ai/skills", API_BASE);
+    let body = serde_json::json!({
+        "name": name,
+        "description": description,
+        "prompt_template": prompt_template,
+        "enabled": enabled,
+    });
+    let resp: ApiResponse<Skill> = reqwest::Client::new()
+        .post(&url)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn update_skill(id: &str, name: &str, description: &str, prompt_template: &str, enabled: bool) -> Result<Skill, reqwest::Error> {
+    let url = format!("{}/ai/skills/{}", API_BASE, id);
+    let body = serde_json::json!({
+        "name": name,
+        "description": description,
+        "prompt_template": prompt_template,
+        "enabled": enabled,
+    });
+    let resp: ApiResponse<Skill> = reqwest::Client::new()
+        .put(&url)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn delete_skill(id: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/ai/skills/{}", API_BASE, id);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .delete(&url)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+pub async fn list_projects() -> Result<Vec<Project>, reqwest::Error> {
+    let url = format!("{}/ai/projects", API_BASE);
+    let resp: ApiResponse<Vec<Project>> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn create_project(name: &str, description: &str, instructions: &str, enabled: bool, auto_inject: bool) -> Result<Project, reqwest::Error> {
+    let url = format!("{}/ai/projects", API_BASE);
+    let body = serde_json::json!({
+        "name": name,
+        "description": description,
+        "instructions": instructions,
+        "enabled": enabled,
+        "auto_inject": auto_inject,
+    });
+    let resp: ApiResponse<Project> = reqwest::Client::new()
+        .post(&url)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn update_project(id: &str, name: &str, description: &str, instructions: &str, enabled: bool, auto_inject: bool) -> Result<Project, reqwest::Error> {
+    let url = format!("{}/ai/projects/{}", API_BASE, id);
+    let body = serde_json::json!({
+        "name": name,
+        "description": description,
+        "instructions": instructions,
+        "enabled": enabled,
+        "auto_inject": auto_inject,
+    });
+    let resp: ApiResponse<Project> = reqwest::Client::new()
+        .put(&url)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn delete_project(id: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/ai/projects/{}", API_BASE, id);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .delete(&url)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+pub async fn list_scenarios() -> Result<Vec<Scenario>, reqwest::Error> {
+    let url = format!("{}/ai/scenarios", API_BASE);
+    let resp: ApiResponse<Vec<Scenario>> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn screenshot_analyze(prompt: Option<&str>) -> Result<String, reqwest::Error> {
+    let url = format!("{}/ai/screenshot", API_BASE);
+    let mut body = serde_json::json!({});
+    if let Some(p) = prompt { body["prompt"] = serde_json::json!(p); }
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn get_prompt_settings() -> Result<PromptSettings, reqwest::Error> {
+    let url = format!("{}/ai/prompt-settings", API_BASE);
+    let resp: ApiResponse<PromptSettings> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn update_prompt_settings(settings: &PromptSettings) -> Result<PromptSettings, reqwest::Error> {
+    let url = format!("{}/ai/prompt-settings", API_BASE);
+    let resp: ApiResponse<PromptSettings> = reqwest::Client::new()
+        .put(&url)
+        .json(settings)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
 /// 获取文件列表
 pub async fn list_files(path: &str) -> Result<Vec<serde_json::Value>, reqwest::Error> {
     let url = format!("{}/files?path={}", API_BASE, path);
