@@ -638,6 +638,7 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> axum::response::Response {
                                         };
                                         json!({
                                             "role": "tool",
+                                            "name": name,
                                             "tool_call_id": tool_call_id,
                                             "content": result
                                         })

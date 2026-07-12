@@ -58,6 +58,16 @@ impl Default for ChatState {
     }
 }
 
+fn scroll_to_bottom(container: &Signal<Option<MountedData>>) {
+    if let Some(md) = container.read().as_ref() {
+        if let Ok(element) = md.get() {
+            if let Some(elem) = element.dyn_ref::<web_sys::HtmlDivElement>() {
+                elem.set_scroll_top(elem.scroll_height());
+            }
+        }
+    }
+}
+
 #[component]
 pub fn ChatPage() -> Element {
     let state = use_signal(ChatState::default);
@@ -98,28 +108,25 @@ pub fn ChatPage() -> Element {
         }
     });
 
-    let scroll_to_bottom = move || {
-        if let Some(container) = message_container.read().as_ref() {
-            if let Ok(element) = container.get() {
-                if let Some(elem) = element.dyn_ref::<web_sys::HtmlDivElement>() {
-                    elem.set_scroll_top(elem.scroll_height());
-                }
-            }
-        }
-    };
-
     let connect_ws = move || {
         let state = state.clone();
         let ws = ws.clone();
+        let message_container = message_container.clone();
         async move {
             if ws.read().is_some() {
                 return;
             }
 
-            let host = window().location().host().unwrap_or_default();
+            let host = web_sys::window().unwrap().location().host().unwrap_or_default();
             let ws_url = format!("ws://{}/ws/ai-chat", host);
 
-            let socket = WebSocket::new(&ws_url).unwrap();
+            let socket = match WebSocket::new(&ws_url) {
+                Ok(s) => s,
+                Err(e) => {
+                    state.write().error = Some(format!("WebSocket连接失败: {}", e.as_string().unwrap_or_default()));
+                    return;
+                }
+            };
             socket.set_binary_type(web_sys::BinaryType::Arraybuffer);
 
             let state_clone = state.clone();
@@ -159,14 +166,12 @@ pub fn ChatPage() -> Element {
                                             result.get("content").and_then(|c| c.as_str()),
                                         ) {
                                             if role == "tool" {
-                                                if let Some(tcid) = result.get("tool_call_id").and_then(|id| id.as_str()) {
-                                                    let tool_name = extract_tool_name_from_id(tcid);
-                                                    state.messages.push(ChatMessage::Tool {
-                                                        name: tool_name,
-                                                        args: String::new(),
-                                                        result: content.to_string(),
-                                                    });
-                                                }
+                                                let tool_name = result.get("name").and_then(|n| n.as_str()).unwrap_or("unknown_tool").to_string();
+                                                state.messages.push(ChatMessage::Tool {
+                                                    name: tool_name,
+                                                    args: String::new(),
+                                                    result: content.to_string(),
+                                                });
                                             }
                                         }
                                     }
@@ -209,7 +214,7 @@ pub fn ChatPage() -> Element {
                             _ => {}
                         }
                     }
-                    scroll_to_bottom();
+                    scroll_to_bottom(&message_container);
                 }
             }) as Box<dyn FnMut(_)>);
 
@@ -281,7 +286,7 @@ pub fn ChatPage() -> Element {
             let session_id = match state.read().current_session.as_ref() {
                 Some(s) => s.id.clone(),
                 None => {
-                    let new_session = match create_chat_session("新对话", &provider.id).await {
+                    let new_session = match create_chat_session("新对话", &provider.id, &provider.name, &provider.model).await {
                         Ok(s) => s,
                         Err(e) => {
                             state.write().error = Some(format!("创建会话失败: {}", e));
@@ -303,7 +308,7 @@ pub fn ChatPage() -> Element {
                 });
                 let _ = socket.send_with_str(&req.to_string());
             }
-            scroll_to_bottom();
+            scroll_to_bottom(&message_container);
         }
     };
 
@@ -340,7 +345,7 @@ pub fn ChatPage() -> Element {
                 _ => None,
             }
         }).collect();
-        scroll_to_bottom();
+        scroll_to_bottom(&message_container);
     };
 
     let new_session = move || {
@@ -390,7 +395,7 @@ pub fn ChatPage() -> Element {
                 }
             }
             state.write().is_typing = false;
-            scroll_to_bottom();
+            scroll_to_bottom(&message_container);
         }
     };
 
@@ -534,9 +539,11 @@ pub fn ChatPage() -> Element {
                         }
                     } else {
                         div {
-                            ref: message_container,
                             class: "flex-1 overflow-y-auto p-4 space-y-4",
-                            onmounted: move |_| scroll_to_bottom(),
+                            onmounted: move |md| {
+                                *message_container.write() = Some(md);
+                                scroll_to_bottom(&message_container);
+                            },
                             if let Some(error) = &state.read().error {
                                 div { class: "flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs animate-in fade-in slide-in-from-top-2",
                                     svg { class: "w-4 h-4 flex-shrink-0", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
@@ -658,8 +665,4 @@ fn QuickPromptCard(props: QuickPromptCardProps) -> Element {
             "{props.label}"
         }
     }
-}
-
-fn extract_tool_name_from_id(_id: &str) -> String {
-    "tool".to_string()
 }

@@ -2,13 +2,15 @@ use dioxus::prelude::*;
 use eq_ui::prelude::*;
 use serde_json::json;
 use chrono::prelude::*;
-use futures::future::join_all;
 use crate::api::client::{
     list_memories, create_memory, update_memory, delete_memory,
     list_presets, save_preset, update_preset, delete_preset,
     list_skills, create_skill, update_skill, delete_skill,
     list_projects, create_project, update_project, delete_project,
-    list_scenarios, Memory, Preset, Skill, Project, Scenario,
+    list_scenarios, list_saved_items, create_saved_item, update_saved_item, delete_saved_item,
+    list_mcp_servers, create_mcp_server, update_mcp_server, delete_mcp_server,
+    get_prompt_settings, update_prompt_settings, PromptSettings,
+    Memory, Preset, Skill, Project, Scenario, SavedItem, McpServer,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -32,6 +34,9 @@ struct LibraryState {
     skills: Vec<Skill>,
     projects: Vec<Project>,
     scenarios: Vec<Scenario>,
+    saved_items: Vec<SavedItem>,
+    mcp_servers: Vec<McpServer>,
+    prompt_settings: PromptSettings,
     search_query: String,
     show_create_modal: bool,
     editing_item: Option<serde_json::Value>,
@@ -46,6 +51,15 @@ impl Default for LibraryState {
             skills: Vec::new(),
             projects: Vec::new(),
             scenarios: Vec::new(),
+            saved_items: Vec::new(),
+            mcp_servers: Vec::new(),
+            prompt_settings: PromptSettings {
+                memory_enabled: true,
+                system_prompt_enabled: true,
+                preset_cadence: "every".to_string(),
+                force_response_language: "".to_string(),
+                active_preset_id: "".to_string(),
+            },
             search_query: String::new(),
             show_create_modal: false,
             editing_item: None,
@@ -126,6 +140,23 @@ pub fn LibraryPage() -> Element {
                     let auto_inject = data.get("auto_inject").and_then(|a| a.as_bool()).unwrap_or(false);
                     let _ = create_project(name, description, instructions, enabled, auto_inject).await;
                 }
+                TabType::Saved => {
+                    let title = data.get("title").and_then(|t| t.as_str()).unwrap_or("");
+                    let content = data.get("content").and_then(|c| c.as_str()).unwrap_or("");
+                    let kind = data.get("kind").and_then(|k| k.as_str());
+                    let tags = data.get("tags").and_then(|t| t.as_array()).map(|a| a.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect::<Vec<_>>());
+                    let source_url = data.get("source_url").and_then(|s| s.as_str());
+                    let _ = create_saved_item(title, content, kind, tags.as_deref(), source_url).await;
+                }
+                TabType::MCP => {
+                    let name = data.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                    let transport = data.get("transport").and_then(|t| t.as_str());
+                    let command = data.get("command").and_then(|c| c.as_str());
+                    let url = data.get("url").and_then(|u| u.as_str());
+                    let enabled = data.get("enabled").and_then(|e| e.as_bool());
+                    let auto_connect = data.get("auto_connect").and_then(|ac| ac.as_bool());
+                    let _ = create_mcp_server(name, transport, command, None, url, enabled, auto_connect).await;
+                }
                 _ => {}
             }
             close_modal();
@@ -171,6 +202,23 @@ pub fn LibraryPage() -> Element {
                     let auto_inject = data.get("auto_inject").and_then(|a| a.as_bool()).unwrap_or(false);
                     let _ = update_project(id, name, description, instructions, enabled, auto_inject).await;
                 }
+                TabType::Saved => {
+                    let title = data.get("title").and_then(|t| t.as_str()).unwrap_or("");
+                    let content = data.get("content").and_then(|c| c.as_str()).unwrap_or("");
+                    let kind = data.get("kind").and_then(|k| k.as_str());
+                    let tags = data.get("tags").and_then(|t| t.as_array()).map(|a| a.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect::<Vec<_>>());
+                    let source_url = data.get("source_url").and_then(|s| s.as_str());
+                    let _ = update_saved_item(id, title, content, kind, tags.as_deref(), source_url).await;
+                }
+                TabType::MCP => {
+                    let name = data.get("name").and_then(|n| n.as_str());
+                    let transport = data.get("transport").and_then(|t| t.as_str());
+                    let command = data.get("command").and_then(|c| c.as_str());
+                    let url = data.get("url").and_then(|u| u.as_str());
+                    let enabled = data.get("enabled").and_then(|e| e.as_bool());
+                    let auto_connect = data.get("auto_connect").and_then(|ac| ac.as_bool());
+                    let _ = update_mcp_server(id, name, transport, command, None, url, enabled, auto_connect).await;
+                }
                 _ => {}
             }
             close_modal();
@@ -186,6 +234,8 @@ pub fn LibraryPage() -> Element {
                 TabType::Preset => { let _ = delete_preset(&id).await; }
                 TabType::Skill => { let _ = delete_skill(&id).await; }
                 TabType::Project => { let _ = delete_project(&id).await; }
+                TabType::Saved => { let _ = delete_saved_item(&id).await; }
+                TabType::MCP => { let _ = delete_mcp_server(&id).await; }
                 _ => {}
             }
             load_data(state).await;
@@ -234,6 +284,27 @@ pub fn LibraryPage() -> Element {
         .filter(|s| {
             let q = &state.read().search_query.to_lowercase();
             s.label.to_lowercase().contains(q)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    let filtered_saved_items = state.read().saved_items.iter()
+        .filter(|si| {
+            let q = &state.read().search_query.to_lowercase();
+            si.title.to_lowercase().contains(q) ||
+            si.content.to_lowercase().contains(q) ||
+            si.kind.to_lowercase().contains(q) ||
+            si.tags.iter().any(|t| t.to_lowercase().contains(q))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    let filtered_mcp_servers = state.read().mcp_servers.iter()
+        .filter(|m| {
+            let q = &state.read().search_query.to_lowercase();
+            m.name.to_lowercase().contains(q) ||
+            m.command.to_lowercase().contains(q) ||
+            m.url.to_lowercase().contains(q)
         })
         .cloned()
         .collect::<Vec<_>>();
@@ -316,10 +387,48 @@ pub fn LibraryPage() -> Element {
                             }
                         }
                     }
-                    _ => {
+                    TabType::Saved => {
+                        rsx! {
+                            SavedList {
+                                items: filtered_saved_items,
+                                on_edit: handle_edit,
+                                on_delete: handle_delete,
+                                on_create: open_create_modal,
+                                search_query: state.read().search_query.clone(),
+                                on_search: handle_search,
+                            }
+                        }
+                    }
+                    TabType::MCP => {
+                        rsx! {
+                            McpList {
+                                servers: filtered_mcp_servers,
+                                on_edit: handle_edit,
+                                on_delete: handle_delete,
+                                on_create: open_create_modal,
+                                search_query: state.read().search_query.clone(),
+                                on_search: handle_search,
+                            }
+                        }
+                    }
+                    TabType::Screenshot => {
                         rsx! {
                             div { class: "flex-1 flex items-center justify-center text-[var(--ds-text-tertiary)]",
-                                "该功能开发中..."
+                                "截图管理开发中..."
+                            }
+                        }
+                    }
+                    TabType::PromptControl => {
+                        rsx! {
+                            PromptControlPanel {
+                                settings: state.read().prompt_settings.clone(),
+                                on_update: move |new_settings| {
+                                    let state = state.clone();
+                                    async move {
+                                        let _ = update_prompt_settings(&new_settings).await;
+                                        state.write().prompt_settings = new_settings;
+                                    }
+                                },
                             }
                         }
                     }
@@ -340,39 +449,55 @@ pub fn LibraryPage() -> Element {
 }
 
 async fn load_data(state: Signal<LibraryState>) {
-    let results = join_all(vec![
-        list_memories(None, None),
-        list_presets(),
-        list_skills(),
-        list_projects(),
-        list_scenarios()
-    ]).await;
+    let memories_res = list_memories(None, None).await;
+    let presets_res = list_presets().await;
+    let skills_res = list_skills().await;
+    let projects_res = list_projects().await;
+    let scenarios_res = list_scenarios().await;
+    let saved_items_res = list_saved_items().await;
+    let mcp_servers_res = list_mcp_servers().await;
+    let prompt_settings_res = get_prompt_settings().await;
 
     let mut s = state.write();
-    if let Ok(m) = results[0].clone() {
+    if let Ok(m) = memories_res {
         s.memories = m;
-    } else if let Err(e) = &results[0] {
+    } else if let Err(e) = memories_res {
         eprintln!("加载记忆失败: {}", e);
     }
-    if let Ok(p) = results[1].clone() {
+    if let Ok(p) = presets_res {
         s.presets = p;
-    } else if let Err(e) = &results[1] {
+    } else if let Err(e) = presets_res {
         eprintln!("加载预设失败: {}", e);
     }
-    if let Ok(sl) = results[2].clone() {
+    if let Ok(sl) = skills_res {
         s.skills = sl;
-    } else if let Err(e) = &results[2] {
+    } else if let Err(e) = skills_res {
         eprintln!("加载技能失败: {}", e);
     }
-    if let Ok(p) = results[3].clone() {
+    if let Ok(p) = projects_res {
         s.projects = p;
-    } else if let Err(e) = &results[3] {
+    } else if let Err(e) = projects_res {
         eprintln!("加载项目失败: {}", e);
     }
-    if let Ok(sc) = results[4].clone() {
+    if let Ok(sc) = scenarios_res {
         s.scenarios = sc;
-    } else if let Err(e) = &results[4] {
+    } else if let Err(e) = scenarios_res {
         eprintln!("加载场景失败: {}", e);
+    }
+    if let Ok(si) = saved_items_res {
+        s.saved_items = si;
+    } else if let Err(e) = saved_items_res {
+        eprintln!("加载保存项失败: {}", e);
+    }
+    if let Ok(mcp) = mcp_servers_res {
+        s.mcp_servers = mcp;
+    } else if let Err(e) = mcp_servers_res {
+        eprintln!("加载MCP服务器失败: {}", e);
+    }
+    if let Ok(ps) = prompt_settings_res {
+        s.prompt_settings = ps;
+    } else if let Err(e) = prompt_settings_res {
+        eprintln!("加载Prompt设置失败: {}", e);
     }
 }
 
@@ -757,6 +882,264 @@ fn ScenarioList(props: ScenarioListProps) -> Element {
 }
 
 #[derive(Props, PartialEq, Clone)]
+struct SavedListProps {
+    items: Vec<SavedItem>,
+    on_edit: EventHandler<serde_json::Value>,
+    on_delete: EventHandler<String>,
+    on_create: EventHandler<()>,
+    search_query: String,
+    on_search: EventHandler<String>,
+}
+
+#[component]
+fn SavedList(props: SavedListProps) -> Element {
+    rsx! {
+        div { class: "flex flex-col h-full",
+            div { class: "flex gap-2 p-3 border-b border-[var(--ds-border)]",
+                input {
+                    class: "flex-1 min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
+                    placeholder: "搜索保存项...",
+                    value: props.search_query.clone(),
+                    oninput: move |e| props.on_search.call(e.value()),
+                }
+                EqButton {
+                    variant: EqButtonVariant::Primary,
+                    size: EqButtonSize::Sm,
+                    onclick: move |_| props.on_create.call(()),
+                    "+ 添加"
+                }
+            }
+            div { class: "flex-1 overflow-y-auto p-3 space-y-3",
+                if props.items.is_empty() {
+                    div { class: "text-center text-[var(--ds-text-tertiary)] py-8", "暂无保存项" }
+                } else {
+                    for item in &props.items {
+                        div {
+                            class: "p-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] hover:border-[var(--ds-blue)] transition-colors",
+                            div { class: "flex items-start justify-between gap-2",
+                                div { class: "flex-1",
+                                    div { class: "flex items-center gap-2 mb-1",
+                                        span { class: "text-sm font-medium text-[var(--ds-text)]", "{item.title}" }
+                                        span { class: "text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--ds-surface)] text-[var(--ds-text-tertiary)]", "{item.kind}" }
+                                    }
+                                    p { class: "text-xs text-[var(--ds-text-secondary)] line-clamp-2", "{item.content}" }
+                                    if !item.tags.is_empty() {
+                                        div { class: "flex gap-1 mt-2 flex-wrap",
+                                            for tag in &item.tags {
+                                                span { class: "text-[10px] px-1.5 py-0.5 rounded bg-[var(--ds-surface)] text-[var(--ds-text-tertiary)]", "{tag}" }
+                                            }
+                                        }
+                                    }
+                                }
+                                div { class: "flex items-center gap-1",
+                                    button {
+                                        class: "p-1.5 hover:bg-[var(--ds-surface)] rounded transition-colors",
+                                        onclick: move |_| props.on_edit.call(json!({
+                                            "id": item.id,
+                                            "title": item.title,
+                                            "content": item.content,
+                                            "kind": item.kind,
+                                            "tags": item.tags,
+                                            "source_url": item.source_url,
+                                        })),
+                                        svg { class: "w-4 h-4 text-[var(--ds-text-secondary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
+                                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" }
+                                        }
+                                    }
+                                    button {
+                                        class: "p-1.5 hover:bg-red-50 rounded transition-colors",
+                                        onclick: move |_| props.on_delete.call(item.id.clone()),
+                                        svg { class: "w-4 h-4 text-red-500", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
+                                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Props, PartialEq, Clone)]
+struct McpListProps {
+    servers: Vec<McpServer>,
+    on_edit: EventHandler<serde_json::Value>,
+    on_delete: EventHandler<String>,
+    on_create: EventHandler<()>,
+    search_query: String,
+    on_search: EventHandler<String>,
+}
+
+#[component]
+fn McpList(props: McpListProps) -> Element {
+    rsx! {
+        div { class: "flex flex-col h-full",
+            div { class: "flex gap-2 p-3 border-b border-[var(--ds-border)]",
+                input {
+                    class: "flex-1 min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
+                    placeholder: "搜索MCP服务器...",
+                    value: props.search_query.clone(),
+                    oninput: move |e| props.on_search.call(e.value()),
+                }
+                EqButton {
+                    variant: EqButtonVariant::Primary,
+                    size: EqButtonSize::Sm,
+                    onclick: move |_| props.on_create.call(()),
+                    "+ 添加"
+                }
+            }
+            div { class: "flex-1 overflow-y-auto p-3 space-y-3",
+                if props.servers.is_empty() {
+                    div { class: "text-center text-[var(--ds-text-tertiary)] py-8", "暂无MCP服务器" }
+                } else {
+                    for server in &props.servers {
+                        div {
+                            class: "p-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] hover:border-[var(--ds-blue)] transition-colors",
+                            div { class: "flex items-start justify-between gap-2",
+                                div { class: "flex-1",
+                                    div { class: "flex items-center gap-2 mb-1",
+                                        span { class: "text-sm font-medium text-[var(--ds-text)]", "{server.name}" }
+                                        if server.enabled {
+                                            div { class: "w-2 h-2 rounded-full bg-green-500" }
+                                        }
+                                        if server.auto_connect {
+                                            span { class: "text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700", "自动连接" }
+                                        }
+                                    }
+                                    p { class: "text-xs text-[var(--ds-text-secondary)] mb-2", "传输: {server.transport} | 命令: {server.command}" }
+                                    if !server.url.is_empty() {
+                                        p { class: "text-xs text-[var(--ds-text-tertiary)]", "URL: {server.url}" }
+                                    }
+                                }
+                                div { class: "flex items-center gap-1",
+                                    button {
+                                        class: "p-1.5 hover:bg-[var(--ds-surface)] rounded transition-colors",
+                                        onclick: move |_| props.on_edit.call(json!({
+                                            "id": server.id,
+                                            "name": server.name,
+                                            "transport": server.transport,
+                                            "command": server.command,
+                                            "url": server.url,
+                                            "enabled": server.enabled,
+                                            "auto_connect": server.auto_connect,
+                                        })),
+                                        svg { class: "w-4 h-4 text-[var(--ds-text-secondary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
+                                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" }
+                                        }
+                                    }
+                                    button {
+                                        class: "p-1.5 hover:bg-red-50 rounded transition-colors",
+                                        onclick: move |_| props.on_delete.call(server.id.clone()),
+                                        svg { class: "w-4 h-4 text-red-500", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
+                                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Props, PartialEq, Clone)]
+struct PromptControlPanelProps {
+    settings: PromptSettings,
+    on_update: EventHandler<PromptSettings>,
+}
+
+#[component]
+fn PromptControlPanel(props: PromptControlPanelProps) -> Element {
+    let memory_enabled = use_signal(|| props.settings.memory_enabled);
+    let system_prompt_enabled = use_signal(|| props.settings.system_prompt_enabled);
+    let preset_cadence = use_signal(|| props.settings.preset_cadence.clone());
+    let force_response_language = use_signal(|| props.settings.force_response_language.clone());
+    let active_preset_id = use_signal(|| props.settings.active_preset_id.clone());
+
+    let handle_save = move |_| {
+        let new_settings = PromptSettings {
+            memory_enabled: memory_enabled.read(),
+            system_prompt_enabled: system_prompt_enabled.read(),
+            preset_cadence: preset_cadence.read().clone(),
+            force_response_language: force_response_language.read().clone(),
+            active_preset_id: active_preset_id.read().clone(),
+        };
+        props.on_update.call(new_settings);
+    };
+
+    rsx! {
+        div { class: "flex flex-col h-full p-4",
+            div { class: "space-y-4",
+                div {
+                    label { class: "flex items-center gap-2 cursor-pointer",
+                        input {
+                            r#type: "checkbox",
+                            checked: memory_enabled.read(),
+                            onchange: move |e| memory_enabled.write(e.checked()),
+                            class: "w-4 h-4 rounded border-[var(--ds-border)] text-[var(--ds-blue)] focus:ring-[var(--ds-blue)]",
+                        }
+                        span { class: "text-sm text-[var(--ds-text)]", "启用记忆注入" }
+                    }
+                }
+                div {
+                    label { class: "flex items-center gap-2 cursor-pointer",
+                        input {
+                            r#type: "checkbox",
+                            checked: system_prompt_enabled.read(),
+                            onchange: move |e| system_prompt_enabled.write(e.checked()),
+                            class: "w-4 h-4 rounded border-[var(--ds-border)] text-[var(--ds-blue)] focus:ring-[var(--ds-blue)]",
+                        }
+                        span { class: "text-sm text-[var(--ds-text)]", "启用系统提示" }
+                    }
+                }
+                div {
+                    label { class: "block text-xs font-medium text-[var(--ds-text-secondary)] mb-1", "预设注入频率" }
+                    select {
+                        class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
+                        value: preset_cadence.read().clone(),
+                        onchange: move |e| preset_cadence.write(e.value()),
+                        option { value: "every", "每次对话" }
+                        option { value: "first", "仅首次" }
+                        option { value: "none", "不注入" }
+                    }
+                }
+                div {
+                    label { class: "block text-xs font-medium text-[var(--ds-text-secondary)] mb-1", "强制响应语言" }
+                    input {
+                        class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
+                        placeholder: "如: zh-CN, en-US",
+                        value: force_response_language.read().clone(),
+                        oninput: move |e| force_response_language.write(e.value()),
+                    }
+                }
+                div {
+                    label { class: "block text-xs font-medium text-[var(--ds-text-secondary)] mb-1", "活动预设ID" }
+                    input {
+                        class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
+                        placeholder: "留空使用默认",
+                        value: active_preset_id.read().clone(),
+                        oninput: move |e| active_preset_id.write(e.value()),
+                    }
+                }
+            }
+            div { class: "mt-auto pt-4 border-t border-[var(--ds-border)]",
+                EqButton {
+                    variant: EqButtonVariant::Primary,
+                    size: EqButtonSize::Md,
+                    onclick: handle_save,
+                    "保存设置"
+                }
+            }
+        }
+    }
+}
+
+#[derive(Props, PartialEq, Clone)]
 struct CreateModalProps {
     tab: TabType,
     editing_item: Option<serde_json::Value>,
@@ -779,7 +1162,13 @@ fn CreateModal(props: CreateModalProps) -> Element {
     let category = use_signal(|| editing.get("category").and_then(|c| c.as_str()).unwrap_or("").to_string());
     let enabled = use_signal(|| editing.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true));
     let auto_inject = use_signal(|| editing.get("auto_inject").and_then(|a| a.as_bool()).unwrap_or(false));
-    let first_input_ref = use_signal(|| None::<ElementRef>);
+    let title = use_signal(|| editing.get("title").and_then(|t| t.as_str()).unwrap_or("").to_string());
+    let kind = use_signal(|| editing.get("kind").and_then(|k| k.as_str()).unwrap_or("snippet").to_string());
+    let transport = use_signal(|| editing.get("transport").and_then(|t| t.as_str()).unwrap_or("stdio").to_string());
+    let command = use_signal(|| editing.get("command").and_then(|c| c.as_str()).unwrap_or("").to_string());
+    let url = use_signal(|| editing.get("url").and_then(|u| u.as_str()).unwrap_or("").to_string());
+    let auto_connect = use_signal(|| editing.get("auto_connect").and_then(|ac| ac.as_bool()).unwrap_or(false));
+    
 
     let handle_submit = move |_| {
         let data = match props.tab {
@@ -811,6 +1200,23 @@ fn CreateModal(props: CreateModalProps) -> Element {
                 "enabled": enabled.read(),
                 "auto_inject": auto_inject.read(),
             }),
+            TabType::Saved => json!({
+                "id": editing.get("id").and_then(|i| i.as_str()).unwrap_or(""),
+                "title": title.read(),
+                "content": content.read(),
+                "kind": kind.read(),
+                "tags": editing.get("tags").unwrap_or(&json!([])),
+                "source_url": url.read(),
+            }),
+            TabType::MCP => json!({
+                "id": editing.get("id").and_then(|i| i.as_str()).unwrap_or(""),
+                "name": name.read(),
+                "transport": transport.read(),
+                "command": command.read(),
+                "url": url.read(),
+                "enabled": enabled.read(),
+                "auto_connect": auto_connect.read(),
+            }),
             _ => json!({}),
         };
         if is_editing {
@@ -826,7 +1232,7 @@ fn CreateModal(props: CreateModalProps) -> Element {
         }
     };
 
-    let title = match (props.tab, is_editing) {
+    let modal_title = match (props.tab, is_editing) {
         (TabType::Memory, true) => "编辑记忆",
         (TabType::Memory, false) => "新建记忆",
         (TabType::Preset, true) => "编辑预设",
@@ -835,6 +1241,10 @@ fn CreateModal(props: CreateModalProps) -> Element {
         (TabType::Skill, false) => "新建技能",
         (TabType::Project, true) => "编辑项目",
         (TabType::Project, false) => "新建项目",
+        (TabType::Saved, true) => "编辑保存项",
+        (TabType::Saved, false) => "新建保存项",
+        (TabType::MCP, true) => "编辑MCP服务器",
+        (TabType::MCP, false) => "新建MCP服务器",
         _ => "新建",
     };
 
@@ -844,18 +1254,11 @@ fn CreateModal(props: CreateModalProps) -> Element {
             onclick: move |_| props.on_close.call(()),
             onkeydown: handle_keydown,
             tabindex: "0",
-            onmounted: move |_| {
-                if let Some(el) = first_input_ref.read().as_ref() {
-                    if let Some(input) = el.get_element() {
-                        input.focus();
-                    }
-                }
-            },
             div {
                 class: "bg-[var(--ds-bg)] border border-[var(--ds-border)] rounded-lg shadow-xl w-full max-w-lg p-4",
                 onclick: move |e| e.stop_propagation(),
                 div { class: "flex items-center justify-between mb-4",
-                    h3 { class: "text-base font-semibold text-[var(--ds-text)]", "{title}" }
+                    h3 { class: "text-base font-semibold text-[var(--ds-text)]", "{modal_title}" }
                     button {
                         class: "p-1 hover:bg-[var(--ds-surface)] rounded",
                         onclick: move |_| props.on_close.call(()),
@@ -871,10 +1274,12 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                 div {
                                     label { class: "block text-xs font-medium text-[var(--ds-text-secondary)] mb-1", "名称" }
                                     input {
-                                        ref: first_input_ref,
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: name.read().clone(),
                                         oninput: move |e| name.write(e.value()),
+                                        onmounted: move |md| {
+                                            md.get().ok().map(|el| el.focus());
+                                        },
                                     }
                                 }
                                 div {
@@ -900,10 +1305,12 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                 div {
                                     label { class: "block text-xs font-medium text-[var(--ds-text-secondary)] mb-1", "名称" }
                                     input {
-                                        ref: first_input_ref,
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: name.read().clone(),
                                         oninput: move |e| name.write(e.value()),
+                                        onmounted: move |md| {
+                                            md.get().ok().map(|el| el.focus());
+                                        },
                                     }
                                 }
                                 div {
@@ -937,10 +1344,12 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                 div {
                                     label { class: "block text-xs font-medium text-[var(--ds-text-secondary)] mb-1", "名称" }
                                     input {
-                                        ref: first_input_ref,
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: name.read().clone(),
                                         oninput: move |e| name.write(e.value()),
+                                        onmounted: move |md| {
+                                            md.get().ok().map(|el| el.focus());
+                                        },
                                     }
                                 }
                                 div {
@@ -974,10 +1383,12 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                 div {
                                     label { class: "block text-xs font-medium text-[var(--ds-text-secondary)] mb-1", "名称" }
                                     input {
-                                        ref: first_input_ref,
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: name.read().clone(),
                                         oninput: move |e| name.write(e.value()),
+                                        onmounted: move |md| {
+                                            md.get().ok().map(|el| el.focus());
+                                        },
                                     }
                                 }
                                 div {
@@ -1011,6 +1422,103 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                         onchange: move |e| auto_inject.write(e.checked()),
                                     }
                                     label { class: "text-xs text-[var(--ds-text-secondary)]", "自动注入上下文" }
+                                }
+                            }
+                        }
+                        TabType::Saved => {
+                            rsx! {
+                                div {
+                                    label { class: "block text-xs font-medium text-[var(--ds-text-secondary)] mb-1", "标题" }
+                                    input {
+                                        class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
+                                        value: title.read().clone(),
+                                        oninput: move |e| title.write(e.value()),
+                                        onmounted: move |md| {
+                                            md.get().ok().map(|el| el.focus());
+                                        },
+                                    }
+                                }
+                                div {
+                                    label { class: "block text-xs font-medium text-[var(--ds-text-secondary)] mb-1", "类型" }
+                                    input {
+                                        class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
+                                        value: kind.read().clone(),
+                                        oninput: move |e| kind.write(e.value()),
+                                    }
+                                }
+                                div {
+                                    label { class: "block text-xs font-medium text-[var(--ds-text-secondary)] mb-1", "内容" }
+                                    textarea {
+                                        class: "w-full min-h-[100px] px-3 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)] resize-none",
+                                        value: content.read().clone(),
+                                        oninput: move |e| content.write(e.value()),
+                                    }
+                                }
+                                div {
+                                    label { class: "block text-xs font-medium text-[var(--ds-text-secondary)] mb-1", "来源URL" }
+                                    input {
+                                        class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
+                                        value: url.read().clone(),
+                                        oninput: move |e| url.write(e.value()),
+                                    }
+                                }
+                            }
+                        }
+                        TabType::MCP => {
+                            rsx! {
+                                div {
+                                    label { class: "block text-xs font-medium text-[var(--ds-text-secondary)] mb-1", "名称" }
+                                    input {
+                                        class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
+                                        value: name.read().clone(),
+                                        oninput: move |e| name.write(e.value()),
+                                        onmounted: move |md| {
+                                            md.get().ok().map(|el| el.focus());
+                                        },
+                                    }
+                                }
+                                div {
+                                    label { class: "block text-xs font-medium text-[var(--ds-text-secondary)] mb-1", "传输方式" }
+                                    select {
+                                        class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
+                                        value: transport.read().clone(),
+                                        onchange: move |e| transport.write(e.value()),
+                                        option { value: "stdio", "标准输入输出" }
+                                        option { value: "tcp", "TCP连接" }
+                                        option { value: "ws", "WebSocket" }
+                                    }
+                                }
+                                div {
+                                    label { class: "block text-xs font-medium text-[var(--ds-text-secondary)] mb-1", "命令" }
+                                    input {
+                                        class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
+                                        value: command.read().clone(),
+                                        oninput: move |e| command.write(e.value()),
+                                    }
+                                }
+                                div {
+                                    label { class: "block text-xs font-medium text-[var(--ds-text-secondary)] mb-1", "URL" }
+                                    input {
+                                        class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
+                                        value: url.read().clone(),
+                                        oninput: move |e| url.write(e.value()),
+                                    }
+                                }
+                                div { class: "flex items-center gap-2",
+                                    input {
+                                        r#type: "checkbox",
+                                        checked: enabled.read(),
+                                        onchange: move |e| enabled.write(e.checked()),
+                                    }
+                                    label { class: "text-xs text-[var(--ds-text-secondary)]", "启用" }
+                                }
+                                div { class: "flex items-center gap-2",
+                                    input {
+                                        r#type: "checkbox",
+                                        checked: auto_connect.read(),
+                                        onchange: move |e| auto_connect.write(e.checked()),
+                                    }
+                                    label { class: "text-xs text-[var(--ds-text-secondary)]", "自动连接" }
                                 }
                             }
                         }

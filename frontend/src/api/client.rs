@@ -359,7 +359,7 @@ pub async fn test_ai_connection(base_url: &str, api_key: &str, model: Option<&st
     Ok(resp.message.or(resp.data.map(|d| d.to_string())).unwrap_or_else(|| if resp.success { "连接成功".into() } else { "连接失败".into() }))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ChatSession {
     pub id: String,
     pub title: String,
@@ -476,11 +476,13 @@ pub async fn get_chat_session(id: &str) -> Result<ChatSession, reqwest::Error> {
     Ok(resp.data.unwrap_or_default())
 }
 
-pub async fn create_chat_session(title: &str, provider_id: &str) -> Result<ChatSession, reqwest::Error> {
+pub async fn create_chat_session(title: &str, provider_id: &str, provider_name: &str, model: &str) -> Result<ChatSession, reqwest::Error> {
     let url = format!("{}/ai/sessions", API_BASE);
     let body = serde_json::json!({
         "title": title,
         "provider_id": provider_id,
+        "provider_name": provider_name,
+        "model": model,
     });
     let resp: ApiResponse<ChatSession> = reqwest::Client::new()
         .post(&url)
@@ -783,6 +785,145 @@ pub async fn list_files(path: &str) -> Result<Vec<serde_json::Value>, reqwest::E
     let url = format!("{}/files?path={}", API_BASE, path);
     let resp: ApiResponse<Vec<serde_json::Value>> = reqwest::get(&url).await?.json().await?;
     Ok(resp.data.unwrap_or_default())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedItem {
+    pub id: String,
+    pub title: String,
+    pub content: String,
+    pub kind: String,
+    pub tags: Vec<String>,
+    pub source_url: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+pub async fn list_saved_items() -> Result<Vec<SavedItem>, reqwest::Error> {
+    let url = format!("{}/ai/saved-items", API_BASE);
+    let resp: ApiResponse<Vec<SavedItem>> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn create_saved_item(title: &str, content: &str, kind: Option<&str>, tags: Option<&[String]>, source_url: Option<&str>) -> Result<SavedItem, reqwest::Error> {
+    let url = format!("{}/ai/saved-items", API_BASE);
+    let mut body = serde_json::json!({
+        "title": title,
+        "content": content,
+    });
+    if let Some(k) = kind { body["kind"] = serde_json::json!(k); }
+    if let Some(t) = tags { body["tags"] = serde_json::json!(t); }
+    if let Some(s) = source_url { body["source_url"] = serde_json::json!(s); }
+    let resp: ApiResponse<SavedItem> = reqwest::Client::new()
+        .post(&url)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn update_saved_item(id: &str, title: &str, content: &str, kind: Option<&str>, tags: Option<&[String]>, source_url: Option<&str>) -> Result<SavedItem, reqwest::Error> {
+    let url = format!("{}/ai/saved-items/{}", API_BASE, id);
+    let mut body = serde_json::json!({
+        "title": title,
+        "content": content,
+    });
+    if let Some(k) = kind { body["kind"] = serde_json::json!(k); }
+    if let Some(t) = tags { body["tags"] = serde_json::json!(t); }
+    if let Some(s) = source_url { body["source_url"] = serde_json::json!(s); }
+    let resp: ApiResponse<SavedItem> = reqwest::Client::new()
+        .put(&url)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn delete_saved_item(id: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/ai/saved-items/{}", API_BASE, id);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .delete(&url)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServer {
+    pub id: String,
+    pub name: String,
+    pub transport: String,
+    pub command: String,
+    pub args: Vec<String>,
+    pub env: HashMap<String, String>,
+    pub url: String,
+    pub enabled: bool,
+    pub auto_connect: bool,
+    pub allowed_tools: Vec<String>,
+    pub cached_tools: Vec<serde_json::Value>,
+    pub created_at: i64,
+}
+
+pub async fn list_mcp_servers() -> Result<Vec<McpServer>, reqwest::Error> {
+    let url = format!("{}/ai/mcp-servers", API_BASE);
+    let resp: ApiResponse<Vec<McpServer>> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn create_mcp_server(name: &str, transport: Option<&str>, command: Option<&str>, args: Option<&[String]>, url: Option<&str>, enabled: Option<bool>, auto_connect: Option<bool>) -> Result<McpServer, reqwest::Error> {
+    let url_path = format!("{}/ai/mcp-servers", API_BASE);
+    let mut body = serde_json::json!({ "name": name });
+    if let Some(t) = transport { body["transport"] = serde_json::json!(t); }
+    if let Some(c) = command { body["command"] = serde_json::json!(c); }
+    if let Some(a) = args { body["args"] = serde_json::json!(a); }
+    if let Some(u) = url { body["url"] = serde_json::json!(u); }
+    if let Some(e) = enabled { body["enabled"] = serde_json::json!(e); }
+    if let Some(ac) = auto_connect { body["auto_connect"] = serde_json::json!(ac); }
+    let resp: ApiResponse<McpServer> = reqwest::Client::new()
+        .post(&url_path)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn update_mcp_server(id: &str, name: Option<&str>, transport: Option<&str>, command: Option<&str>, args: Option<&[String]>, url: Option<&str>, enabled: Option<bool>, auto_connect: Option<bool>) -> Result<McpServer, reqwest::Error> {
+    let url_path = format!("{}/ai/mcp-servers/{}", API_BASE, id);
+    let mut body = serde_json::json!({});
+    if let Some(n) = name { body["name"] = serde_json::json!(n); }
+    if let Some(t) = transport { body["transport"] = serde_json::json!(t); }
+    if let Some(c) = command { body["command"] = serde_json::json!(c); }
+    if let Some(a) = args { body["args"] = serde_json::json!(a); }
+    if let Some(u) = url { body["url"] = serde_json::json!(u); }
+    if let Some(e) = enabled { body["enabled"] = serde_json::json!(e); }
+    if let Some(ac) = auto_connect { body["auto_connect"] = serde_json::json!(ac); }
+    let resp: ApiResponse<McpServer> = reqwest::Client::new()
+        .put(&url_path)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn delete_mcp_server(id: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/ai/mcp-servers/{}", API_BASE, id);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .delete(&url)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
 }
 
 /// 获取截图列表

@@ -6,7 +6,6 @@ description = "TaskMod Dioxus Frontend"
 
 [dependencies]
 dioxus = { version = "0.7", features = ["web"] }
-dioxus-websocket = { version = "0.7", features = ["web"] }
 eq_ui = "0.5"
 futures = "0.3"
 serde = { version = "1", features = ["derive"] }
@@ -15,6 +14,7 @@ web-sys = { version = "0.3", features = [
     "Window", "Document", "HtmlElement", "Storage",
     "WebSocket", "MessageEvent", "CloseEvent", "ErrorEvent",
     "HtmlTextAreaElement", "HtmlInputElement", "HtmlSelectElement",
+    "HtmlDivElement", "BinaryType",
     "Location", "Navigator", "Clipboard", "Blob", "Url",
     "File", "FileReader", "FileList", "DragEvent", "DataTransfer",
     "MediaRecorder", "MediaStream", "BlobPropertyBag",
