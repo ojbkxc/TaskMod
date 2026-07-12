@@ -4,8 +4,10 @@ use serde_json::{json, Value};
 use web_sys::{WebSocket, MessageEvent, CloseEvent, ErrorEvent};
 use wasm_bindgen::JsCast;
 use futures::future::join;
+use gloo_timers::future::sleep;
+use std::time::Duration;
 use crate::api::client::{
-    get_ai_providers, list_chat_sessions, delete_chat_session, create_chat_session,
+    get_ai_providers, list_chat_sessions, get_chat_session, delete_chat_session, create_chat_session,
     screenshot_analyze, AiProvider, ChatSession,
 };
 
@@ -68,6 +70,53 @@ fn scroll_to_bottom(container: &Signal<Option<MountedData>>) {
     }
 }
 
+fn render_markdown(content: &str) -> String {
+    let mut result = content.to_string();
+    result = result.replace("&", "&amp;");
+    result = result.replace("<", "&lt;");
+    result = result.replace(">", "&gt;");
+    
+    let mut parts = Vec::new();
+    let mut lines = result.lines().peekable();
+    
+    while let Some(line) = lines.next() {
+        if line.starts_with("```") {
+            let lang = line[3..].trim().to_string();
+            let mut code = String::new();
+            while let Some(code_line) = lines.next() {
+                if code_line.starts_with("```") {
+                    break;
+                }
+                code.push_str(code_line);
+                code.push('\n');
+            }
+            if !code.is_empty() {
+                parts.push(format!("<pre class=\"bg-gray-800 text-gray-100 p-3 rounded-lg text-xs overflow-x-auto\"><code class=\"language-{}\">{}</code></pre>", lang, code.trim()));
+            }
+        } else if line.starts_with("`") && line.ends_with("`") && line != "`" {
+            parts.push(format!("<code class=\"bg-gray-200 px-1.5 py-0.5 rounded text-xs font-mono\">{}</code>", &line[1..line.len()-1]));
+        } else if line.starts_with("**") && line.ends_with("**") {
+            parts.push(format!("<strong>{}</strong>", &line[2..line.len()-2]));
+        } else if line.starts_with("*") && line.ends_with("*") && line.len() > 2 {
+            parts.push(format!("<em>{}</em>", &line[1..line.len()-1]));
+        } else if line.starts_with("# ") {
+            parts.push(format!("<h3 class=\"font-bold text-base mb-1\">{}</h3>", &line[2..]));
+        } else if line.starts_with("## ") {
+            parts.push(format!("<h4 class=\"font-semibold text-sm mb-1\">{}</h4>", &line[3..]));
+        } else if line.starts_with("- ") {
+            parts.push(format!("<li class=\"ml-4 text-sm\">{}</li>", &line[2..]));
+        } else if line.starts_with("1. ") {
+            parts.push(format!("<li class=\"ml-4 text-sm\">{}</li>", &line[3..]));
+        } else if line.starts_with("> ") {
+            parts.push(format!("<blockquote class=\"border-l-2 border-gray-300 pl-3 italic text-sm text-gray-600\">{}</blockquote>", &line[2..]));
+        } else {
+            parts.push(line.to_string());
+        }
+    }
+    
+    parts.join("\n")
+}
+
 #[component]
 pub fn ChatPage() -> Element {
     let state = use_signal(ChatState::default);
@@ -108,6 +157,16 @@ pub fn ChatPage() -> Element {
         }
     });
 
+    use_effect(move || {
+        let ws = ws.clone();
+        let state = state.clone();
+        async move {
+            if ws.read().is_none() {
+                connect_ws().await;
+            }
+        }
+    });
+
     let connect_ws = move || {
         let state = state.clone();
         let ws = ws.clone();
@@ -131,6 +190,7 @@ pub fn ChatPage() -> Element {
 
             let state_clone = state.clone();
             let ws_clone = ws.clone();
+            let message_container_clone = message_container.clone();
             
             let on_message = Closure::wrap(Box::new(move |event: MessageEvent| {
                 if let Ok(text) = event.data().as_string() {
@@ -155,6 +215,12 @@ pub fn ChatPage() -> Element {
                                     state.current_thinking.push_str(content);
                                     if let Some(ChatMessage::Assistant { thinking: ref mut t, .. }) = state.messages.last_mut() {
                                         t.push_str(content);
+                                    } else {
+                                        state.messages.push(ChatMessage::Assistant {
+                                            content: String::new(),
+                                            thinking: content.to_string(),
+                                            tool_results: Vec::new(),
+                                        });
                                     }
                                 }
                             }
@@ -214,7 +280,7 @@ pub fn ChatPage() -> Element {
                             _ => {}
                         }
                     }
-                    scroll_to_bottom(&message_container);
+                    scroll_to_bottom(&message_container_clone);
                 }
             }) as Box<dyn FnMut(_)>);
 
@@ -281,6 +347,13 @@ pub fn ChatPage() -> Element {
             if ws.read().is_none() {
                 drop(state_mut);
                 connect_ws().await;
+                // 等待WebSocket连接建立
+                for _ in 0..20 {
+                    sleep(Duration::from_millis(100)).await;
+                    if ws.read().is_some() && ws.read().as_ref().map(|s| s.ready_state() == 1).unwrap_or(false) {
+                        break;
+                    }
+                }
             }
 
             let session_id = match state.read().current_session.as_ref() {
@@ -301,12 +374,24 @@ pub fn ChatPage() -> Element {
             };
 
             if let Some(socket) = ws.read().as_ref() {
+                if socket.ready_state() != 1 {
+                    state.write().error = Some("WebSocket连接未建立，请重试".to_string());
+                    state.write().is_typing = false;
+                    scroll_to_bottom(&message_container);
+                    return;
+                }
                 let req = json!({
                     "provider_id": provider.id,
                     "message": message,
                     "session_id": session_id,
                 });
-                let _ = socket.send_with_str(&req.to_string());
+                if let Err(e) = socket.send_with_str(&req.to_string()) {
+                    state.write().error = Some(format!("发送消息失败: {}", e.as_string().unwrap_or_default()));
+                    state.write().is_typing = false;
+                }
+            } else {
+                state.write().error = Some("WebSocket连接未建立".to_string());
+                state.write().is_typing = false;
             }
             scroll_to_bottom(&message_container);
         }
@@ -327,25 +412,51 @@ pub fn ChatPage() -> Element {
     };
 
     let select_session = move |session: ChatSession| {
-        state.write().current_session = Some(session.clone());
-        state.write().messages = session.messages.iter().filter_map(|msg| {
-            match msg.get("role").and_then(|r| r.as_str()) {
-                Some("user") => msg.get("content").and_then(|c| c.as_str()).map(|c| ChatMessage::User { content: c.to_string() }),
-                Some("assistant") => {
-                    let content = msg.get("content").and_then(|c| c.as_str()).unwrap_or("").to_string();
-                    let thinking = msg.get("reasoning").and_then(|r| r.as_str()).unwrap_or("").to_string();
-                    Some(ChatMessage::Assistant { content, thinking, tool_results: Vec::new() })
+        let state = state.clone();
+        let message_container = message_container.clone();
+        spawn(async move {
+            match get_chat_session(&session.id).await {
+                Ok(full_session) => {
+                    state.write().current_session = Some(full_session.clone());
+                    state.write().messages = full_session.messages.iter().filter_map(|msg| {
+                        match msg.get("role").and_then(|r| r.as_str()) {
+                            Some("user") => msg.get("content").and_then(|c| c.as_str()).map(|c| ChatMessage::User { content: c.to_string() }),
+                            Some("assistant") => {
+                                let content = msg.get("content").and_then(|c| c.as_str()).unwrap_or("").to_string();
+                                let thinking = msg.get("reasoning").and_then(|r| r.as_str()).unwrap_or("").to_string();
+                                Some(ChatMessage::Assistant { content, thinking, tool_results: Vec::new() })
+                            }
+                            Some("tool") => {
+                                let name = msg.get("name").and_then(|n| n.as_str()).unwrap_or("tool").to_string();
+                                msg.get("content").and_then(|c| c.as_str()).map(|result| ChatMessage::Tool {
+                                    name,
+                                    args: String::new(),
+                                    result: result.to_string(),
+                                })
+                            }
+                            Some("system") => msg.get("content").and_then(|c| c.as_str()).map(|c| ChatMessage::System { content: c.to_string() }),
+                            _ => None,
+                        }
+                    }).collect();
+                    scroll_to_bottom(&message_container);
                 }
-                Some("tool") => msg.get("content").and_then(|c| c.as_str()).map(|result| ChatMessage::Tool {
-                    name: "tool".to_string(),
-                    args: String::new(),
-                    result: result.to_string(),
-                }),
-                Some("system") => msg.get("content").and_then(|c| c.as_str()).map(|c| ChatMessage::System { content: c.to_string() }),
-                _ => None,
+                Err(e) => {
+                    state.write().error = Some(format!("加载会话失败: {}", e));
+                    state.write().current_session = Some(session);
+                    state.write().messages = session.messages.iter().filter_map(|msg| {
+                        match msg.get("role").and_then(|r| r.as_str()) {
+                            Some("user") => msg.get("content").and_then(|c| c.as_str()).map(|c| ChatMessage::User { content: c.to_string() }),
+                            Some("assistant") => {
+                                let content = msg.get("content").and_then(|c| c.as_str()).unwrap_or("").to_string();
+                                let thinking = msg.get("reasoning").and_then(|r| r.as_str()).unwrap_or("").to_string();
+                                Some(ChatMessage::Assistant { content, thinking, tool_results: Vec::new() })
+                            }
+                            _ => None,
+                        }
+                    }).collect();
+                }
             }
-        }).collect();
-        scroll_to_bottom(&message_container);
+        });
     };
 
     let new_session = move || {
@@ -559,6 +670,28 @@ pub fn ChatPage() -> Element {
                                     }
                                 }
                             }
+                            if !state.read().ws_connected && state.read().messages.is_empty() {
+                                div { class: "flex flex-col items-center justify-center py-8",
+                                    div { class: "w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-3",
+                                        svg { class: "w-6 h-6 text-gray-400", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
+                                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" }
+                                        }
+                                    }
+                                    p { class: "text-sm text-[var(--ds-text-tertiary)] mb-3", "WebSocket连接已断开" }
+                                    EqButton {
+                                        variant: EqButtonVariant::Primary,
+                                        size: EqButtonSize::Sm,
+                                        onclick: move |_| {
+                                            state.write().ws_connected = false;
+                                            ws.write().take();
+                                            spawn(async move {
+                                                connect_ws().await;
+                                            });
+                                        },
+                                        "重新连接"
+                                    }
+                                }
+                            }
                             for (idx, msg) in state.read().messages.iter().enumerate() {
                                 match msg {
                                     ChatMessage::User { content } => {
@@ -574,8 +707,9 @@ pub fn ChatPage() -> Element {
                                                         "思考中: {thinking}"
                                                     }
                                                 }
-                                                div { class: "px-4 py-2.5 rounded-2xl rounded-tl-sm bg-[var(--ds-card)] border border-[var(--ds-border)] text-[var(--ds-text)] text-sm shadow-sm whitespace-pre-wrap",
-                                                    "{content}"
+                                                div { 
+                                                    class: "px-4 py-2.5 rounded-2xl rounded-tl-sm bg-[var(--ds-card)] border border-[var(--ds-border)] text-[var(--ds-text)] text-sm shadow-sm",
+                                                    inner_html: "{render_markdown(content)}"
                                                 }
                                             }
                                         }
@@ -630,16 +764,32 @@ pub fn ChatPage() -> Element {
                                     onkeydown: handle_keydown,
                                 }
                             }
-                            EqButton {
-                                variant: EqButtonVariant::Primary,
-                                size: EqButtonSize::Md,
-                                disabled: state.read().is_typing || state.read().current_message.trim().is_empty(),
-                                onclick: move |_| {
-                                    let msg = state.read().current_message.clone();
-                                    spawn(async move { send_message(msg).await; });
-                                },
-                                svg { class: "w-4 h-4", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
-                                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M12 19l9 2-9-18-9 18 9-2zm0 0v-8" }
+                            if state.read().is_typing {
+                                EqButton {
+                                    variant: EqButtonVariant::Danger,
+                                    size: EqButtonSize::Md,
+                                    onclick: move |_| {
+                                        state.write().is_typing = false;
+                                        state.write().current_thinking = String::new();
+                                        ws.write().take();
+                                        spawn(async move {
+                                            connect_ws().await;
+                                        });
+                                    },
+                                    "停止"
+                                }
+                            } else {
+                                EqButton {
+                                    variant: EqButtonVariant::Primary,
+                                    size: EqButtonSize::Md,
+                                    disabled: state.read().current_message.trim().is_empty(),
+                                    onclick: move |_| {
+                                        let msg = state.read().current_message.clone();
+                                        spawn(async move { send_message(msg).await; });
+                                    },
+                                    svg { class: "w-4 h-4", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
+                                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M12 19l9 2-9-18-9 18 9-2zm0 0v-8" }
+                                    }
                                 }
                             }
                         }
