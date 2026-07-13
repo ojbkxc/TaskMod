@@ -716,7 +716,7 @@ pub fn load_ai_providers() -> Vec<AiProvider> {
         }
     }
     // 文件有变化或首次加载，从磁盘读取
-    let providers = fs::read_to_string(AI_CONF)
+    let providers: Vec<AiProvider> = fs::read_to_string(AI_CONF)
         .ok()
         .and_then(|content| serde_json::from_str(&content).ok())
         .unwrap_or_default();

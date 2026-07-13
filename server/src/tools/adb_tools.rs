@@ -354,8 +354,7 @@ impl AiTool for AdbShutdownTool {
 impl AiTool for AdbClearAppDataTool {
     fn name(&self) -> &str { "adb_clear_app_data" }
     fn description(&self) -> &str {
-        "清除指定应用的所有数据（缓存、用户数据、数据库等），等同于在设置中"清除数据"。\
-         需要root权限。此操作不可逆，执行前务必确认用户意图！"
+        "清除指定应用的所有数据（缓存、用户数据、数据库等），等同于在设置中「清除数据」。需要root权限。此操作不可逆，执行前务必确认用户意图！"
     }
     fn parameters(&self) -> serde_json::Value {
         json!({

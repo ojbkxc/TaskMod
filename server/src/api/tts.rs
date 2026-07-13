@@ -225,12 +225,12 @@ async fn exec_speak(text: &str, engine: Option<&str>, language: Option<&str>) ->
 
     // 方法1: 使用 am startservice 通过 Intent 调用系统 TTS Service
     // 这是最兼容的方式，几乎所有 Android 设备都支持
-    let engine_extra = if !engine_pkg.is_empty() {
+    let _engine_extra = if !engine_pkg.is_empty() {
         format!(" --es engine {}", engine_pkg)
     } else {
         String::new()
     };
-    let lang_extra = if let Some(l) = language {
+    let _lang_extra = if let Some(l) = language {
         format!(" --es language {}", l)
     } else {
         String::new()
