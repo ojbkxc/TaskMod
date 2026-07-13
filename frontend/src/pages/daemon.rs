@@ -8,6 +8,7 @@ use crate::api::client::{
     start_tunnel, stop_tunnel, restart_tunnel, delete_tunnel,
     list_services, add_service, enable_service, disable_service, delete_service,
     get_daemon_status, stop_daemon, restart_daemon,
+    get_cloudflared_status, download_cloudflared, list_cloudflared_versions,
     TunnelInfo, ServiceInfo, ProcessStatus,
 };
 
@@ -25,9 +26,12 @@ struct DaemonState {
     tunnels: Vec<TunnelInfo>,
     processes: Vec<ProcessStatus>,
     daemon_status: Value,
+    cloudflared_status: Value,
+    cloudflared_versions: Vec<String>,
     loading: bool,
     error: Option<String>,
     show_add_tunnel: bool,
+    show_cloudflared_download: bool,
     auto_refresh: bool,
     last_refresh: u64,
 }
@@ -38,9 +42,12 @@ impl Default for DaemonState {
             tunnels: Vec::new(),
             processes: Vec::new(),
             daemon_status: serde_json::json!({}),
+            cloudflared_status: serde_json::json!({}),
+            cloudflared_versions: Vec::new(),
             loading: false,
             error: None,
             show_add_tunnel: false,
+            show_cloudflared_download: false,
             auto_refresh: true,
             last_refresh: 0,
         }
@@ -58,10 +65,11 @@ pub fn DaemonPage() -> Element {
             state.write().loading = true;
             state.write().error = None;
 
-            let (tunnels_res, processes_res, status_res) = join(
+            let (tunnels_res, processes_res, status_res, cf_status_res) = join(
                 list_tunnels(),
                 list_processes(),
-                get_daemon_status()
+                get_daemon_status(),
+                get_cloudflared_status()
             ).await;
 
             let mut s = state.write();
@@ -77,11 +85,25 @@ pub fn DaemonPage() -> Element {
                 Ok(status) => s.daemon_status = status,
                 Err(e) => if s.error.is_none() { s.error = Some(format!("加载守护进程状态失败: {}", e)) },
             }
+            match cf_status_res {
+                Ok(status) => s.cloudflared_status = status,
+                Err(e) => if s.error.is_none() { s.error = Some(format!("加载 cloudflared 状态失败: {}", e)) },
+            }
             s.loading = false;
             s.last_refresh = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
+        }
+    };
+
+    let load_versions = move || {
+        let state = state.clone();
+        async move {
+            match list_cloudflared_versions().await {
+                Ok(versions) => state.write().cloudflared_versions = versions,
+                Err(_) => {}
+            }
         }
     };
 
@@ -177,6 +199,16 @@ pub fn DaemonPage() -> Element {
                     },
                 }
 
+                CloudflaredControl {
+                    status: state.read().cloudflared_status.clone(),
+                    on_download: move |_| {
+                        spawn(async move {
+                            load_versions().await;
+                        });
+                        state.write().show_cloudflared_download = true;
+                    },
+                }
+
                 if let Some(err) = state.read().error.clone() {
                     div { class: "p-3 border border-[var(--ds-danger)] bg-[color-mix(in_srgb,var(--ds-danger)_10%,transparent)] text-[var(--ds-danger)] rounded-md text-sm",
                         "{err}"
@@ -229,6 +261,17 @@ pub fn DaemonPage() -> Element {
                     }
                 }
             }
+
+            if *state.read().show_cloudflared_download.read() {
+                CloudflaredDownloadDialog {
+                    on_close: move |_| state.write().show_cloudflared_download = false,
+                    on_success: move |_| {
+                        state.write().show_cloudflared_download = false;
+                        load_data().await;
+                    },
+                    versions: state.read().cloudflared_versions.clone(),
+                }
+            }
         }
     }
 }
@@ -238,6 +281,62 @@ struct DaemonControlProps {
     is_running: bool,
     on_stop: EventHandler<()>,
     on_restart: EventHandler<()>,
+}
+
+#[derive(Props, PartialEq, Clone)]
+struct CloudflaredControlProps {
+    status: Value,
+    on_download: EventHandler<()>,
+}
+
+#[component]
+fn CloudflaredControl(props: CloudflaredControlProps) -> Element {
+    let exists = props.status.get("exists").and_then(|v| v.as_bool()).unwrap_or(false);
+    let version = props.status.get("version").and_then(|v| v.as_str()).unwrap_or("未知");
+    let path = props.status.get("path").and_then(|v| v.as_str()).unwrap_or("");
+
+    rsx! {
+        EqCard {
+            div { class: "p-4",
+                div { class: "flex items-center justify-between mb-3",
+                    div {
+                        h3 { class: "font-semibold text-[var(--ds-text)]", "Cloudflared" }
+                        p { class: "text-xs text-[var(--ds-text-tertiary)] mt-0.5",
+                            "Cloudflare Tunnel 客户端"
+                        }
+                    }
+                    EqButton {
+                        variant: EqButtonVariant::Primary,
+                        size: EqButtonSize::Sm,
+                        onclick: props.on_download,
+                        "下载/更新"
+                    }
+                }
+                if exists {
+                    div { class: "space-y-1.5",
+                        div { class: "flex justify-between text-xs",
+                            span { class: "text-[var(--ds-text-tertiary)]", "状态" }
+                            span { class: "text-[var(--ds-success)] font-medium", "已安装" }
+                        }
+                        div { class: "flex justify-between text-xs",
+                            span { class: "text-[var(--ds-text-tertiary)]", "版本" }
+                            span { class: "text-[var(--ds-text)]", "{version}" }
+                        }
+                        div { class: "flex justify-between text-xs",
+                            span { class: "text-[var(--ds-text-tertiary)]", "路径" }
+                            span { class: "text-[var(--ds-text)] font-mono", "{path}" }
+                        }
+                    }
+                } else {
+                    div { class: "p-3 bg-[color-mix(in_srgb,var(--ds-warning)_15%,transparent)] border border-[var(--ds-warning)] rounded-md",
+                        p { class: "text-xs text-[var(--ds-warning)]",
+                            "Cloudflared 未安装。需要下载客户端才能使用 Cloudflare Tunnel 功能。"
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[component]
@@ -683,6 +782,83 @@ fn AddServiceForm(props: AddServiceFormProps) -> Element {
 struct AddTunnelDialogProps {
     on_close: EventHandler<()>,
     on_success: EventHandler<()>,
+}
+
+#[derive(Props, PartialEq, Clone)]
+struct CloudflaredDownloadDialogProps {
+    on_close: EventHandler<()>,
+    on_success: EventHandler<()>,
+    versions: Vec<String>,
+}
+
+#[component]
+fn CloudflaredDownloadDialog(props: CloudflaredDownloadDialogProps) -> Element {
+    let mut selected_version = use_signal(String::new);
+    let mut loading = use_signal(|| false);
+    let mut error = use_signal(|| None::<String>);
+
+    if selected_version.read().is_empty() && !props.versions.is_empty() {
+        selected_version.set(props.versions[0].clone());
+    }
+
+    let submit = move |_| {
+        let version = selected_version.read().clone();
+        if version.is_empty() {
+            error.set(Some("请选择版本".to_string()));
+            return;
+        }
+        let on_success = props.on_success.clone();
+        loading.set(true);
+        error.set(None);
+        spawn(async move {
+            match download_cloudflared(&version).await {
+                Ok(_) => on_success.call(()),
+                Err(e) => error.set(Some(format!("下载失败: {}", e))),
+            }
+            loading.set(false);
+        });
+    };
+
+    rsx! {
+        div { class: "fixed inset-0 bg-black/50 flex items-center justify-center z-50",
+            div { class: "bg-[var(--ds-card)] rounded-xl p-6 w-full max-w-md border border-[var(--ds-border)] shadow-xl",
+                h2 { class: "text-lg font-bold mb-4 text-[var(--ds-text)]", "下载 Cloudflared" }
+                if let Some(err) = error.read().clone() {
+                    div { class: "p-2.5 border border-[var(--ds-danger)] text-[var(--ds-danger)] rounded-md mb-4 text-sm bg-[color-mix(in_srgb,var(--ds-danger)_10%,transparent)]",
+                        "{err}"
+                    }
+                }
+                div { class: "space-y-4",
+                    div {
+                        label { class: "block text-[11px] font-bold text-[var(--ds-text)] uppercase tracking-wider mb-1",
+                            "版本"
+                        }
+                        select {
+                            class: "w-full px-3 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
+                            value: "{selected_version}",
+                            onchange: move |e| selected_version.set(e.value.clone()),
+                            for version in props.versions.clone() {
+                                option { value: "{version}", "{version}" }
+                            }
+                        }
+                    }
+                }
+                div { class: "flex justify-end gap-2 mt-6",
+                    EqButton {
+                        variant: EqButtonVariant::Secondary,
+                        onclick: move |_| props.on_close.call(()),
+                        "取消"
+                    }
+                    EqButton {
+                        variant: EqButtonVariant::Primary,
+                        onclick: submit,
+                        disabled: *loading.read(),
+                        if *loading.read() { "下载中..." } else { "下载" }
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[component]

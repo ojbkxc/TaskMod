@@ -328,6 +328,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/workflows/:id", get(api::system::get_workflow).delete(api::system::delete_workflow_api))
         .route("/api/workflows/run", post(api::system::run_workflow))
         .route("/api/status", get(api::system::system_status))
+        .route("/api/app/status", get(api::system::app_status))
         .route("/api/tts/engines", get(api::tts::get_tts_engines))
         .route("/api/tts/speak", post(api::tts::speak))
         .route("/api/tts/stop", post(api::tts::stop_tts))

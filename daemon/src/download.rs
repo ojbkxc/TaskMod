@@ -1,7 +1,7 @@
 //! cloudflared 二进制下载模块
 //!
 //! 从 GitHub Releases 下载指定版本的 cloudflared，并校验 SHA256。
-//! 仅在启动时按需调用，不作为常驻服务。
+//! 支持自动检测系统架构（Linux amd64/arm64/arm）。
 //!
 //! 下载流程：
 //! 1. 检查本地是否已有目标版本
@@ -15,7 +15,7 @@ use std::io::{self, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
-use log::info;
+use log::{info, warn};
 use sha2::{Digest, Sha256};
 
 use crate::config::{cloudflared_bin_path, data_dir};
@@ -25,9 +25,25 @@ use crate::error::{Result, TaskModError};
 const GITHUB_BASE_URL: &str =
     "https://github.com/cloudflare/cloudflared/releases/download";
 
-/// 目标平台架构
-/// 目前仅支持 Linux amd64，可根据需要扩展
-const TARGET_ARCH: &str = "linux-amd64";
+/// 获取当前系统架构对应的 cloudflared 文件名后缀
+/// 
+/// GitHub Releases 上的文件名格式: cloudflared-linux-amd64, cloudflared-linux-arm64, cloudflared-linux-arm
+pub fn get_target_arch() -> String {
+    #[cfg(target_arch = "aarch64")]
+    return "linux-arm64".to_string();
+    
+    #[cfg(target_arch = "arm")]
+    return "linux-arm".to_string();
+    
+    #[cfg(target_arch = "x86_64")]
+    return "linux-amd64".to_string();
+    
+    #[cfg(target_arch = "i686")]
+    return "linux-386".to_string();
+    
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "arm", target_arch = "x86_64", target_arch = "i686")))]
+    compile_error!("不支持的目标架构");
+}
 
 /// 检查 cloudflared 二进制是否已存在
 pub fn is_binary_available(version: &str) -> Result<bool> {
@@ -52,8 +68,11 @@ pub fn ensure_binary(version: &str) -> Result<()> {
 }
 
 /// 下载 cloudflared 二进制
-fn download_binary(version: &str) -> Result<()> {
-    let bin_name = format!("cloudflared-{}-{}", version, TARGET_ARCH);
+/// 
+/// GitHub Releases 上的文件名格式: cloudflared-linux-amd64 (不带版本号)
+pub fn download_binary(version: &str) -> Result<()> {
+    let arch = get_target_arch();
+    let bin_name = format!("cloudflared-{}", arch);
     let download_url =
         format!("{}/{}/{}", GITHUB_BASE_URL, version, bin_name);
     let checksum_url = format!(
@@ -61,7 +80,7 @@ fn download_binary(version: &str) -> Result<()> {
         GITHUB_BASE_URL, version
     );
 
-    // 1. 下载 checksums.txt
+    info!("下载 cloudflared {} ({})", version, arch);
     info!("下载校验文件: {}", checksum_url);
     let checksums = download_text(&checksum_url)?;
     let expected_hash = parse_checksum(&checksums, &bin_name)?;

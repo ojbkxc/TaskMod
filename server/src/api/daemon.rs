@@ -26,6 +26,9 @@ enum IpcCommand {
     Status,
     Stop,
     RestartAll,
+    GetCloudflaredStatus,
+    DownloadCloudflared { version: String },
+    ListCloudflaredVersions,
     ListTunnels,
     GetTunnel { name: String },
     AddTunnel { name: String, token: String, enabled: bool },
@@ -59,6 +62,9 @@ pub fn routes() -> Router<()> {
         .route("/api/daemon/status", get(get_status))
         .route("/api/daemon/stop", post(stop_daemon))
         .route("/api/daemon/restart", post(restart_all))
+        .route("/api/daemon/cloudflared/status", get(get_cloudflared_status))
+        .route("/api/daemon/cloudflared/download", post(download_cloudflared))
+        .route("/api/daemon/cloudflared/versions", get(list_cloudflared_versions))
         .route("/api/tunnels", get(list_tunnels).post(add_tunnel))
         .route("/api/tunnels/:name", get(get_tunnel).put(update_tunnel).delete(delete_tunnel))
         .route("/api/tunnels/:name/enable", post(enable_tunnel))
@@ -97,6 +103,38 @@ async fn stop_daemon() -> Json<ApiResponse<String>> {
 async fn restart_all() -> Json<ApiResponse<String>> {
     match send_ipc(&IpcCommand::RestartAll).await {
         Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
+    }
+}
+
+async fn get_cloudflared_status() -> Json<ApiResponse<serde_json::Value>> {
+    match send_ipc(&IpcCommand::GetCloudflaredStatus).await {
+        Ok(IpcResponse::Json(data)) => Json(ApiResponse { success: true, data: Some(data), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
+    }
+}
+
+#[derive(Deserialize)]
+struct DownloadCloudflaredRequest {
+    version: String,
+}
+
+async fn download_cloudflared(Json(req): Json<DownloadCloudflaredRequest>) -> Json<ApiResponse<String>> {
+    match send_ipc(&IpcCommand::DownloadCloudflared { version: req.version }).await {
+        Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), message: None }),
+        Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
+        _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
+    }
+}
+
+async fn list_cloudflared_versions() -> Json<ApiResponse<serde_json::Value>> {
+    match send_ipc(&IpcCommand::ListCloudflaredVersions).await {
+        Ok(IpcResponse::Json(data)) => Json(ApiResponse { success: true, data: Some(data), message: None }),
         Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
         Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
         _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),

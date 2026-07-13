@@ -346,6 +346,29 @@ pub async fn system_status() -> Json<serde_json::Value> {
     }))
 }
 
+pub async fn app_status() -> Json<serde_json::Value> {
+    let tasks_count = fs::read_to_string(SCHEDULE_FILE).await
+        .map(|c| c.lines().filter(|l| !l.trim().is_empty() && !l.starts_with('#')).count())
+        .unwrap_or(0);
+
+    let screenshots_count = match fs::read_dir(SCREENSHOTS_DIR).await {
+        Ok(mut d) => {
+            let mut count = 0usize;
+            while let Ok(Some(_)) = d.next_entry().await { count += 1; }
+            count
+        }
+        Err(_) => 0,
+    };
+
+    Json(json!({
+        "success": true,
+        "data": {
+            "tasks_count": tasks_count,
+            "screenshots_count": screenshots_count,
+        }
+    }))
+}
+
 pub async fn list_workflows_api() -> Json<ApiResponse<Vec<Workflow>>> {
     let workflows = list_workflows();
     Json(ApiResponse::ok(workflows))

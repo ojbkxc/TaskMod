@@ -2,11 +2,33 @@ use dioxus::prelude::*;
 use eq_ui::prelude::*;
 use wasm_bindgen::closure::Closure;
 use web_sys::MessageEvent;
+use crate::api::client::{get_device_info, DeviceInfo};
 
 #[component]
 pub fn MirrorPage() -> Element {
     let mut is_connected = use_signal(|| false);
     let mut audio_enabled = use_signal(|| false);
+    let device_info = use_signal(|| Option::<DeviceInfo>::None);
+    let is_refreshing = use_signal(|| false);
+
+    let load_device_info = move || {
+        is_refreshing.set(true);
+        spawn(async move {
+            match get_device_info().await {
+                Ok(info) => {
+                    device_info.set(Some(info));
+                }
+                Err(_) => {
+                    device_info.set(None);
+                }
+            }
+            is_refreshing.set(false);
+        });
+    };
+
+    use_effect(move || {
+        load_device_info();
+    });
 
     let start_mirror = move |_| {
         is_connected.set(true);
@@ -93,33 +115,99 @@ pub fn MirrorPage() -> Element {
                 }
             }
 
-            div { class: "flex gap-4 items-start",
-                div { class: "hidden md:flex flex-col gap-3 w-56 flex-shrink-0",
+            div { class: "hidden md:flex gap-4 mb-4",
+                div { class: "flex-1",
                     EqCard { class: "p-4",
-                        div { class: "flex items-center gap-2 mb-3",
-                            svg { class: "w-4 h-4 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
-                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" }
+                        div { class: "flex items-center justify-between mb-3",
+                            div { class: "flex items-center gap-2",
+                                svg { class: "w-4 h-4 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
+                                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" }
+                                }
+                                span { class: "text-sm font-semibold text-[var(--ds-text)]", "ADB 命令" }
                             }
-                            span { class: "text-sm font-semibold text-[var(--ds-text)]", "ADB 命令" }
                         }
-                        input {
-                            class: "w-full min-h-[36px] px-2.5 py-1.5 border border-[var(--ds-border)] rounded bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] font-mono outline-none focus:border-[var(--ds-blue)] mb-2",
-                            placeholder: "输入命令...",
+                        div { class: "flex gap-2 mb-3",
+                            input {
+                                class: "flex-1 min-h-[36px] px-2.5 py-1.5 border border-[var(--ds-border)] rounded bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] font-mono outline-none focus:border-[var(--ds-blue)]",
+                                placeholder: "输入命令...",
+                            }
+                            EqButton {
+                                variant: EqButtonVariant::Primary,
+                                "执行"
+                            }
                         }
-                        EqButton {
-                            variant: EqButtonVariant::Primary,
-                            "执行"
-                        }
-                        div { class: "grid grid-cols-2 gap-1.5 mt-3",
-                            AdbCommandCard { label: "唤醒屏幕" }
+                        div { class: "grid grid-cols-5 gap-1.5",
+                            AdbCommandCard { label: "唤醒" }
                             AdbCommandCard { label: "息屏" }
-                            AdbCommandCard { label: "上滑解锁" }
+                            AdbCommandCard { label: "解锁" }
                             AdbCommandCard { label: "Home" }
                             AdbCommandCard { label: "返回" }
                         }
                     }
+                }
 
-                    EqCard { class: "p-4 flex-1",
+                div { class: "w-64",
+                    EqCard { class: "p-4",
+                        div { class: "flex items-center justify-between mb-3",
+                            div { class: "flex items-center gap-2",
+                                svg { class: "w-4 h-4 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
+                                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" }
+                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M15 12a3 3 0 11-6 0 3 3 0 016 0z" }
+                            }
+                            span { class: "text-sm font-semibold text-[var(--ds-text)]", "设备信息" }
+                            button {
+                                class: "p-1 hover:bg-[var(--ds-surface)] rounded transition-colors",
+                                onclick: move |_| load_device_info(),
+                                svg { class: "w-4 h-4 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
+                                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" }
+                                }
+                            }
+                        }
+                        if *is_refreshing.read() {
+                            div { class: "flex items-center justify-center py-4",
+                                div { class: "w-4 h-4 border-2 border-[var(--ds-border)] border-t-[var(--ds-blue)] rounded-full animate-spin" }
+                            }
+                        } else if let Some(info) = device_info.read().as_ref() {
+                            div { class: "space-y-2",
+                                DeviceInfoItem { label: "型号", value: info.model.clone() }
+                                DeviceInfoItem { label: "电量", value: info.battery.clone() }
+                                DeviceInfoItem { label: "分辨率", value: info.screen_size.clone() }
+                                DeviceInfoItem { label: "WiFi", value: info.wifi.clone() }
+                                DeviceInfoItem { label: "IP", value: info.ip.clone() }
+                                DeviceInfoItem { label: "Android", value: info.android_version.clone() }
+                            }
+                        } else {
+                            div { class: "text-center py-2",
+                                span { class: "text-xs text-[var(--ds-text-tertiary)]", "点击刷新获取设备信息" }
+                            }
+                        }
+                    }
+                }
+            }
+
+            div { class: "hidden md:flex items-center justify-center min-w-0",
+                div { class: "relative border border-[var(--ds-border)] rounded-lg overflow-hidden bg-[#0a0a0f] flex items-center justify-center w-full max-w-[400px] aspect-[9/16] max-h-[78vh] mx-auto shadow-lg",
+                    if *is_connected.read() {
+                        div { class: "flex flex-col items-center gap-3 p-10 text-center",
+                            p { class: "text-sm text-[var(--ds-text-secondary)]", "投屏中..." }
+                        }
+                    } else {
+                        div { class: "flex flex-col items-center gap-3 p-10 text-center",
+                            div { class: "w-16 h-16 flex items-center justify-center bg-[var(--ds-surface)] border border-[var(--ds-border)] rounded-2xl text-2xl text-[var(--ds-text-tertiary)] opacity-60",
+                                svg { class: "w-7 h-7", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
+                                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" }
+                                }
+                            }
+                            p { class: "text-sm font-semibold text-[var(--ds-text-secondary)]", "设备未连接" }
+                            p { class: "text-xs text-[var(--ds-text-tertiary)]", "点击上方\"开始投屏\"连接设备屏幕" }
+                        }
+                    }
+                }
+            }
+
+            div { class: "hidden md:flex gap-4 mt-4",
+                div { class: "flex-1",
+                    EqCard { class: "p-4",
                         div { class: "flex items-center gap-2 mb-3",
                             svg { class: "w-4 h-4 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
                                 path { stroke_linecap: "round", stroke_linejoin: "round", d: "M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" }
@@ -132,8 +220,121 @@ pub fn MirrorPage() -> Element {
                     }
                 }
 
-                div { class: "flex-1 flex items-center justify-center min-w-0 py-2",
-                    div { class: "relative border border-[var(--ds-border)] rounded-lg overflow-hidden bg-[#0a0a0f] flex items-center justify-center w-full max-w-[400px] aspect-[9/16] max-h-[78vh] mx-auto shadow-lg",
+                div { class: "flex-1",
+                    div { class: "grid grid-cols-2 gap-4",
+                        EqCard { class: "p-4",
+                            div { class: "flex items-center gap-2 mb-3",
+                                svg { class: "w-4 h-4 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
+                                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" }
+                                }
+                                span { class: "text-sm font-semibold text-[var(--ds-text)]", "应用管理" }
+                            }
+                            div { class: "grid grid-cols-2 gap-1.5",
+                                DeviceToolCard { label: "启动应用", icon: "start" }
+                                DeviceToolCard { label: "停止应用", icon: "stop" }
+                            }
+                        }
+
+                        EqCard { class: "p-4",
+                            div { class: "flex items-center gap-2 mb-3",
+                                svg { class: "w-4 h-4 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
+                                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" }
+                                }
+                                span { class: "text-sm font-semibold text-[var(--ds-text)]", "系统操作" }
+                            }
+                            div { class: "grid grid-cols-2 gap-1.5",
+                                DeviceToolCard { label: "重启设备", icon: "reboot" }
+                                DeviceToolCard { label: "关闭设备", icon: "shutdown" }
+                            }
+                        }
+                    }
+                }
+            }
+
+            div { class: "md:hidden space-y-3",
+                EqCard { class: "p-4",
+                    div { class: "flex items-center gap-2 mb-3",
+                        svg { class: "w-4 h-4 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
+                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" }
+                        }
+                        span { class: "text-sm font-semibold text-[var(--ds-text)]", "ADB 命令" }
+                    }
+                    div { class: "flex gap-2 mb-3",
+                        input {
+                            class: "flex-1 min-h-[36px] px-2.5 border border-[var(--ds-border)] rounded bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] font-mono outline-none focus:border-[var(--ds-blue)]",
+                            placeholder: "输入命令...",
+                        }
+                        EqButton {
+                            variant: EqButtonVariant::Primary,
+                            "执行"
+                        }
+                    }
+                    div { class: "grid grid-cols-5 gap-1.5",
+                        AdbCommandCard { label: "唤醒" }
+                        AdbCommandCard { label: "息屏" }
+                        AdbCommandCard { label: "解锁" }
+                        AdbCommandCard { label: "Home" }
+                        AdbCommandCard { label: "返回" }
+                    }
+                }
+
+                EqCard { class: "p-4",
+                    div { class: "flex items-center justify-between mb-3",
+                        div { class: "flex items-center gap-2",
+                            svg { class: "w-4 h-4 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
+                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" }
+                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M15 12a3 3 0 11-6 0 3 3 0 016 0z" }
+                            }
+                            span { class: "text-sm font-semibold text-[var(--ds-text)]", "设备信息" }
+                        }
+                        button {
+                            class: "p-1 hover:bg-[var(--ds-surface)] rounded transition-colors",
+                            onclick: move |_| load_device_info(),
+                            svg { class: "w-4 h-4 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
+                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" }
+                            }
+                        }
+                    }
+                    if *is_refreshing.read() {
+                        div { class: "flex items-center justify-center py-3",
+                            div { class: "w-4 h-4 border-2 border-[var(--ds-border)] border-t-[var(--ds-blue)] rounded-full animate-spin" }
+                        }
+                    } else if let Some(info) = device_info.read().as_ref() {
+                        div { class: "grid grid-cols-3 gap-2",
+                            div { class: "bg-[var(--ds-bg)] rounded p-2 text-center",
+                                span { class: "block text-[10px] text-[var(--ds-text-tertiary)] mb-1", "型号" }
+                                span { class: "text-xs text-[var(--ds-text)] font-mono truncate block", info.model.clone() }
+                            }
+                            div { class: "bg-[var(--ds-bg)] rounded p-2 text-center",
+                                span { class: "block text-[10px] text-[var(--ds-text-tertiary)] mb-1", "电量" }
+                                span { class: "text-xs text-[var(--ds-text)] font-mono", info.battery.clone() }
+                            }
+                            div { class: "bg-[var(--ds-bg)] rounded p-2 text-center",
+                                span { class: "block text-[10px] text-[var(--ds-text-tertiary)] mb-1", "分辨率" }
+                                span { class: "text-xs text-[var(--ds-text)] font-mono", info.screen_size.clone() }
+                            }
+                            div { class: "bg-[var(--ds-bg)] rounded p-2 text-center",
+                                span { class: "block text-[10px] text-[var(--ds-text-tertiary)] mb-1", "WiFi" }
+                                span { class: "text-xs text-[var(--ds-text)] font-mono truncate block", info.wifi.clone() }
+                            }
+                            div { class: "bg-[var(--ds-bg)] rounded p-2 text-center",
+                                span { class: "block text-[10px] text-[var(--ds-text-tertiary)] mb-1", "IP" }
+                                span { class: "text-xs text-[var(--ds-text)] font-mono", info.ip.clone() }
+                            }
+                            div { class: "bg-[var(--ds-bg)] rounded p-2 text-center",
+                                span { class: "block text-[10px] text-[var(--ds-text-tertiary)] mb-1", "Android" }
+                                span { class: "text-xs text-[var(--ds-text)] font-mono", info.android_version.clone() }
+                            }
+                        }
+                    } else {
+                        div { class: "text-center py-2",
+                            span { class: "text-xs text-[var(--ds-text-tertiary)]", "点击刷新获取设备信息" }
+                        }
+                    }
+                }
+
+                div { class: "flex items-center justify-center min-w-0",
+                    div { class: "relative border border-[var(--ds-border)] rounded-lg overflow-hidden bg-[#0a0a0f] flex items-center justify-center w-full max-w-[300px] aspect-[9/16] max-h-[60vh] mx-auto shadow-lg",
                         if *is_connected.read() {
                             div { class: "flex flex-col items-center gap-3 p-10 text-center",
                                 p { class: "text-sm text-[var(--ds-text-secondary)]", "投屏中..." }
@@ -152,25 +353,7 @@ pub fn MirrorPage() -> Element {
                     }
                 }
 
-                div { class: "hidden md:flex flex-col gap-3 w-56 flex-shrink-0",
-                    EqCard { class: "p-4",
-                        div { class: "flex items-center gap-2 mb-3",
-                            svg { class: "w-4 h-4 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
-                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" }
-                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M15 12a3 3 0 11-6 0 3 3 0 016 0z" }
-                            }
-                            span { class: "text-sm font-semibold text-[var(--ds-text)]", "设备工具" }
-                        }
-                        div { class: "grid grid-cols-2 gap-1.5",
-                            DeviceToolCard { label: "截屏", icon: "screencap" }
-                            DeviceToolCard { label: "电池信息", icon: "battery" }
-                            DeviceToolCard { label: "设备型号", icon: "device" }
-                            DeviceToolCard { label: "分辨率", icon: "resolution" }
-                            DeviceToolCard { label: "WiFi信息", icon: "wifi" }
-                            DeviceToolCard { label: "运行应用", icon: "apps" }
-                        }
-                    }
-
+                div { class: "grid grid-cols-2 gap-3",
                     EqCard { class: "p-4",
                         div { class: "flex items-center gap-2 mb-3",
                             svg { class: "w-4 h-4 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
@@ -179,8 +362,8 @@ pub fn MirrorPage() -> Element {
                             span { class: "text-sm font-semibold text-[var(--ds-text)]", "应用管理" }
                         }
                         div { class: "grid grid-cols-2 gap-1.5",
-                            DeviceToolCard { label: "启动应用", icon: "start" }
-                            DeviceToolCard { label: "停止应用", icon: "stop" }
+                            DeviceToolCard { label: "启动", icon: "start" }
+                            DeviceToolCard { label: "停止", icon: "stop" }
                         }
                     }
 
@@ -192,61 +375,40 @@ pub fn MirrorPage() -> Element {
                             span { class: "text-sm font-semibold text-[var(--ds-text)]", "系统操作" }
                         }
                         div { class: "grid grid-cols-2 gap-1.5",
-                            DeviceToolCard { label: "重启设备", icon: "reboot" }
-                            DeviceToolCard { label: "关闭设备", icon: "shutdown" }
+                            DeviceToolCard { label: "重启", icon: "reboot" }
+                            DeviceToolCard { label: "关闭", icon: "shutdown" }
                         }
                     }
                 }
-            }
 
-            div { class: "md:hidden space-y-3",
                 EqCard { class: "p-4",
                     div { class: "flex items-center gap-2 mb-3",
                         svg { class: "w-4 h-4 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
-                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" }
+                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" }
                         }
-                        span { class: "text-sm font-semibold text-[var(--ds-text)]", "ADB 命令" }
+                        span { class: "text-sm font-semibold text-[var(--ds-text)]", "命令输出" }
                     }
-                    div { class: "flex gap-2",
-                        input {
-                            class: "flex-1 min-h-[36px] px-2.5 border border-[var(--ds-border)] rounded bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] font-mono outline-none focus:border-[var(--ds-blue)]",
-                            placeholder: "输入命令...",
-                        }
-                        EqButton {
-                            variant: EqButtonVariant::Primary,
-                            "执行"
-                        }
-                    }
-                    div { class: "grid grid-cols-3 gap-1.5 mt-3",
-                        AdbCommandCard { label: "唤醒" }
-                        AdbCommandCard { label: "息屏" }
-                        AdbCommandCard { label: "解锁" }
-                        AdbCommandCard { label: "Home" }
-                        AdbCommandCard { label: "返回" }
-                        DeviceToolCard { label: "截屏", icon: "screencap" }
-                    }
-                }
-                EqCard { class: "p-4",
-                    div { class: "flex items-center gap-2 mb-3",
-                        svg { class: "w-4 h-4 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
-                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" }
-                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M15 12a3 3 0 11-6 0 3 3 0 016 0z" }
-                        }
-                        span { class: "text-sm font-semibold text-[var(--ds-text)]", "设备工具" }
-                    }
-                    div { class: "grid grid-cols-3 gap-1.5",
-                        DeviceToolCard { label: "截屏", icon: "screencap" }
-                        DeviceToolCard { label: "电池", icon: "battery" }
-                        DeviceToolCard { label: "型号", icon: "device" }
-                        DeviceToolCard { label: "分辨率", icon: "resolution" }
-                        DeviceToolCard { label: "WiFi", icon: "wifi" }
-                        DeviceToolCard { label: "应用", icon: "apps" }
-                        DeviceToolCard { label: "启动", icon: "start" }
-                        DeviceToolCard { label: "停止", icon: "stop" }
-                        DeviceToolCard { label: "重启", icon: "reboot" }
+                    div { class: "min-h-[80px] max-h-[150px] overflow-y-auto p-2.5 bg-[var(--ds-bg)] border border-[var(--ds-border)] rounded text-xs font-mono text-[var(--ds-text-secondary)] whitespace-pre-wrap break-all",
+                        "等待执行命令..."
                     }
                 }
             }
+        }
+    }
+}
+
+#[derive(Props, PartialEq, Clone)]
+struct DeviceInfoItemProps {
+    label: &'static str,
+    value: String,
+}
+
+#[component]
+fn DeviceInfoItem(props: DeviceInfoItemProps) -> Element {
+    rsx! {
+        div { class: "flex justify-between items-center text-xs",
+            span { class: "text-[var(--ds-text-tertiary)]", "{props.label}" }
+            span { class: "text-[var(--ds-text)] font-mono", if props.value.is_empty() { "--" } else { props.value } }
         }
     }
 }

@@ -100,10 +100,24 @@ pub struct MqttConfig {
     pub client_id: String,
 }
 
-/// 获取系统状态
+/// 获取系统状态（兼容旧接口）
 pub async fn get_status() -> Result<SystemStatus, reqwest::Error> {
     let url = format!("{}/status", API_BASE);
     let resp: ApiResponse<SystemStatus> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+/// 应用状态（任务数、截图数）
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AppStatus {
+    pub tasks_count: usize,
+    pub screenshots_count: usize,
+}
+
+/// 获取应用状态
+pub async fn get_app_status() -> Result<AppStatus, reqwest::Error> {
+    let url = format!("{}/app/status", API_BASE);
+    let resp: ApiResponse<AppStatus> = reqwest::get(&url).await?.json().await?;
     Ok(resp.data.unwrap_or_default())
 }
 
@@ -945,12 +959,31 @@ pub struct ServiceInfo {
     pub enabled: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProcessStatus {
     pub tunnel_name: String,
     pub pid: u32,
     pub uptime_secs: u64,
     pub is_alive: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DeviceInfo {
+    pub model: String,
+    pub android_version: String,
+    pub screen_size: String,
+    pub battery: String,
+    pub ip: String,
+    pub storage: String,
+    pub cpu: String,
+    pub memory: String,
+    pub wifi: String,
+}
+
+pub async fn get_device_info() -> Result<DeviceInfo, reqwest::Error> {
+    let url = format!("{}/device/info", API_BASE);
+    let resp: ApiResponse<DeviceInfo> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
 }
 
 pub async fn list_tunnels() -> Result<Vec<TunnelInfo>, reqwest::Error> {
@@ -1139,4 +1172,40 @@ pub async fn restart_daemon() -> Result<String, reqwest::Error> {
         .json()
         .await?;
     Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+pub async fn get_cloudflared_status() -> Result<serde_json::Value, reqwest::Error> {
+    let url = format!("{}/daemon/cloudflared/status", API_BASE);
+    let resp: ApiResponse<serde_json::Value> = reqwest::get(&url).await?.json().await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn download_cloudflared(version: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/daemon/cloudflared/download", API_BASE);
+    let body = serde_json::json!({ "version": version });
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+pub async fn list_cloudflared_versions() -> Result<Vec<String>, reqwest::Error> {
+    let url = format!("{}/daemon/cloudflared/versions", API_BASE);
+    let resp: ApiResponse<serde_json::Value> = reqwest::get(&url).await?.json().await?;
+    if let Some(data) = resp.data {
+        if let Some(arr) = data.as_array() {
+            let result: Vec<String> = arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
+            Ok(result)
+        } else {
+            Ok(Vec::new())
+        }
+    } else {
+        Ok(Vec::new())
+    }
 }

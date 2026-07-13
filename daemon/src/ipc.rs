@@ -28,6 +28,14 @@ pub enum Command {
     /// 重启所有隧道
     RestartAll,
 
+    // ========== cloudflared 管理 ==========
+    /// 查询 cloudflared 版本和状态
+    GetCloudflaredStatus,
+    /// 下载 cloudflared 二进制
+    DownloadCloudflared { version: String },
+    /// 获取可用的 cloudflared 版本列表
+    ListCloudflaredVersions,
+
     // ========== 隧道管理 ==========
     /// 列出所有隧道
     ListTunnels,
