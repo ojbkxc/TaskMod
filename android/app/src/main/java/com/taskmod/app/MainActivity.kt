@@ -31,8 +31,9 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
-        private const val STATUS_CHECK_INTERVAL = 5000L  // 5秒轮询一次
-        private const val WEBVIEW_LOAD_DELAY = 800L       // WebView 加载延迟
+        private const val STATUS_CHECK_INTERVAL = 3000L
+        private const val STATUS_CHECK_FAST_INTERVAL = 800L
+        private const val FAST_CHECK_DURATION = 15000L
     }
 
     private lateinit var serverManager: ServerManager
@@ -50,8 +51,10 @@ class MainActivity : AppCompatActivity() {
 
     private var statusCheckRunnable: Runnable? = null
     private var isPageLoaded = false
-    private var lastKnownRunning = false   // 上一次已知的运行状态，用于检测状态变化
-    private var webViewLoadPending = false  // 是否有待执行的 WebView 加载
+    private var lastKnownRunning = false
+    private var webViewLoadPending = false
+    private var isStartingService = false
+    private var startCheckStartTime: Long = 0
 
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ -> }
@@ -165,10 +168,13 @@ class MainActivity : AppCompatActivity() {
                 TaskModService.stop(this)
                 isPageLoaded = false
                 webViewLoadPending = false
+                isStartingService = false
             } else {
                 TaskModService.start(this)
-                // 不在这里硬编码延迟，而是通过状态轮询来加载 WebView
+                isStartingService = true
+                startCheckStartTime = System.currentTimeMillis()
                 webViewLoadPending = true
+                handler.post { updateUI() }
             }
         }
 
@@ -282,25 +288,32 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateUI() {
-        val running = serverManager.isRunning()
+        lifecycleScope.launch(Dispatchers.IO) {
+            val running = serverManager.isRunning()
+            withContext(Dispatchers.Main) {
+                updateUIWithResult(running)
+            }
+        }
+    }
 
-        // 检测状态变化：从非运行变为运行 → 需要加载 WebView
-        // 从运行变为非运行 → 重置 isPageLoaded
+    private fun updateUIWithResult(running: Boolean) {
         if (running && !lastKnownRunning) {
-            // 服务刚变为运行状态
             isPageLoaded = false
+            isStartingService = false
+            startCheckStartTime = 0
         }
         if (!running && lastKnownRunning) {
-            // 服务刚停止（包括崩溃/外部停止）
             isPageLoaded = false
             webViewLoadPending = false
         }
         lastKnownRunning = running
 
-        tvStatusText.text = if (running) "运行中" else "已停止"
-        tvStatusText.setTextColor(getColor(if (running) R.color.success else R.color.error))
+        tvStatusText.text = if (running) "运行中" else if (isStartingService) "启动中..." else "已停止"
+        tvStatusText.setTextColor(getColor(if (running) R.color.success else if (isStartingService) R.color.warning else R.color.error))
         statusDot.setBackgroundResource(
-            if (running) R.drawable.status_dot_running else R.drawable.status_dot_stopped
+            if (running) R.drawable.status_dot_running 
+            else if (isStartingService) R.drawable.status_dot_starting 
+            else R.drawable.status_dot_stopped
         )
         if (running) {
             tvAddress.text = serverManager.getLocalUrl()
@@ -309,8 +322,9 @@ class MainActivity : AppCompatActivity() {
             if (!isPageLoaded) loadWebView()
         } else {
             tvAddress.text = "--"
-            btnToggle.text = "启动"
-            btnToggle.backgroundTintList = ColorStateList.valueOf(getColor(R.color.primary))
+            btnToggle.text = if (isStartingService) "启动中..." else "启动"
+            btnToggle.backgroundTintList = ColorStateList.valueOf(getColor(if (isStartingService) R.color.warning else R.color.primary))
+            btnToggle.isEnabled = !isStartingService
             webView.visibility = View.GONE
             placeholder.visibility = View.VISIBLE
         }
@@ -338,7 +352,13 @@ class MainActivity : AppCompatActivity() {
         statusCheckRunnable = object : Runnable {
             override fun run() {
                 updateUI()
-                handler.postDelayed(this, STATUS_CHECK_INTERVAL)
+                val interval = if (isStartingService && 
+                    System.currentTimeMillis() - startCheckStartTime < FAST_CHECK_DURATION) {
+                    STATUS_CHECK_FAST_INTERVAL
+                } else {
+                    STATUS_CHECK_INTERVAL
+                }
+                handler.postDelayed(this, interval)
             }
         }
         handler.post(statusCheckRunnable!!)

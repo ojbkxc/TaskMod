@@ -12,6 +12,9 @@ class ServerManager private constructor(private val context: Context) {
     companion object {
         private const val TAG = "ServerManager"
         private const val BINARY_NAME = "taskmod-server"
+        private const val AUTO_RESTART_DELAY = 3000L
+        private const val MAX_AUTO_RESTARTS = 5
+        private const val AUTO_RESTART_WINDOW = 60000L
 
         @Volatile
         private var instance: ServerManager? = null
@@ -26,6 +29,13 @@ class ServerManager private constructor(private val context: Context) {
     private var process: Process? = null
     private val binaryFile: File
         get() = File(context.filesDir, BINARY_NAME)
+    
+    @Volatile
+    private var autoRestartCount = 0
+    @Volatile
+    private var lastAutoRestartTime = 0L
+    @Volatile
+    private var autoRestartScheduled = false
 
     /** 获取当前配置的端口 */
     val port: Int get() = ConfigManager.getPort()
@@ -135,8 +145,7 @@ class ServerManager private constructor(private val context: Context) {
 
             process = builder.start()
 
-            // 轮询等待服务就绪（最多 5 秒，每 200ms 检查一次）
-            val maxWait = 5000L
+            val maxWait = 8000L
             val interval = 200L
             var waited = 0L
             while (waited < maxWait) {
@@ -147,10 +156,12 @@ class ServerManager private constructor(private val context: Context) {
 
             if (isPortInUse(port)) {
                 state = ServerState.RUNNING
+                autoRestartCount = 0
+                lastAutoRestartTime = 0L
                 Log.i(TAG, "服务已启动，端口: $port")
+                startProcessMonitor()
                 return true
             } else {
-                // 进程已退出，尝试读取输出日志
                 var outputLog = ""
                 try {
                     process?.inputStream?.bufferedReader()?.use { reader ->
@@ -160,6 +171,7 @@ class ServerManager private constructor(private val context: Context) {
                 lastError = "进程启动后立即退出${if (outputLog.isNotBlank()) ": $outputLog" else ""}"
                 state = ServerState.ERROR
                 process = null
+                scheduleAutoRestart()
                 return false
             }
         } catch (e: Exception) {
@@ -220,80 +232,137 @@ class ServerManager private constructor(private val context: Context) {
     private var lastCheckTime: Long = 0
     @Volatile
     private var lastCheckResult: Boolean = false
+    @Volatile
+    private var isChecking = false
 
     fun isRunning(): Boolean {
         val now = System.currentTimeMillis()
-        // 缓存: 仅当上次结果是 true 且在 3 秒内时快速返回
-        if (now - lastCheckTime < 3000 && lastCheckResult && state == ServerState.RUNNING) {
+        
+        if (state == ServerState.STARTING) {
+            return isPortInUse(port)
+        }
+
+        if (now - lastCheckTime < 2000 && lastCheckResult && state == ServerState.RUNNING) {
             return true
         }
 
-        // 如果进程对象存在，先检查是否还活着
+        if (state == ServerState.STOPPED && !lastCheckResult && now - lastCheckTime < 1000) {
+            return false
+        }
+
         val proc = process
         if (proc != null) {
             try {
                 proc.exitValue()
-                // 进程已退出
                 process = null
-                // 不要立即设为 STOPPED，可能由 Magisk 重启了，再检查一次端口
             } catch (_: IllegalThreadStateException) {
-                // 进程还活着
             }
         }
 
         lastCheckTime = now
 
-        // 用 HTTP HEAD 检查端口是否在监听（最可靠的判断）
         return try {
             val url = URL("http://127.0.0.1:$port/api/status")
             val conn = url.openConnection() as HttpURLConnection
-            conn.connectTimeout = 500
-            conn.readTimeout = 1000
+            conn.connectTimeout = 300
+            conn.readTimeout = 500
             conn.requestMethod = "HEAD"
             conn.setRequestProperty("Connection", "close")
             val result = conn.responseCode == 200
             conn.disconnect()
 
-            if (result) {
-                if (state != ServerState.RUNNING) {
-                    state = ServerState.RUNNING
-                    Log.i(TAG, "检测到服务已在运行（可能由外部启动）")
-                }
-                lastCheckResult = true
-            } else {
-                if (proc == null && state == ServerState.RUNNING) {
-                    // HTTP 检查失败且没有本地进程对象，说明服务已停止
-                    state = ServerState.STOPPED
-                    Log.i(TAG, "检测到服务已停止")
-                }
-                lastCheckResult = false
-            }
+            updateStateBasedOnResult(result, proc)
             result
-        } catch (e: Exception) {
-            // 网络不通，再用 pgrep 确认
-            if (isProcessAlive() && isPortInUse(port)) {
-                if (state != ServerState.RUNNING) {
-                    state = ServerState.RUNNING
-                    lastCheckResult = true
-                    return true
-                }
-            }
-            if (proc == null && state == ServerState.RUNNING) {
-                state = ServerState.STOPPED
-            }
-            lastCheckResult = false
-            false
+        } catch (_: Exception) {
+            val fallback = isProcessAlive() && isPortInUse(port)
+            updateStateBasedOnResult(fallback, proc)
+            fallback
         }
     }
 
-    /**
-     * 重置状态（服务被外部杀死时调用，如 START_STICKY 重建）
-     */
+    private fun updateStateBasedOnResult(result: Boolean, proc: Process?) {
+        if (result) {
+            if (state != ServerState.RUNNING) {
+                state = ServerState.RUNNING
+                Log.i(TAG, "检测到服务已在运行")
+            }
+            lastCheckResult = true
+        } else {
+            if (proc == null && state == ServerState.RUNNING) {
+                state = ServerState.STOPPED
+                Log.i(TAG, "检测到服务已停止")
+            }
+            lastCheckResult = false
+        }
+    }
+
+    fun isRunningFast(): Boolean {
+        if (state == ServerState.STARTING) {
+            return false
+        }
+        if (state == ServerState.RUNNING && lastCheckResult) {
+            val now = System.currentTimeMillis()
+            if (now - lastCheckTime < 5000) {
+                return true
+            }
+        }
+        return isRunning()
+    }
+
+    private fun startProcessMonitor() {
+        Thread {
+            while (true) {
+                Thread.sleep(2000)
+                val proc = process
+                if (proc == null) break
+                
+                try {
+                    proc.exitValue()
+                    Log.w(TAG, "检测到进程意外退出，尝试自动重启")
+                    process = null
+                    scheduleAutoRestart()
+                    break
+                } catch (_: IllegalThreadStateException) {
+                }
+            }
+        }.start()
+    }
+
+    private fun scheduleAutoRestart() {
+        if (autoRestartScheduled) return
+        
+        val now = System.currentTimeMillis()
+        if (now - lastAutoRestartTime > AUTO_RESTART_WINDOW) {
+            autoRestartCount = 0
+        }
+        
+        if (autoRestartCount >= MAX_AUTO_RESTARTS) {
+            Log.w(TAG, "已达最大自动重启次数($MAX_AUTO_RESTARTS)，停止自动重启")
+            return
+        }
+        
+        autoRestartScheduled = true
+        Thread {
+            Thread.sleep(AUTO_RESTART_DELAY)
+            autoRestartScheduled = false
+            
+            if (state == ServerState.STOPPED) return@Thread
+            
+            autoRestartCount++
+            lastAutoRestartTime = System.currentTimeMillis()
+            Log.i(TAG, "自动重启服务 ($autoRestartCount/$MAX_AUTO_RESTARTS)")
+            
+            start()
+        }.start()
+    }
+
     fun resetState() {
         process = null
         state = ServerState.STOPPED
         lastCheckResult = false
         lastCheckTime = 0
+        autoRestartCount = 0
+        autoRestartScheduled = false
     }
 
     fun getLocalUrl(): String {
