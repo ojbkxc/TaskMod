@@ -77,12 +77,7 @@ async fn start_discovery_server(port: u16) {
     use std::net::UdpSocket as StdUdpSocket;
 
     let std_socket = match StdUdpSocket::bind(&format!("0.0.0.0:{}", port)) {
-        Ok(s) => {
-            if let Err(e) = s.set_reuseaddr(true) {
-                eprintln!("[Discovery] 设置SO_REUSEADDR失败: {}", e);
-            }
-            s
-        }
+        Ok(s) => s,
         Err(e) => {
             eprintln!("[Discovery] 无法绑定UDP端口 {}: {}", port, e);
             return;
@@ -291,7 +286,7 @@ async fn main() -> anyhow::Result<()> {
         utils::mqtt::start_mqtt().await;
     });
 
-    tokio::spawn(async {
+    tokio::spawn(async move {
         start_discovery_server(listen_port).await;
     });
 
