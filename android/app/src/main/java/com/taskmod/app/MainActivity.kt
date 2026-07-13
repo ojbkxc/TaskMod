@@ -15,6 +15,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.webkit.*
+import android.util.Log
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity

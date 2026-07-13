@@ -74,8 +74,9 @@ async fn ensure_dirs() {
 
 async fn start_discovery_server(port: u16) {
     use tokio::net::UdpSocket;
+    use std::net::UdpSocket as StdUdpSocket;
 
-    let socket = match UdpSocket::bind(&format!("0.0.0.0:{}", port)).await {
+    let std_socket = match StdUdpSocket::bind(&format!("0.0.0.0:{}", port)) {
         Ok(s) => {
             if let Err(e) = s.set_reuseaddr(true) {
                 eprintln!("[Discovery] 设置SO_REUSEADDR失败: {}", e);
@@ -84,6 +85,14 @@ async fn start_discovery_server(port: u16) {
         }
         Err(e) => {
             eprintln!("[Discovery] 无法绑定UDP端口 {}: {}", port, e);
+            return;
+        }
+    };
+
+    let socket = match UdpSocket::from_std(std_socket) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[Discovery] 转换为 tokio socket 失败: {}", e);
             return;
         }
     };
@@ -272,6 +281,7 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
+    let listen_port = get_listen_port();
     let mirror_state = MirrorState::new_shared();
 
     utils::event_monitor::register_event_handler(handle_event);
@@ -396,7 +406,6 @@ async fn main() -> anyhow::Result<()> {
         .merge(mirror_routes)
         .layer(CorsLayer::permissive());
 
-    let listen_port = get_listen_port();
     let addr = SocketAddr::from(([0, 0, 0, 0], listen_port));
     println!("TaskMod Web 管理服务已启动: http://0.0.0.0:{}", listen_port);
 

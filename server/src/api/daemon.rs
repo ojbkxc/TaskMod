@@ -76,31 +76,6 @@ pub fn routes() -> Router<()> {
 
 fn default_true() -> bool { true }
 
-macro_rules! ipc_handler {
-    ($fn_name:ident, $cmd:expr, $response_type:ty) => {
-        async fn $fn_name() -> Json<ApiResponse<$response_type>> {
-            match send_ipc(&$cmd).await {
-                Ok(IpcResponse::Json(data)) => Json(ApiResponse { success: true, data: Some(serde_json::from_value(data).unwrap_or_default()), message: None }),
-                Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), message: None }),
-                Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
-                Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
-                _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
-            }
-        }
-    };
-    ($fn_name:ident, $cmd:expr, $response_type:ty, $path:ty) => {
-        async fn $fn_name(Path(name): Path<$path>) -> Json<ApiResponse<$response_type>> {
-            match send_ipc(&$cmd).await {
-                Ok(IpcResponse::Json(data)) => Json(ApiResponse { success: true, data: Some(serde_json::from_value(data).unwrap_or_default()), message: None }),
-                Ok(IpcResponse::Success(msg)) => Json(ApiResponse { success: true, data: Some(msg), message: None }),
-                Ok(IpcResponse::Error(e)) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
-                Err(e) => Json(ApiResponse { success: false, data: None, message: Some(e) }),
-                _ => Json(ApiResponse { success: false, data: None, message: Some("未知响应".to_string()) }),
-            }
-        }
-    };
-}
-
 async fn get_status() -> Json<ApiResponse<serde_json::Value>> {
     match send_ipc(&IpcCommand::Status).await {
         Ok(IpcResponse::Json(data)) => Json(ApiResponse { success: true, data: Some(data), message: None }),

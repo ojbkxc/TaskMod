@@ -65,7 +65,7 @@ object NetworkHelper {
 
         val checked = mutableListOf<Boolean>()
         val locks = mutableListOf<Any>()
-        for (_ in 1..254) {
+        for (_i in 1..254) {
             checked.add(false)
             locks.add(Any())
         }
