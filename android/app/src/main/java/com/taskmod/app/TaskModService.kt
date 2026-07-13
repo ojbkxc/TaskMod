@@ -15,6 +15,7 @@ class TaskModService : Service(), CoroutineScope by CoroutineScope(Dispatchers.D
     companion object {
         private const val TAG = "TaskModService"
         private const val NOTIFICATION_ID = 1001
+        private const val WAKE_LOCK_TIMEOUT = 30 * 60 * 1000L  // 30分钟（可自动续期）
 
         const val ACTION_START = "com.taskmod.action.START"
         const val ACTION_STOP = "com.taskmod.action.STOP"
@@ -43,10 +44,13 @@ class TaskModService : Service(), CoroutineScope by CoroutineScope(Dispatchers.D
 
     private lateinit var serverManager: ServerManager
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wakeLockRenewJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
         serverManager = ServerManager.getInstance(this)
+        // START_STICKY 重建时，重置 ServerManager 状态以避免使用旧的 Process 引用
+        serverManager.resetState()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -81,8 +85,8 @@ class TaskModService : Service(), CoroutineScope by CoroutineScope(Dispatchers.D
     private fun handleStop() {
         launch(Dispatchers.IO) {
             serverManager.stop()
+            releaseWakeLock()
             withContext(Dispatchers.Main) {
-                releaseWakeLock()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 sendBroadcast(Intent("com.taskmod.STATUS_CHANGED").putExtra("running", false))
@@ -165,16 +169,30 @@ class TaskModService : Service(), CoroutineScope by CoroutineScope(Dispatchers.D
     private fun acquireWakeLock() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "TaskMod::Server")
-        wakeLock?.acquire(60 * 60 * 1000L) // 1小时
+        wakeLock?.acquire(WAKE_LOCK_TIMEOUT)
 
-        // 安全超时：协程中延时后确保释放，防止异常情况泄漏
-        launch {
-            delay(60 * 60 * 1000L)
-            releaseWakeLock()
+        // 自动续期协程：在超时前 10 秒检查并续期
+        wakeLockRenewJob = launch {
+            while (isActive) {
+                delay(WAKE_LOCK_TIMEOUT - 10 * 1000L)
+                val wl = wakeLock
+                if (wl != null && wl.isHeld) {
+                    // 释放后重新获取，实现续期
+                    try {
+                        wl.release()
+                        wl.acquire(WAKE_LOCK_TIMEOUT)
+                        Log.i(TAG, "WakeLock 已自动续期")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "WakeLock 续期失败: $e")
+                    }
+                }
+            }
         }
     }
 
     private fun releaseWakeLock() {
+        wakeLockRenewJob?.cancel()
+        wakeLockRenewJob = null
         wakeLock?.let {
             if (it.isHeld) it.release()
         }
@@ -182,9 +200,13 @@ class TaskModService : Service(), CoroutineScope by CoroutineScope(Dispatchers.D
     }
 
     override fun onDestroy() {
-        serverManager.stop()
         releaseWakeLock()
         cancel() // 取消所有协程
+        try {
+            serverManager.stop()
+        } catch (e: Exception) {
+            Log.e(TAG, "onDestroy 停止服务失败", e)
+        }
         super.onDestroy()
     }
 }

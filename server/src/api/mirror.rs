@@ -19,8 +19,8 @@ const VIDEO_CHANNEL_CAP: usize = 128;
 const AUDIO_CHANNEL_CAP: usize = 64;
 /// H.264/H.265 流读取缓冲区大小（512KB，视频流需要更大缓冲区减少 read 系统调用次数）
 const READ_BUF_SIZE: usize = 524288;
-/// 默认视频码率 10Mbps（局域网场景，H.265 可以用更高码率获得更好画质）
-const DEFAULT_BIT_RATE: usize = 10_000_000;
+/// 默认视频码率 4Mbps（原 10Mbps 在手机上发热严重，4Mbps 在局域网足够清晰）
+const DEFAULT_BIT_RATE: usize = 4_000_000;
 /// 默认帧率
 const DEFAULT_FPS: usize = 60;
 /// 静止画面检测阈值：连续 N 帧大小低于此值认为画面静止
@@ -368,6 +368,13 @@ pub async fn send_control(
         "power" => controller.key_event(26).await,
         "volume_up" => controller.key_event(24).await,
         "volume_down" => controller.key_event(25).await,
+        // 媒体控制键
+        "media_play" => controller.key_event(85).await,
+        "media_pause" => controller.key_event(86).await,
+        "media_play_pause" => controller.key_event(85).await, // 85 兼容大部分播放器
+        "media_next" => controller.key_event(87).await,
+        "media_prev" => controller.key_event(88).await,
+        "media_stop" => controller.key_event(86).await, // pause 兼容
         "text" => {
             let text = req.text.unwrap_or_default();
             controller.input_text(&text).await

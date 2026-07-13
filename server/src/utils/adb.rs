@@ -1,4 +1,42 @@
 use tokio::process::Command;
+use tracing::{info, warn};
+
+/// Android 系统命令绝对路径常量
+const SH: &str = "/system/bin/sh";
+const INPUT: &str = "/system/bin/input";
+const WM: &str = "/system/bin/wm";
+const AM: &str = "/system/bin/am";
+const PM: &str = "/system/bin/pm";
+const CMD: &str = "/system/bin/cmd";
+const DUMPSYS: &str = "/system/bin/dumpsys";
+const GETPROP: &str = "/system/bin/getprop";
+const DF: &str = "/system/bin/df";
+const PS: &str = "/system/bin/ps";
+const MONKEY: &str = "/system/bin/monkey";
+const SCREENCAP: &str = "/system/bin/screencap";
+const REBOOT: &str = "/system/bin/reboot";
+
+/// 解析命令输出，返回成功/失败及完整信息
+fn parse_output(o: &std::process::Output, success_msg: &str, fail_msg: &str) -> String {
+    let stdout = String::from_utf8_lossy(&o.stdout);
+    let stderr = String::from_utf8_lossy(&o.stderr);
+    if o.status.success() {
+        if stdout.trim().is_empty() {
+            success_msg.to_string()
+        } else {
+            format!("{}\n{}", success_msg, stdout)
+        }
+    } else {
+        let err_detail = if !stderr.trim().is_empty() {
+            stderr.trim().to_string()
+        } else if !stdout.trim().is_empty() {
+            stdout.trim().to_string()
+        } else {
+            format!("退出码: {}", o.status.code().unwrap_or(-1))
+        };
+        format!("{}: {}", fail_msg, err_detail)
+    }
+}
 
 /// 执行shell命令（通过sh -c，支持管道、引号等复杂语法）
 pub async fn run_command(cmd: &str) -> Result<String, String> {
@@ -6,7 +44,8 @@ pub async fn run_command(cmd: &str) -> Result<String, String> {
         return Err("命令为空".to_string());
     }
 
-    match Command::new("sh").arg("-c").arg(cmd).output().await {
+    info!("[adb] run_command: {}", cmd);
+    match Command::new(SH).arg("-c").arg(cmd).output().await {
         Ok(o) => {
             let stdout = String::from_utf8_lossy(&o.stdout);
             let stderr = String::from_utf8_lossy(&o.stderr);
@@ -27,7 +66,7 @@ pub async fn run_command_raw(cmd: &str) -> Result<std::process::Output, String> 
         return Err("命令为空".to_string());
     }
 
-    Command::new("sh")
+    Command::new(SH)
         .arg("-c")
         .arg(cmd)
         .output()
@@ -50,7 +89,7 @@ pub async fn execute_command(cmd_parts: &[String]) -> Result<std::process::Outpu
 }
 
 pub async fn get_screen_size() -> String {
-    match Command::new("wm").arg("size").output().await {
+    match Command::new(WM).arg("size").output().await {
         Ok(o) => {
             let output = String::from_utf8_lossy(&o.stdout);
             // 优先取 Override size（用户自定义分辨率），否则取 Physical size
@@ -71,7 +110,7 @@ pub async fn get_screen_size() -> String {
 }
 
 pub async fn get_wifi_info() -> String {
-    match Command::new("dumpsys").arg("wifi").output().await {
+    match Command::new(DUMPSYS).arg("wifi").output().await {
         Ok(o) => {
             let output = String::from_utf8_lossy(&o.stdout);
             let ssid = output.lines().find(|l| l.contains("SSID:")).unwrap_or("");
@@ -84,7 +123,7 @@ pub async fn get_wifi_info() -> String {
 }
 
 pub async fn get_battery_info() -> String {
-    match Command::new("dumpsys").arg("battery").output().await {
+    match Command::new(DUMPSYS).arg("battery").output().await {
         Ok(o) => {
             let output = String::from_utf8_lossy(&o.stdout);
             let lines: Vec<&str> = output.lines()
@@ -100,15 +139,15 @@ pub async fn get_battery_info() -> String {
 pub async fn get_device_info() -> String {
     let mut info = String::new();
 
-    if let Ok(o) = Command::new("getprop").arg("ro.product.model").output().await {
+    if let Ok(o) = Command::new(GETPROP).arg("ro.product.model").output().await {
         info.push_str(&format!("设备型号: {}\n", String::from_utf8_lossy(&o.stdout).trim()));
     }
 
-    if let Ok(o) = Command::new("getprop").arg("ro.build.version.release").output().await {
+    if let Ok(o) = Command::new(GETPROP).arg("ro.build.version.release").output().await {
         info.push_str(&format!("Android版本: {}\n", String::from_utf8_lossy(&o.stdout).trim()));
     }
 
-    if let Ok(o) = Command::new("df").arg("-h").output().await {
+    if let Ok(o) = Command::new(DF).arg("-h").output().await {
         info.push_str(&format!("存储信息:\n{}\n", String::from_utf8_lossy(&o.stdout)));
     }
 
@@ -120,7 +159,7 @@ pub async fn get_device_info() -> String {
 }
 
 pub async fn get_running_apps() -> String {
-    match Command::new("ps").arg("-A").output().await {
+    match Command::new(PS).arg("-A").output().await {
         Ok(o) => {
             let output = String::from_utf8_lossy(&o.stdout);
             let apps: Vec<&str> = output.lines()
@@ -136,16 +175,16 @@ pub async fn get_running_apps() -> String {
 
 pub async fn start_app(package_name: &str) -> String {
     // 先用 cmd package resolve-activity 解析出主Activity名
-    if let Ok(o) = Command::new("sh")
+    if let Ok(o) = Command::new(SH)
         .arg("-c")
-        .arg(format!("cmd package resolve-activity --brief {} | tail -1", package_name))
+        .arg(format!("{} package resolve-activity --brief {} | tail -1", CMD, package_name))
         .output()
         .await
     {
         let activity = String::from_utf8_lossy(&o.stdout).trim().to_string();
         if !activity.is_empty() && !activity.contains("Error") && activity.contains('/') {
             // 成功解析到Activity，用 am start -n 启动
-            match Command::new("am")
+            match Command::new(AM)
                 .arg("start")
                 .arg("-n")
                 .arg(&activity)
@@ -164,7 +203,7 @@ pub async fn start_app(package_name: &str) -> String {
     }
 
     // fallback: 用 monkey 启动
-    match Command::new("monkey")
+    match Command::new(MONKEY)
         .arg("-p")
         .arg(package_name)
         .arg("-c")
@@ -173,55 +212,93 @@ pub async fn start_app(package_name: &str) -> String {
         .output()
         .await
     {
-        Ok(o) => format!("应用启动成功:\n{}", String::from_utf8_lossy(&o.stdout)),
+        Ok(o) => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            if o.status.success() {
+                format!("应用启动成功: {}", stdout.trim())
+            } else {
+                format!("应用启动失败: {}", stderr.trim())
+            }
+        }
         Err(e) => format!("应用启动失败: {}", e),
     }
 }
 
 pub async fn stop_app(package_name: &str) -> String {
-    match Command::new("am")
+    match Command::new(AM)
         .arg("force-stop")
         .arg(package_name)
         .output()
         .await
     {
-        Ok(o) => format!(
-            "应用已停止: {}\nstdout: {}\nstderr: {}",
-            package_name,
-            String::from_utf8_lossy(&o.stdout),
-            String::from_utf8_lossy(&o.stderr)
-        ),
+        Ok(o) => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            if o.status.success() {
+                format!("应用已停止: {}", package_name)
+            } else {
+                format!("停止应用失败: {}\nstderr: {}", package_name, stderr.trim())
+            }
+        }
         Err(e) => format!("停止应用失败: {}", e),
     }
 }
 
 pub async fn clear_app_data(package_name: &str) -> String {
-    match Command::new("pm")
+    match Command::new(PM)
         .arg("clear")
         .arg(package_name)
         .output()
         .await
     {
-        Ok(o) => format!("数据清除成功:\n{}", String::from_utf8_lossy(&o.stdout)),
+        Ok(o) => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            if o.status.success() {
+                format!("数据清除成功: {}", stdout.trim())
+            } else {
+                format!("数据清除失败: {} (可能需要root权限)\nstderr: {}", package_name, stderr.trim())
+            }
+        }
         Err(e) => format!("清除数据失败: {}", e),
     }
 }
 
 pub async fn tap(x: i32, y: i32) -> String {
-    match Command::new("input")
+    info!("[adb] tap: ({}, {})", x, y);
+    match Command::new(INPUT)
         .arg("tap")
         .arg(x.to_string())
         .arg(y.to_string())
         .output()
         .await
     {
-        Ok(_) => format!("点击成功: ({}, {})", x, y),
-        Err(e) => format!("点击失败: {}", e),
+        Ok(o) => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            if o.status.success() {
+                format!("点击成功: ({}, {})", x, y)
+            } else {
+                let err = if !stderr.trim().is_empty() {
+                    stderr.trim().to_string()
+                } else {
+                    format!("退出码: {}", o.status.code().unwrap_or(-1))
+                };
+                warn!("[adb] tap 失败: ({}, {}) - {}", x, y, err);
+                format!("点击失败 ({}, {}): {}", x, y, err)
+            }
+        }
+        Err(e) => {
+            warn!("[adb] tap 命令启动失败: ({}, {}) - {}", x, y, e);
+            format!("点击失败: 无法执行input命令 ({})", e)
+        }
     }
 }
 
 pub async fn swipe(x1: i32, y1: i32, x2: i32, y2: i32) -> String {
-    match Command::new("input")
+    info!("[adb] swipe: ({}, {}) -> ({}, {})", x1, y1, x2, y2);
+    match Command::new(INPUT)
         .arg("swipe")
         .arg(x1.to_string())
         .arg(y1.to_string())
@@ -230,8 +307,25 @@ pub async fn swipe(x1: i32, y1: i32, x2: i32, y2: i32) -> String {
         .output()
         .await
     {
-        Ok(_) => format!("滑动成功: ({}, {}) -> ({}, {})", x1, y1, x2, y2),
-        Err(e) => format!("滑动失败: {}", e),
+        Ok(o) => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            if o.status.success() {
+                format!("滑动成功: ({}, {}) -> ({}, {})", x1, y1, x2, y2)
+            } else {
+                let err = if !stderr.trim().is_empty() {
+                    stderr.trim().to_string()
+                } else {
+                    format!("退出码: {}", o.status.code().unwrap_or(-1))
+                };
+                warn!("[adb] swipe 失败: ({}, {})->({},{}) - {}", x1, y1, x2, y2, err);
+                format!("滑动失败: {}", err)
+            }
+        }
+        Err(e) => {
+            warn!("[adb] swipe 命令启动失败: {}", e);
+            format!("滑动失败: 无法执行input命令 ({})", e)
+        }
     }
 }
 
@@ -256,86 +350,139 @@ pub async fn keyevent(key: &str) -> String {
         _ => key,
     };
 
-    match Command::new("input")
+    info!("[adb] keyevent: {} ({})", key, key_code);
+    match Command::new(INPUT)
         .arg("keyevent")
         .arg(key_code)
         .output()
         .await
     {
-        Ok(_) => format!("按键模拟成功: {}", key),
-        Err(e) => format!("按键模拟失败: {}", e),
+        Ok(o) => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            if o.status.success() {
+                format!("按键模拟成功: {}", key)
+            } else {
+                let err = if !stderr.trim().is_empty() {
+                    stderr.trim().to_string()
+                } else {
+                    format!("退出码: {}", o.status.code().unwrap_or(-1))
+                };
+                warn!("[adb] keyevent 失败: {} - {}", key, err);
+                format!("按键模拟失败 ({}): {}", key, err)
+            }
+        }
+        Err(e) => {
+            warn!("[adb] keyevent 命令启动失败: {} - {}", key, e);
+            format!("按键模拟失败: 无法执行input命令 ({})", e)
+        }
     }
 }
 
 pub async fn input_text(text: &str) -> String {
-    // 对特殊字符进行转义（Android input text 要求）
+    info!("[adb] input_text: {}", text);
+    // 使用 input text 时，因为通过 Command::new().arg() 直接传参（不经shell），
+    // 只需转义 Android input 命令本身的特殊字符即可，空格无需转义
     let escaped = text
         .replace("\\", "\\\\")
-        .replace("\"", "\\\"")
         .replace("'", "\\'")
-        .replace(" ", "' '")
-        .replace("&", "\\&")
-        .replace("<", "\\<")
-        .replace(">", "\\>")
-        .replace("|", "\\|")
-        .replace(";", "\\;")
-        .replace("(", "\\(")
-        .replace(")", "\\)");
-    
-    match Command::new("input")
+        .replace("\"", "\\\"")
+        .replace(" ", "%s");
+
+    match Command::new(INPUT)
         .arg("text")
-        .arg(escaped)
+        .arg(&escaped)
         .output()
         .await
     {
-        Ok(_) => format!("输入成功: {}", text),
-        Err(e) => format!("输入失败: {}", e),
+        Ok(o) => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            if o.status.success() {
+                format!("输入成功: {}", text)
+            } else {
+                let err = if !stderr.trim().is_empty() {
+                    stderr.trim().to_string()
+                } else {
+                    format!("退出码: {}", o.status.code().unwrap_or(-1))
+                };
+                warn!("[adb] input_text 失败: {} - {}", text, err);
+                format!("输入失败: {}", err)
+            }
+        }
+        Err(e) => {
+            warn!("[adb] input_text 命令启动失败: {} - {}", text, e);
+            format!("输入失败: 无法执行input命令 ({})", e)
+        }
     }
 }
 
 pub async fn screencap(filename: &str) -> String {
-    match Command::new("screencap")
+    info!("[adb] screencap: {}", filename);
+    match Command::new(SCREENCAP)
         .arg("-p")
         .arg(filename)
         .output()
         .await
     {
-        Ok(_) => format!("截图成功: {}", filename),
-        Err(e) => format!("截图失败: {}", e),
+        Ok(o) => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            if o.status.success() {
+                format!("截图成功: {}", filename)
+            } else {
+                let err = if !stderr.trim().is_empty() {
+                    stderr.trim().to_string()
+                } else {
+                    format!("退出码: {}", o.status.code().unwrap_or(-1))
+                };
+                warn!("[adb] screencap 失败: {} - {}", filename, err);
+                format!("截图失败: {}", err)
+            }
+        }
+        Err(e) => {
+            warn!("[adb] screencap 命令启动失败: {} - {}", filename, e);
+            format!("截图失败: 无法执行screencap命令 ({})", e)
+        }
     }
 }
 
 /// 截图并返回 base64 编码（供AI视觉分析）
 pub async fn adb_screencap_base64() -> Result<String, String> {
     use base64::Engine;
-    let output = Command::new("screencap")
+    info!("[adb] screencap_base64");
+    let output = Command::new(SCREENCAP)
         .arg("-p")
         .output()
         .await
         .map_err(|e| format!("截图失败: {}", e))?;
     if !output.status.success() {
-        return Err("截图命令执行失败".to_string());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("截图命令执行失败: {}", stderr.trim()));
     }
     Ok(base64::engine::general_purpose::STANDARD.encode(&output.stdout))
 }
 
 pub async fn reboot() -> String {
-    match Command::new("reboot").output().await {
+    info!("[adb] reboot");
+    match Command::new(REBOOT).output().await {
         Ok(_) => "设备正在重启...".to_string(),
         Err(e) => format!("重启失败: {}", e),
     }
 }
 
 pub async fn shutdown() -> String {
-    match Command::new("reboot").arg("shutdown").output().await {
+    info!("[adb] shutdown");
+    match Command::new(REBOOT).arg("shutdown").output().await {
         Ok(_) => "设备正在关机...".to_string(),
         Err(e) => format!("关机失败: {}", e),
     }
 }
 
 pub async fn tts(text: &str) -> String {
+    info!("[adb] tts: {}", text);
     // 方法1: 使用 Android TTS Engine 的标准广播
-    match Command::new("am")
+    match Command::new(AM)
         .arg("broadcast")
         .arg("-a")
         .arg("com.android.tts.SPEAK")
@@ -350,15 +497,16 @@ pub async fn tts(text: &str) -> String {
     {
         Ok(o) => {
             let output = String::from_utf8_lossy(&o.stdout);
-            if !output.contains("Error") {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            if o.status.success() && !output.contains("Error") {
                 return format!("TTS语音播放成功: {}", text);
             }
         }
         Err(_) => {}
     }
     
-    // 方法2: 使用 settings 命令触发 TTS（部分设备支持）
-    match Command::new("cmd")
+    // 方法2: 使用 cmd speech 命令触发 TTS（部分设备支持）
+    match Command::new(CMD)
         .arg("speech")
         .arg("speak")
         .arg(text)
@@ -367,7 +515,8 @@ pub async fn tts(text: &str) -> String {
     {
         Ok(o) => {
             let output = String::from_utf8_lossy(&o.stdout);
-            if !output.contains("Error") && !output.contains("Unknown") {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            if o.status.success() && !output.contains("Error") && !output.contains("Unknown") {
                 return format!("TTS语音播放成功: {}", text);
             }
         }
@@ -375,7 +524,7 @@ pub async fn tts(text: &str) -> String {
     }
     
     // 方法3: 使用 content provider 触发 TTS（兼容更多设备）
-    match Command::new("sh")
+    match Command::new(SH)
         .arg("-c")
         .arg(format!(
             "content call --uri content://com.android.providers.settings/system --method GET_system --arg tts_default_synth --extra _value:s:{} 2>/dev/null || am startservice -a android.intent.action.TTS_SERVICE --es text '{}'",
@@ -400,7 +549,7 @@ pub async fn tts(text: &str) -> String {
 pub async fn tts_speak(text: &str, engine: Option<String>) -> String {
     let escaped_text = text.replace("'", "\\'").replace("\"", "\\\"");
     
-    let mut cmd = Command::new("am");
+    let mut cmd = Command::new(AM);
     cmd.arg("broadcast")
         .arg("-a")
         .arg("com.android.tts.speak")
@@ -415,7 +564,14 @@ pub async fn tts_speak(text: &str, engine: Option<String>) -> String {
     }
     
     match cmd.output().await {
-        Ok(_) => format!("TTS语音播放成功: {}", text),
+        Ok(o) => {
+            if o.status.success() {
+                format!("TTS语音播放成功: {}", text)
+            } else {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                format!("TTS语音播放失败: {}", stderr.trim())
+            }
+        }
         Err(e) => format!("TTS语音播放失败: {}", e),
     }
 }

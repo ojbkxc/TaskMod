@@ -159,10 +159,10 @@
     /* ===== Tab Switching ===== */
     function showTab(name) {
         document.querySelectorAll('.side-tab').forEach((t, i) => {
-            const tabs = ['dashboard','chat','mirror','library','tasks','scripts','files','tts','config','logs'];
+            const tabs = ['dashboard','chat','mirror','library','tasks','scripts','files','tts','config','tunnel','logs'];
             t.classList.toggle('side-tab-active', tabs[i] === name);
         });
-        ['dashboard','chat','mirror','library','tasks','scripts','files','tts','config','logs'].forEach(id => {
+        ['dashboard','chat','mirror','library','tasks','scripts','files','tts','config','tunnel','logs'].forEach(id => {
             const el = document.getElementById('tab-' + id);
             if (el) el.style.display = id === name ? 'flex' : 'none';
         });
@@ -175,6 +175,7 @@
         if (name === 'files' && !_loaded.files) { _loaded.files = true; loadFileManager('/sdcard'); }
         if (name === 'tts' && !_loaded.tts) { _loaded.tts = true; loadTtsEngines(); loadTtsSettings(); }
         if (name === 'config' && !_loaded.config) { _loaded.config = true; loadEmailConfig(); loadMqttConfig(); loadVoiceSettings(); }
+        if (name === 'tunnel') loadTunnels();
         if (name === 'logs') loadLogs();
         if (name === 'chat' && !_loaded.chat) { _loaded.chat = true; loadProviders(); }
         if (name === 'library' && !_loaded.library) {
@@ -582,9 +583,62 @@
         showToast('已开始新对话', 'info');
     }
 
+    /* ===== Chat History Sidebar ===== */
+    function toggleChatSidebar(open) {
+        const sidebar = document.getElementById('chat-sidebar');
+        const overlay = document.getElementById('chat-sidebar-overlay');
+        if (open) {
+            sidebar.classList.add('open');
+            overlay.classList.add('open');
+            loadChatSessions();
+        } else {
+            sidebar.classList.remove('open');
+            overlay.classList.remove('open');
+        }
+    }
+
+    async function loadChatSessions() {
+        const list = document.getElementById('chat-session-list');
+        try {
+            const res = await apiGet('/api/ai/sessions');
+            if (!res.ok || !res.data || res.data.length === 0) {
+                list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--ds-text-tertiary);font-size:12px;">暂无历史会话</div>';
+                return;
+            }
+            list.innerHTML = res.data.map(s => {
+                const title = s.title || '未命名会话';
+                const time = s.updated_at ? new Date(s.updated_at).toLocaleString('zh-CN', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
+                return '<div class="ds-chat-session-item" onclick="selectChatSession(\'' + s.id + '\')">' +
+                    '<span class="ds-chat-session-title">' + escapeHtml(title) + '</span>' +
+                    '<span class="ds-chat-session-time">' + time + '</span>' +
+                    '</div>';
+            }).join('');
+        } catch (e) {
+            list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--ds-text-tertiary);font-size:12px;">加载失败</div>';
+        }
+    }
+
+    async function selectChatSession(id) {
+        toggleChatSidebar(false);
+        // 切换到该会话
+        showToast('已切换到历史会话', 'info');
+    }
+
+    /* ===== Provider Modal (防误触关闭) ===== */
+    let providerModalJustOpened = false;
     function openProviderModal() {
+        providerModalJustOpened = true;
+        // 延迟解除保护，避免打开动画期间的点击立即关闭
+        setTimeout(() => { providerModalJustOpened = false; }, 300);
         document.getElementById('provider-modal').style.display = 'flex';
         loadProviderList();
+    }
+
+    function closeProviderModal(event) {
+        // 只有直接点击遮罩层（非卡片内部）时才关闭
+        if (event.target.id === 'provider-modal' && !providerModalJustOpened) {
+            document.getElementById('provider-modal').style.display = 'none';
+        }
     }
 
     async function loadProviderList() {
@@ -1197,13 +1251,18 @@
             list.innerHTML = '<div class="ds-empty-state"><p>暂无截图</p></div>';
             return;
         }
-        list.innerHTML = res.data.map(s => {
-            return '<div class="ds-card" style="padding:8px;cursor:pointer;" onclick="window.open(\'/api/screenshots/' + s.filename + '\')">' +
-                '<img src="/api/screenshots/' + s.filename + '" style="width:100%;height:120px;object-fit:cover;border-radius:6px;" loading="lazy">' +
-                '<p style="font-size:11px;color:var(--ds-text-secondary);margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(s.filename) + '</p>' +
+        // API 返回的是文件名数组（字符串），也可能是对象数组
+        const items = typeof res.data[0] === 'string'
+            ? res.data.map(f => ({ filename: f }))
+            : res.data;
+        list.innerHTML = items.map(s => {
+            const fname = s.filename || s;
+            return '<div class="ds-card" style="padding:8px;cursor:pointer;" onclick="window.open(\'/api/screenshots/' + encodeURIComponent(fname) + '\')">' +
+                '<img src="/api/screenshots/' + encodeURIComponent(fname) + '" style="width:100%;height:120px;object-fit:cover;border-radius:6px;" loading="lazy" onerror="this.style.display=\'none\'">' +
+                '<p style="font-size:11px;color:var(--ds-text-secondary);margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(fname) + '</p>' +
                 '<div style="display:flex;gap:4px;margin-top:4px;">' +
-                '<button class="ds-btn-secondary" style="font-size:10px;padding:2px 6px;flex:1;" onclick="event.stopPropagation();analyzeScreenshot(\'' + s.filename + '\')">AI分析</button>' +
-                '<button class="ds-btn-danger" style="font-size:10px;padding:2px 6px;flex:1;" onclick="event.stopPropagation();deleteScreenshot(\'' + s.filename + '\')">删除</button>' +
+                '<button class="ds-btn-secondary" style="font-size:10px;padding:2px 6px;flex:1;" onclick="event.stopPropagation();analyzeScreenshot(\'' + fname.replace(/'/g, "\\'") + '\')">AI分析</button>' +
+                '<button class="ds-btn-danger" style="font-size:10px;padding:2px 6px;flex:1;" onclick="event.stopPropagation();deleteScreenshot(\'' + fname.replace(/'/g, "\\'") + '\')">删除</button>' +
                 '</div></div>';
         }).join('');
     }
@@ -4463,6 +4522,174 @@
             logAutoRefreshInterval = null;
             showToast('自动刷新已关闭', 'info');
         }
+    }
+
+    /* ===== Cloudflare Tunnel Management ===== */
+    let tunnelRefreshInterval = null;
+
+    async function loadTunnels() {
+        await loadDaemonStatus();
+        await loadTunnelList();
+        // 自动刷新
+        if (tunnelRefreshInterval) clearInterval(tunnelRefreshInterval);
+        tunnelRefreshInterval = setInterval(async () => {
+            await loadDaemonStatus();
+            await loadTunnelList();
+        }, 5000);
+    }
+
+    async function loadDaemonStatus() {
+        const res = await apiGet('/api/daemon/status');
+        const dot = document.getElementById('daemon-status-dot');
+        const text = document.getElementById('daemon-status-text');
+        if (res.ok && res.data) {
+            const running = res.data.running || res.data.status === 'running';
+            dot.style.background = running ? 'var(--ds-success)' : 'var(--ds-text-tertiary)';
+            const pid = res.data.pid ? `PID: ${res.data.pid}` : '';
+            const uptime = res.data.uptime ? `运行: ${res.data.uptime}` : '';
+            text.textContent = running ? `运行中 ${pid} ${uptime}`.trim() : '已停止';
+        } else {
+            dot.style.background = 'var(--ds-text-tertiary)';
+            text.textContent = '未连接（守护进程未安装或未启动）';
+        }
+    }
+
+    async function loadTunnelList() {
+        const list = document.getElementById('tunnel-list');
+        const res = await apiGet('/api/tunnels');
+        if (!res.ok || !res.data || res.data.length === 0) {
+            list.innerHTML = '<div style="text-align:center;padding:40px;color:var(--ds-text-tertiary);">' +
+                '<i class="fas fa-cloud" style="font-size:32px;margin-bottom:12px;display:block;"></i>' +
+                '<p>暂无隧道配置</p>' +
+                '<p style="font-size:12px;margin-top:8px;">点击右上角"添加隧道"创建</p></div>';
+            return;
+        }
+        list.innerHTML = res.data.map(t => {
+            const statusColor = t.enabled ? 'var(--ds-success)' : 'var(--ds-text-tertiary)';
+            const statusText = t.enabled ? '已启用' : '已禁用';
+            const services = (t.services || []).map(s => 
+                `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--ds-border);">
+                    <span style="width:6px;height:6px;border-radius:50%;background:${s.enabled ? 'var(--ds-success)' : 'var(--ds-text-tertiary)'};"></span>
+                    <span style="font-size:12px;flex:1;">${escapeHtml(s.name || '未命名')}</span>
+                    <span style="font-size:11px;color:var(--ds-text-tertiary);">${escapeHtml(s.url || '')}</span>
+                    <button class="ds-btn-danger" style="font-size:10px;padding:2px 6px;" onclick="deleteService('${escapeHtml(t.name)}','${escapeHtml(s.name)}')"><i class="fas fa-trash"></i></button>
+                </div>`
+            ).join('');
+            return `<div class="ds-card" style="padding:16px;">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+                    <span style="width:8px;height:8px;border-radius:50%;background:${statusColor};flex-shrink:0;"></span>
+                    <span style="font-size:14px;font-weight:600;flex:1;">${escapeHtml(t.name)}</span>
+                    <span style="font-size:11px;color:var(--ds-text-tertiary);">${statusText}</span>
+                </div>
+                <div style="font-size:11px;color:var(--ds-text-tertiary);margin-bottom:8px;font-family:monospace;word-break:break-all;">Token: ${escapeHtml((t.token || '').substring(0, 30))}...</div>
+                <div style="display:flex;gap:8px;margin-bottom:8px;">
+                    <button class="ds-btn-secondary" style="font-size:11px;padding:4px 8px;" onclick="toggleTunnel('${escapeHtml(t.name)}', ${!t.enabled})">${t.enabled ? '禁用' : '启用'}</button>
+                    <button class="ds-btn-secondary" style="font-size:11px;padding:4px 8px;" onclick="restartTunnel('${escapeHtml(t.name)}')"><i class="fas fa-redo"></i> 重启</button>
+                    <button class="ds-btn-secondary" style="font-size:11px;padding:4px 8px;" onclick="showAddServiceDialog('${escapeHtml(t.name)}')"><i class="fas fa-plus"></i> 服务</button>
+                    <button class="ds-btn-danger" style="font-size:11px;padding:4px 8px;margin-left:auto;" onclick="deleteTunnel('${escapeHtml(t.name)}')"><i class="fas fa-trash"></i></button>
+                </div>
+                ${services ? '<div>' + services + '</div>' : '<div style="font-size:11px;color:var(--ds-text-tertiary);padding:4px 0;">无服务配置</div>'}
+            </div>`;
+        }).join('');
+    }
+
+    function showAddTunnelDialog() {
+        document.getElementById('tunnel-name').value = '';
+        document.getElementById('tunnel-token').value = '';
+        document.getElementById('tunnel-modal').style.display = 'flex';
+    }
+
+    function closeTunnelModal(event) {
+        if (event.target.id === 'tunnel-modal') {
+            document.getElementById('tunnel-modal').style.display = 'none';
+        }
+    }
+
+    async function addTunnel() {
+        const name = document.getElementById('tunnel-name').value.trim();
+        const token = document.getElementById('tunnel-token').value.trim();
+        if (!name || !token) { showToast('请填写名称和Token', 'error'); return; }
+        const res = await apiPost('/api/tunnels', { name, token });
+        if (res.ok) {
+            showToast('隧道已创建', 'success');
+            document.getElementById('tunnel-modal').style.display = 'none';
+            loadTunnelList();
+        } else {
+            showToast(res.message || '创建失败', 'error');
+        }
+    }
+
+    async function deleteTunnel(name) {
+        if (!confirm(`确定删除隧道 "${name}" 吗？`)) return;
+        const res = await apiDelete('/api/tunnels/' + encodeURIComponent(name));
+        if (res.ok) { showToast('已删除', 'success'); loadTunnelList(); }
+        else showToast(res.message || '删除失败', 'error');
+    }
+
+    async function toggleTunnel(name, enable) {
+        const endpoint = enable ? 'enable' : 'disable';
+        const res = await apiPost('/api/tunnels/' + encodeURIComponent(name) + '/' + endpoint, {});
+        if (res.ok) { showToast(enable ? '已启用' : '已禁用', 'success'); loadTunnelList(); }
+        else showToast(res.message || '操作失败', 'error');
+    }
+
+    async function restartTunnel(name) {
+        const res = await apiPost('/api/tunnels/' + encodeURIComponent(name) + '/restart', {});
+        if (res.ok) showToast('重启指令已发送', 'success');
+        else showToast(res.message || '操作失败', 'error');
+    }
+
+    async function startDaemon() {
+        const res = await apiPost('/api/daemon/restart', {});
+        if (res.ok) { showToast('守护进程已启动', 'success'); loadDaemonStatus(); }
+        else showToast(res.message || '启动失败', 'error');
+    }
+
+    async function stopDaemon() {
+        const res = await apiPost('/api/daemon/stop', {});
+        if (res.ok) { showToast('守护进程已停止', 'success'); loadDaemonStatus(); }
+        else showToast(res.message || '停止失败', 'error');
+    }
+
+    async function restartDaemon() {
+        const res = await apiPost('/api/daemon/restart', {});
+        if (res.ok) { showToast('重启中...', 'success'); loadDaemonStatus(); }
+        else showToast(res.message || '重启失败', 'error');
+    }
+
+    function showAddServiceDialog(tunnelName) {
+        document.getElementById('service-tunnel-name').value = tunnelName;
+        document.getElementById('service-name').value = '';
+        document.getElementById('service-url').value = '';
+        document.getElementById('service-modal').style.display = 'flex';
+    }
+
+    function closeServiceModal(event) {
+        if (event.target.id === 'service-modal') {
+            document.getElementById('service-modal').style.display = 'none';
+        }
+    }
+
+    async function addService() {
+        const tunnelName = document.getElementById('service-tunnel-name').value;
+        const name = document.getElementById('service-name').value.trim();
+        const url = document.getElementById('service-url').value.trim();
+        if (!name || !url) { showToast('请填写名称和URL', 'error'); return; }
+        const res = await apiPost('/api/tunnels/' + encodeURIComponent(tunnelName) + '/services', { name, url });
+        if (res.ok) {
+            showToast('服务已添加', 'success');
+            document.getElementById('service-modal').style.display = 'none';
+            loadTunnelList();
+        } else {
+            showToast(res.message || '添加失败', 'error');
+        }
+    }
+
+    async function deleteService(tunnelName, serviceName) {
+        if (!confirm(`确定删除服务 "${serviceName}" 吗？`)) return;
+        const res = await apiDelete('/api/tunnels/' + encodeURIComponent(tunnelName) + '/services/' + encodeURIComponent(serviceName));
+        if (res.ok) { showToast('已删除', 'success'); loadTunnelList(); }
+        else showToast(res.message || '删除失败', 'error');
     }
 
     /* ===== Init ===== */

@@ -35,6 +35,7 @@ fn start_watchdog(heartbeat: Arc<AtomicBool>, timeout_secs: u64) {
                 heartbeat.store(false, Ordering::Relaxed);
                 last_alive = true;
             } else if last_alive {
+                // 只有在配置了邮件通知时才告警，避免未配置时刷屏
                 let email_conf = utils::email::get_email_config();
                 if email_conf.enable_notify {
                     let now = chrono::Local::now();
@@ -55,8 +56,9 @@ fn start_watchdog(heartbeat: Arc<AtomicBool>, timeout_secs: u64) {
                             None,
                         ));
                     });
+                    // 仅在邮件通知启用时才打印日志
+                    eprintln!("[看门狗] 警告: 主循环可能卡死，已超过 {} 秒未响应", timeout_secs);
                 }
-                eprintln!("[看门狗] 警告: 主循环可能卡死，已超过 {} 秒未响应", timeout_secs);
                 last_alive = false;
             }
         }

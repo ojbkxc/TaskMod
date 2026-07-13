@@ -83,6 +83,13 @@
                 <span class="side-tab-label">配置</span>
                 <span class="side-tab-indicator"></span>
             </button>
+            <button class="side-tab" onclick="showTab('tunnel')">
+                <svg class="side-tab-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 12h18M3 12a9 9 0 0118 0M3 12a9 9 0 0018 0M9 12a3 3 0 016 0M9 12a3 3 0 006 0" />
+                </svg>
+                <span class="side-tab-label">隧道</span>
+                <span class="side-tab-indicator"></span>
+            </button>
             <button class="side-tab" onclick="showTab('logs')">
                 <svg class="side-tab-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -145,6 +152,17 @@
 
             <!-- ========== AI Chat ========== -->
             <section id="tab-chat" class="tab-content" style="display:none;">
+                <!-- 历史会话侧滑栏 -->
+                <div class="ds-chat-sidebar-overlay" id="chat-sidebar-overlay" onclick="toggleChatSidebar(false)"></div>
+                <div class="ds-chat-sidebar" id="chat-sidebar">
+                    <div class="ds-chat-sidebar-header">
+                        <h3><i class="fas fa-history" style="margin-right:8px;color:var(--ds-blue);font-size:12px;"></i>历史会话</h3>
+                        <button class="ds-chat-sidebar-close" onclick="toggleChatSidebar(false)"><i class="fas fa-times"></i></button>
+                    </div>
+                    <div class="ds-chat-sidebar-list" id="chat-session-list">
+                        <!-- 动态加载 -->
+                    </div>
+                </div>
                 <div class="ds-chat-page">
                 <div class="ds-chat-header">
                     <div class="ds-chat-header-top">
@@ -156,6 +174,9 @@
                             <p class="ds-chat-subtitle">通过AI控制Android设备，执行ADB命令和脚本</p>
                         </div>
                         <div class="ds-chat-header-actions">
+                            <button class="ds-chat-icon-button" onclick="toggleChatSidebar(true)" title="历史会话">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            </button>
                             <button class="ds-chat-icon-button" onclick="screenshotAnalyze()" title="截图分析">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                             </button>
@@ -424,62 +445,62 @@
                     <span><i class="fas fa-mouse"></i> 滚轮=滚动</span>
                 </div>
 
-                <!-- 折叠面板：ADB 命令 -->
-                <details class="mirror-collapse" open>
-                    <summary class="mirror-collapse-header">
-                        <i class="fas fa-terminal"></i> ADB 命令
-                        <span class="mirror-collapse-desc">发送 shell 命令到设备</span>
-                    </summary>
-                    <div class="mirror-collapse-body">
-                        <div style="display:flex;gap:8px;">
-                            <input type="text" id="adb-command-input" class="ds-chat-input" style="flex:1;font-family:monospace;font-size:13px;" placeholder="输入命令，如: input tap 500 500" onkeydown="if(event.key==='Enter')sendAdbCommand()">
-                            <button class="ds-btn-primary" onclick="sendAdbCommand()"><i class="fas fa-paper-plane"></i> 执行</button>
+                <!-- 投屏下方工具区：ADB左侧，设备工具右侧 -->
+                <div class="mirror-tools-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
+                    <!-- 左侧：ADB 命令 -->
+                    <div class="mirror-tool-panel">
+                        <div class="mirror-tool-panel-header" onclick="this.parentElement.classList.toggle('collapsed')">
+                            <i class="fas fa-terminal"></i> ADB 命令
+                            <i class="fas fa-chevron-down mirror-tool-panel-arrow"></i>
                         </div>
-                        <div id="adb-command-result" style="margin-top:8px;display:none;">
-                            <pre style="background:var(--ds-bg);border:1px solid var(--ds-border);border-radius:var(--radius-ctrl);padding:10px;font-family:monospace;font-size:12px;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin:0;"></pre>
-                        </div>
-                        <!-- 常用命令：卡片式 -->
-                        <div class="mirror-cmd-grid">
-                            <button class="mirror-cmd-card" onclick="quickAdb('input keyevent KEYCODE_WAKEUP')"><i class="fas fa-sun"></i><span>唤醒屏幕</span></button>
-                            <button class="mirror-cmd-card" onclick="quickAdb('input keyevent KEYCODE_SLEEP')"><i class="fas fa-moon"></i><span>息屏</span></button>
-                            <button class="mirror-cmd-card" onclick="quickAdb('input swipe 540 1800 540 600 300')"><i class="fas fa-hand-rock"></i><span>上滑解锁</span></button>
-                            <button class="mirror-cmd-card" onclick="quickAdb('input keyevent KEYCODE_HOME')"><i class="fas fa-home"></i><span>Home</span></button>
-                            <button class="mirror-cmd-card" onclick="quickAdb('input keyevent KEYCODE_BACK')"><i class="fas fa-arrow-left"></i><span>返回</span></button>
-                            <button class="mirror-cmd-card" onclick="quickAdb('dumpsys battery')"><i class="fas fa-battery-half"></i><span>电池信息</span></button>
-                            <button class="mirror-cmd-card" onclick="quickAdb('getprop ro.product.model')"><i class="fas fa-mobile-alt"></i><span>设备型号</span></button>
-                            <button class="mirror-cmd-card" onclick="quickAdb('wm size')"><i class="fas fa-expand-arrows-alt"></i><span>分辨率</span></button>
+                        <div class="mirror-tool-panel-body">
+                            <div style="display:flex;gap:8px;">
+                                <input type="text" id="adb-command-input" class="ds-chat-input" style="flex:1;font-family:monospace;font-size:13px;" placeholder="输入命令，如: input tap 500 500" onkeydown="if(event.key==='Enter')sendAdbCommand()">
+                                <button class="ds-btn-primary" onclick="sendAdbCommand()"><i class="fas fa-paper-plane"></i></button>
+                            </div>
+                            <div id="adb-command-result" style="margin-top:8px;display:none;">
+                                <pre style="background:var(--ds-bg);border:1px solid var(--ds-border);border-radius:var(--radius-ctrl);padding:10px;font-family:monospace;font-size:12px;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin:0;"></pre>
+                            </div>
+                            <div class="mirror-cmd-grid" style="grid-template-columns:repeat(4,1fr);">
+                                <button class="mirror-cmd-card" onclick="quickAdb('input keyevent KEYCODE_WAKEUP')"><i class="fas fa-sun"></i><span>唤醒</span></button>
+                                <button class="mirror-cmd-card" onclick="quickAdb('input keyevent KEYCODE_SLEEP')"><i class="fas fa-moon"></i><span>息屏</span></button>
+                                <button class="mirror-cmd-card" onclick="quickAdb('input swipe 540 1800 540 600 300')"><i class="fas fa-hand-rock"></i><span>解锁</span></button>
+                                <button class="mirror-cmd-card" onclick="quickAdb('input keyevent KEYCODE_HOME')"><i class="fas fa-home"></i><span>Home</span></button>
+                                <button class="mirror-cmd-card" onclick="quickAdb('input keyevent KEYCODE_BACK')"><i class="fas fa-arrow-left"></i><span>返回</span></button>
+                                <button class="mirror-cmd-card" onclick="quickAdb('dumpsys battery')"><i class="fas fa-battery-half"></i><span>电池</span></button>
+                                <button class="mirror-cmd-card" onclick="quickAdb('getprop ro.product.model')"><i class="fas fa-mobile-alt"></i><span>型号</span></button>
+                                <button class="mirror-cmd-card" onclick="quickAdb('wm size')"><i class="fas fa-expand-arrows-alt"></i><span>分辨率</span></button>
+                            </div>
                         </div>
                     </div>
-                </details>
 
-                <!-- 折叠面板：设备工具 -->
-                <details class="mirror-collapse">
-                    <summary class="mirror-collapse-header">
-                        <i class="fas fa-tools"></i> 设备工具
-                        <span class="mirror-collapse-desc">截屏、剪贴板、文件上传</span>
-                    </summary>
-                    <div class="mirror-collapse-body">
-                        <div class="mirror-tool-grid">
-                            <button class="mirror-tool-card" onclick="screenshot()"><i class="fas fa-camera"></i><span>截屏</span></button>
-                            <button class="mirror-tool-card" onclick="unlockScreen()"><i class="fas fa-unlock"></i><span>上滑解锁</span></button>
-                            <button class="mirror-tool-card" onclick="rebootDevice()"><i class="fas fa-power-off"></i><span>重启设备</span></button>
-                            <button class="mirror-tool-card" onclick="loadDeviceInfo()"><i class="fas fa-info-circle"></i><span>设备信息</span></button>
-                            <button class="mirror-tool-card" onclick="getDeviceClipboard()"><i class="fas fa-clipboard"></i><span>获取剪贴板</span></button>
-                            <button class="mirror-tool-card" onclick="setDeviceClipboard()"><i class="fas fa-paste"></i><span>设置剪贴板</span></button>
-                            <button class="mirror-tool-card" onclick="document.getElementById('file-upload-input').click()"><i class="fas fa-upload"></i><span>上传文件</span></button>
-                            <input type="file" id="file-upload-input" style="display:none;" multiple onchange="handleFileSelect(this.files)">
+                    <!-- 右侧：设备工具 -->
+                    <div class="mirror-tool-panel">
+                        <div class="mirror-tool-panel-header" onclick="this.parentElement.classList.toggle('collapsed')">
+                            <i class="fas fa-tools"></i> 设备工具
+                            <i class="fas fa-chevron-down mirror-tool-panel-arrow"></i>
                         </div>
-                        <!-- 设备信息区域 -->
-                        <div id="device-info-container" style="margin-top:12px;display:none;">
-                            <div id="device-info" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;"></div>
+                        <div class="mirror-tool-panel-body">
+                            <div class="mirror-tool-grid" style="grid-template-columns:repeat(4,1fr);">
+                                <button class="mirror-tool-card" onclick="screenshot()"><i class="fas fa-camera"></i><span>截屏</span></button>
+                                <button class="mirror-tool-card" onclick="unlockScreen()"><i class="fas fa-unlock"></i><span>解锁</span></button>
+                                <button class="mirror-tool-card" onclick="rebootDevice()"><i class="fas fa-power-off"></i><span>重启</span></button>
+                                <button class="mirror-tool-card" onclick="loadDeviceInfo()"><i class="fas fa-info-circle"></i><span>信息</span></button>
+                                <button class="mirror-tool-card" onclick="getDeviceClipboard()"><i class="fas fa-clipboard"></i><span>剪贴板</span></button>
+                                <button class="mirror-tool-card" onclick="setDeviceClipboard()"><i class="fas fa-paste"></i><span>粘贴</span></button>
+                                <button class="mirror-tool-card" onclick="document.getElementById('file-upload-input').click()"><i class="fas fa-upload"></i><span>上传</span></button>
+                                <input type="file" id="file-upload-input" style="display:none;" multiple onchange="handleFileSelect(this.files)">
+                            </div>
+                            <div id="device-info-container" style="margin-top:12px;display:none;">
+                                <div id="device-info" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;"></div>
+                            </div>
+                            <div id="clipboard-container" style="margin-top:12px;display:none;">
+                                <textarea id="clipboard-text" rows="3" placeholder="剪贴板内容..." style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--ds-border);background:var(--ds-bg);color:var(--ds-text);resize:vertical;box-sizing:border-box;"></textarea>
+                            </div>
+                            <div id="file-upload-progress" style="margin-top:12px;"></div>
                         </div>
-                        <!-- 剪贴板区域 -->
-                        <div id="clipboard-container" style="margin-top:12px;display:none;">
-                            <textarea id="clipboard-text" rows="3" placeholder="剪贴板内容..." style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--ds-border);background:var(--ds-bg);color:var(--ds-text);resize:vertical;box-sizing:border-box;"></textarea>
-                        </div>
-                        <div id="file-upload-progress" style="margin-top:12px;"></div>
                     </div>
-                </details>
+                </div>
             </section>
 
             <!-- ========== Tasks ========== -->
@@ -893,6 +914,74 @@
                 </div>
             </section>
 
+            <!-- ========== Tunnel (Cloudflare) ========== -->
+            <section id="tab-tunnel" class="tab-content page-content" style="display:none;">
+                <div class="ds-page-intro">
+                    <div>
+                        <h1 class="ds-page-intro-title">Cloudflare 隧道</h1>
+                        <p class="ds-page-intro-desc">通过 Cloudflare Tunnel 安全远程访问本设备</p>
+                    </div>
+                    <button class="ds-btn-primary" onclick="showAddTunnelDialog()"><i class="fas fa-plus"></i> 添加隧道</button>
+                </div>
+
+                <!-- 守护进程状态 -->
+                <div class="ds-card" style="padding:16px;margin-bottom:16px;display:flex;align-items:center;gap:16px;">
+                    <div id="daemon-status-dot" style="width:10px;height:10px;border-radius:50%;background:var(--ds-text-tertiary);flex-shrink:0;"></div>
+                    <div style="flex:1;">
+                        <div style="font-size:14px;font-weight:600;color:var(--ds-text);">守护进程</div>
+                        <div id="daemon-status-text" style="font-size:12px;color:var(--ds-text-tertiary);">检查中...</div>
+                    </div>
+                    <button class="ds-btn-secondary" onclick="startDaemon()" title="启动"><i class="fas fa-play"></i></button>
+                    <button class="ds-btn-secondary" onclick="stopDaemon()" title="停止"><i class="fas fa-stop"></i></button>
+                    <button class="ds-btn-secondary" onclick="restartDaemon()" title="重启"><i class="fas fa-redo"></i></button>
+                </div>
+
+                <!-- 隧道列表 -->
+                <div id="tunnel-list" style="display:grid;gap:12px;">
+                    <div style="text-align:center;padding:40px;color:var(--ds-text-tertiary);">加载中...</div>
+                </div>
+            </section>
+
+            <!-- 添加隧道弹框 -->
+            <div class="ds-modal-overlay" id="tunnel-modal" style="display:none;" onclick="closeTunnelModal(event)">
+                <div class="ds-modal-card" style="max-width:520px;">
+                    <h3 style="margin:0 0 16px;font-size:16px;font-weight:600;">添加 Cloudflare Tunnel</h3>
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-size:12px;color:var(--ds-text-secondary);margin-bottom:6px;">隧道名称</label>
+                        <input id="tunnel-name" type="text" class="ds-chat-input" style="width:100%;box-sizing:border-box;" placeholder="my-tunnel">
+                    </div>
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-size:12px;color:var(--ds-text-secondary);margin-bottom:6px;">Tunnel Token</label>
+                        <textarea id="tunnel-token" rows="4" class="ds-chat-input" style="width:100%;box-sizing:border-box;resize:vertical;font-family:monospace;font-size:12px;" placeholder="eyJhIjoixxxxxxxxx..."></textarea>
+                        <p style="font-size:11px;color:var(--ds-text-tertiary);margin-top:4px;">在 Cloudflare Zero Trust 控制台创建隧道后获取此 Token</p>
+                    </div>
+                    <div style="display:flex;gap:12px;justify-content:flex-end;">
+                        <button class="ds-btn-secondary" onclick="document.getElementById('tunnel-modal').style.display='none'">取消</button>
+                        <button class="ds-btn-primary" onclick="addTunnel()"><i class="fas fa-check"></i> 创建</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 添加服务弹框 -->
+            <div class="ds-modal-overlay" id="service-modal" style="display:none;" onclick="closeServiceModal(event)">
+                <div class="ds-modal-card" style="max-width:480px;">
+                    <h3 style="margin:0 0 16px;font-size:16px;font-weight:600;">添加服务</h3>
+                    <input id="service-tunnel-name" type="hidden">
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-size:12px;color:var(--ds-text-secondary);margin-bottom:6px;">服务名称</label>
+                        <input id="service-name" type="text" class="ds-chat-input" style="width:100%;box-sizing:border-box;" placeholder="web-app">
+                    </div>
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-size:12px;color:var(--ds-text-secondary);margin-bottom:6px;">服务 URL</label>
+                        <input id="service-url" type="text" class="ds-chat-input" style="width:100%;box-sizing:border-box;" placeholder="http://localhost:9527">
+                    </div>
+                    <div style="display:flex;gap:12px;justify-content:flex-end;">
+                        <button class="ds-btn-secondary" onclick="document.getElementById('service-modal').style.display='none'">取消</button>
+                        <button class="ds-btn-primary" onclick="addService()"><i class="fas fa-check"></i> 添加</button>
+                    </div>
+                </div>
+            </div>
+
             <!-- ========== Logs ========== -->
             <section id="tab-logs" class="tab-content page-content" style="display:none;">
                 <div class="ds-page-intro">
@@ -1081,7 +1170,7 @@
     </div>
 
     <!-- Provider Modal -->
-    <div class="ds-modal-overlay" id="provider-modal" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+    <div class="ds-modal-overlay" id="provider-modal" style="display:none;" onclick="closeProviderModal(event)">
         <div class="ds-modal-card" style="max-width:680px;">
             <h3 style="font-weight:700;font-size:1.1rem;margin-bottom:16px;"><i class="fas fa-robot" style="margin-right:8px;color:var(--ds-blue);"></i>AI 提供商管理</h3>
             <!-- 已配置列表 -->

@@ -466,26 +466,28 @@ fn keyword_score(prompt_words: &[String], mem: &Memory) -> f64 {
         }
     }
 
-    let name_words: Vec<String> = mem.name.to_lowercase()
+    // 优化: 使用 &str 切片避免为每个词分配 String
+    let name_lower = mem.name.to_lowercase();
+    let name_words: Vec<&str> = name_lower
         .split(|c: char| c.is_whitespace() || ",.!?;:、-_".contains(c))
         .filter(|w| w.len() > 1)
-        .map(|s| s.to_string())
         .collect();
     let mut name_hits: f64 = 0.0;
     for w in &name_words {
-        if prompt_set.contains(w.as_str()) {
+        if prompt_set.contains(*w) {
             name_hits += 1.0;
         }
     }
 
-    let content_words: Vec<String> = mem.content.to_lowercase()
+    // 优化: 同样使用 &str 避免分配
+    let content_lower = mem.content.to_lowercase();
+    let content_words: Vec<&str> = content_lower
         .split(|c: char| c.is_whitespace() || ",.!?;:、-_".contains(c))
         .filter(|w| w.len() > 1)
-        .map(|s| s.to_string())
         .collect();
     let mut content_hits: f64 = 0.0;
     for w in &content_words {
-        if prompt_set.contains(w.as_str()) {
+        if prompt_set.contains(*w) {
             content_hits += 1.0;
         }
     }

@@ -20,6 +20,10 @@ lazy_static::lazy_static! {
         .timeout(std::time::Duration::from_secs(120))
         .build()
         .expect("Failed to create HTTP client");
+
+    /// AI Provider 缓存（带文件修改时间检查，避免每次对话都读磁盘）
+    static ref PROVIDER_CACHE: std::sync::Mutex<(Option<std::time::SystemTime>, Vec<AiProvider>)> =
+        std::sync::Mutex::new((None, Vec::new()));
 }
 
 /// 全局共享 ToolRegistry JSON（26 个工具只注册一次）
@@ -300,30 +304,43 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> axum::response::Response {
                     }));
 
                     // 截断 conversation_messages，保持 system 消息 + 最新 200 条
+                    // 优化: 单次遍历分区，避免双次 filter+clone
                     const MAX_CONVERSATION: usize = 200;
                     if conversation_messages.len() > MAX_CONVERSATION {
-                        let system_msgs: Vec<_> = conversation_messages.iter()
-                            .filter(|m| m.get("role").and_then(|r| r.as_str()) == Some("system"))
-                            .cloned()
-                            .collect();
-                        let non_system: Vec<_> = conversation_messages.iter()
-                            .filter(|m| m.get("role").and_then(|r| r.as_str()) != Some("system"))
-                            .cloned()
-                            .collect();
+                        let mut system_msgs = Vec::new();
+                        let mut non_system = Vec::new();
+                        for msg in conversation_messages.drain(..) {
+                            if msg.get("role").and_then(|r| r.as_str()) == Some("system") {
+                                system_msgs.push(msg);
+                            } else {
+                                non_system.push(msg);
+                            }
+                        }
                         let keep = MAX_CONVERSATION.saturating_sub(system_msgs.len());
                         let ns_len = non_system.len();
-                        conversation_messages = system_msgs.into_iter()
-                            .chain(non_system.into_iter().skip(ns_len.saturating_sub(keep)))
-                            .collect();
+                        system_msgs.extend(non_system.into_iter().skip(ns_len.saturating_sub(keep)));
+                        conversation_messages = system_msgs;
                     }
 
                     // 注入记忆、预设、项目上下文（首次对话时）
+                    // 使用 spawn_blocking 避免同步文件 I/O 阻塞 tokio runtime
                     if conversation_messages.len() <= 2 {
-                        let settings = crate::api::ai_hub::get_prompt_settings_sync();
+                        let user_msg = req.message.clone();
+                        let (settings, presets, projects, memories, skills) = tokio::task::spawn_blocking(move || {
+                            let settings = crate::api::ai_hub::get_prompt_settings_sync();
+                            let presets = if !settings.active_preset_id.is_empty() {
+                                crate::api::ai_hub::get_active_presets()
+                            } else {
+                                Vec::new()
+                            };
+                            let projects = crate::api::ai_hub::get_active_projects_sync();
+                            let memories = crate::api::ai_hub::select_memories_for_prompt(&user_msg, None);
+                            let skills = crate::api::ai_hub::get_enabled_skills_sync();
+                            (settings, presets, projects, memories, skills)
+                        }).await.unwrap_or((Default::default(), Vec::new(), Vec::new(), Vec::new(), Vec::new()));
 
                         // 注入预设
                         if !settings.active_preset_id.is_empty() {
-                            let presets = crate::api::ai_hub::get_active_presets();
                             if let Some(preset) = presets.iter().find(|p| p.id == settings.active_preset_id) {
                                 conversation_messages.insert(1, json!({
                                     "role": "system",
@@ -333,7 +350,6 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> axum::response::Response {
                         }
 
                         // 注入项目上下文
-                        let projects = crate::api::ai_hub::get_active_projects_sync();
                         if !projects.is_empty() {
                             let project_ctx: String = projects.iter()
                                 .map(|p| format!("- **{}**: {}", p.name, p.instructions))
@@ -346,7 +362,6 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> axum::response::Response {
                         }
 
                         // 智能注入相关记忆
-                        let memories = crate::api::ai_hub::select_memories_for_prompt(&req.message, None);
                         let mem_ctx = crate::api::ai_hub::build_memory_context(&memories);
                         if !mem_ctx.is_empty() {
                             conversation_messages.insert(1, json!({
@@ -378,7 +393,6 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> axum::response::Response {
                         }
 
                         // 注入已启用的Skill
-                        let skills = crate::api::ai_hub::get_enabled_skills_sync();
                         if !skills.is_empty() {
                             let skill_ctx: String = skills.iter()
                                 .map(|s| format!("## Skill: {}\n{}\n\n{}", s.name, s.description, s.prompt_template))
@@ -391,25 +405,26 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> axum::response::Response {
                         }
                     }
 
-                    let tools = shared_tools_json().clone();
+                    // 优化: tools_json 使用引用避免 clone，json! 宏内部会处理序列化
+                    let tools_ref = shared_tools_json();
                     let mut messages = conversation_messages.clone();
 
                     // 对话历史截断，保留 system prompt + 最近消息
+                    // 优化: 单次遍历分区，避免双次 filter+clone
                     if messages.len() > MAX_HISTORY {
-                        let system_msgs: Vec<_> = messages.iter()
-                            .filter(|m| m.get("role").and_then(|r| r.as_str()) == Some("system"))
-                            .cloned()
-                            .collect();
-                        let recent: Vec<_> = messages.iter()
-                            .filter(|m| m.get("role").and_then(|r| r.as_str()) != Some("system"))
-                            .cloned()
-                            .collect();
+                        let mut system_msgs = Vec::new();
+                        let mut recent = Vec::new();
+                        for msg in messages.drain(..) {
+                            if msg.get("role").and_then(|r| r.as_str()) == Some("system") {
+                                system_msgs.push(msg);
+                            } else {
+                                recent.push(msg);
+                            }
+                        }
                         let keep = MAX_HISTORY.saturating_sub(system_msgs.len());
                         let recent_len = recent.len();
-                        let truncated: Vec<_> = system_msgs.into_iter()
-                            .chain(recent.into_iter().skip(recent_len.saturating_sub(keep)))
-                            .collect();
-                        messages = truncated;
+                        system_msgs.extend(recent.into_iter().skip(recent_len.saturating_sub(keep)));
+                        messages = system_msgs;
                     }
 
                     const MAX_TOOL_ROUNDS: usize = 20;
@@ -430,7 +445,7 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> axum::response::Response {
                         let body = json!({
                             "model": provider.model,
                             "messages": messages,
-                            "tools": tools,
+                            "tools": tools_ref,
                             "tool_choice": "auto",
                             "stream": true
                         });
@@ -504,21 +519,21 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> axum::response::Response {
                                                                 .unwrap_or("");
                                                             if !reasoning.is_empty() {
                                                                 full_thinking.push_str(reasoning);
-                                                                let _ = write.send(axum::extract::ws::Message::Text(
-                                                                    serde_json::to_string(&json!({
-                                                                        "type": "thinking",
-                                                                        "content": reasoning
-                                                                    })).unwrap_or_default()
-                                                                )).await;
+                                                                // 优化: 用 format! 替代 json!()+to_string()，避免 serde_json::Value 分配
+                                                                let msg = format!(
+                                                                    "{{\"type\":\"thinking\",\"content\":{}}}",
+                                                                    serde_json::Value::String(reasoning.to_string())
+                                                                );
+                                                                let _ = write.send(axum::extract::ws::Message::Text(msg)).await;
                                                             }
                                                             if !content.is_empty() {
                                                                 full_response.push_str(content);
-                                                                let _ = write.send(axum::extract::ws::Message::Text(
-                                                                    serde_json::to_string(&json!({
-                                                                        "type": "chunk",
-                                                                        "content": content
-                                                                    })).unwrap_or_default()
-                                                                )).await;
+                                                                // 优化: 直接拼接 JSON 字符串，避免 json! 宏分配 + to_string 二次分配
+                                                                let msg = format!(
+                                                                    "{{\"type\":\"chunk\",\"content\":{}}}",
+                                                                    serde_json::Value::String(content.to_string())
+                                                                );
+                                                                let _ = write.send(axum::extract::ws::Message::Text(msg)).await;
                                                                 streaming_msg_sent = true;
                                                             }
                                                             if let Some(tc) = delta.get("tool_calls") {
@@ -693,10 +708,22 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> axum::response::Response {
 }
 
 pub fn load_ai_providers() -> Vec<AiProvider> {
-    fs::read_to_string(AI_CONF)
+    // 检查文件修改时间，只在文件变化时重新读取磁盘
+    let mtime = std::fs::metadata(AI_CONF).ok().and_then(|m| m.modified().ok());
+    if let Ok(mut cache) = PROVIDER_CACHE.lock() {
+        if cache.0 == mtime && !cache.1.is_empty() {
+            return cache.1.clone();
+        }
+    }
+    // 文件有变化或首次加载，从磁盘读取
+    let providers = fs::read_to_string(AI_CONF)
         .ok()
         .and_then(|content| serde_json::from_str(&content).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    if let Ok(mut cache) = PROVIDER_CACHE.lock() {
+        *cache = (mtime, providers.clone());
+    }
+    providers
 }
 
 #[allow(dead_code)]

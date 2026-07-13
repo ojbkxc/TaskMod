@@ -29,6 +29,12 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
 
+    companion object {
+        private const val TAG = "MainActivity"
+        private const val STATUS_CHECK_INTERVAL = 5000L  // 5秒轮询一次
+        private const val WEBVIEW_LOAD_DELAY = 800L       // WebView 加载延迟
+    }
+
     private lateinit var serverManager: ServerManager
     private val handler = Handler(Looper.getMainLooper())
 
@@ -44,6 +50,8 @@ class MainActivity : AppCompatActivity() {
 
     private var statusCheckRunnable: Runnable? = null
     private var isPageLoaded = false
+    private var lastKnownRunning = false   // 上一次已知的运行状态，用于检测状态变化
+    private var webViewLoadPending = false  // 是否有待执行的 WebView 加载
 
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ -> }
@@ -63,10 +71,12 @@ class MainActivity : AppCompatActivity() {
         setupWebView()
         setupListeners()
         checkRootStatus()
-        updateUI()
         startStatusCheck()
 
-        if (ConfigManager.load().autoStart) {
+        // 先做一次状态检查，再根据状态决定是否自动启动
+        updateUI()
+
+        if (ConfigManager.load().autoStart && !serverManager.isRunning()) {
             TaskModService.start(this)
         }
 
@@ -119,6 +129,21 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 isPageLoaded = true
+                webViewLoadPending = false
+            }
+
+            override fun onReceivedError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                error: WebResourceError?
+            ) {
+                super.onReceivedError(view, request, error)
+                if (request?.isForMainFrame == true) {
+                    Log.w(TAG, "WebView 加载失败: ${error?.errorCode} ${error?.description}")
+                    // 主页面加载失败时不标记为已加载，下次 updateUI 会重试
+                    isPageLoaded = false
+                    webViewLoadPending = false
+                }
             }
         }
     }
@@ -139,9 +164,11 @@ class MainActivity : AppCompatActivity() {
             if (serverManager.isRunning()) {
                 TaskModService.stop(this)
                 isPageLoaded = false
+                webViewLoadPending = false
             } else {
                 TaskModService.start(this)
-                handler.postDelayed({ loadWebView() }, 1500)
+                // 不在这里硬编码延迟，而是通过状态轮询来加载 WebView
+                webViewLoadPending = true
             }
         }
 
@@ -229,6 +256,7 @@ class MainActivity : AppCompatActivity() {
             webView.loadUrl(url)
             webView.visibility = View.VISIBLE
             placeholder.visibility = View.GONE
+            Log.i(TAG, "加载 WebView: $url")
         } else {
             webView.visibility = View.GONE
             placeholder.visibility = View.VISIBLE
@@ -255,6 +283,20 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateUI() {
         val running = serverManager.isRunning()
+
+        // 检测状态变化：从非运行变为运行 → 需要加载 WebView
+        // 从运行变为非运行 → 重置 isPageLoaded
+        if (running && !lastKnownRunning) {
+            // 服务刚变为运行状态
+            isPageLoaded = false
+        }
+        if (!running && lastKnownRunning) {
+            // 服务刚停止（包括崩溃/外部停止）
+            isPageLoaded = false
+            webViewLoadPending = false
+        }
+        lastKnownRunning = running
+
         tvStatusText.text = if (running) "运行中" else "已停止"
         tvStatusText.setTextColor(getColor(if (running) R.color.success else R.color.error))
         statusDot.setBackgroundResource(
@@ -279,7 +321,7 @@ class MainActivity : AppCompatActivity() {
             val serverUrl = serverManager.findAvailableServer()
             withContext(Dispatchers.Main) {
                 if (serverUrl != null) {
-                    Log.i("MainActivity", "发现可用服务: $serverUrl")
+                    Log.i(TAG, "发现可用服务: $serverUrl")
                     webView.loadUrl(serverUrl)
                     webView.visibility = View.VISIBLE
                     placeholder.visibility = View.GONE
@@ -296,7 +338,7 @@ class MainActivity : AppCompatActivity() {
         statusCheckRunnable = object : Runnable {
             override fun run() {
                 updateUI()
-                handler.postDelayed(this, 10000)
+                handler.postDelayed(this, STATUS_CHECK_INTERVAL)
             }
         }
         handler.post(statusCheckRunnable!!)

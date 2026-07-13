@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::process::Command as StdCommand;
 use std::sync::Mutex;
 use tokio::process::Command;
 
@@ -179,7 +180,42 @@ pub async fn get_screen_state() -> ScreenState {
 }
 
 async fn check_wifi_state() {
-    let current = get_wifi_state().await;
+    let current = tokio::task::spawn_blocking(|| {
+        let output = StdCommand::new("/system/bin/dumpsys").arg("wifi").output();
+        match output {
+            Ok(o) => {
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                let lines: Vec<&str> = stdout.lines().collect();
+                let mut ssid = "unknown".to_string();
+                let mut connected = false;
+                let mut signal_level = 0;
+                for line in lines {
+                    if line.contains("mWifiInfo") {
+                        let parts: Vec<&str> = line.split(',').collect();
+                        for part in parts {
+                            if part.contains("SSID:") {
+                                let ssid_str = part.split(':').nth(1).unwrap_or("unknown").trim().replace('"', "");
+                                if !ssid_str.is_empty() && ssid_str != "<unknown ssid>" {
+                                    ssid = ssid_str;
+                                }
+                            } else if part.contains("Supplicant state:") {
+                                let state = part.split(':').nth(1).unwrap_or("").trim();
+                                connected = state == "COMPLETED" || state == "ASSOCIATED";
+                            } else if part.contains("rssi:") {
+                                if let Ok(rssi) = part.split(':').nth(1).unwrap_or("0").trim().parse::<i32>() {
+                                    signal_level = rssi;
+                                }
+                            }
+                        }
+                    }
+                }
+                if ssid == "unknown" { connected = false; }
+                WifiState { ssid, connected, signal_level }
+            }
+            Err(_) => WifiState { ssid: "unknown".to_string(), connected: false, signal_level: 0 },
+        }
+    }).await.unwrap_or(WifiState { ssid: "unknown".to_string(), connected: false, signal_level: 0 });
+
     let mut last = LAST_WIFI_STATE.lock().unwrap_or_else(|e| e.into_inner());
     
     match last.as_ref() {
@@ -204,7 +240,41 @@ async fn check_wifi_state() {
 }
 
 async fn check_battery_state() {
-    let current = get_battery_state().await;
+    let current = tokio::task::spawn_blocking(|| {
+        let output = StdCommand::new("/system/bin/dumpsys").arg("battery").output();
+        match output {
+            Ok(o) => {
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                let lines: Vec<&str> = stdout.lines().collect();
+                let mut capacity = 0;
+                let mut status = "unknown".to_string();
+                let mut temperature = 0.0;
+                for line in lines {
+                    if line.starts_with("level:") {
+                        if let Ok(level) = line.split(':').nth(1).unwrap_or("0").trim().parse::<i32>() {
+                            capacity = level;
+                        }
+                    } else if line.starts_with("status:") {
+                        let status_code = line.split(':').nth(1).unwrap_or("0").trim().parse::<i32>().unwrap_or(0);
+                        status = match status_code {
+                            2 => "charging".to_string(),
+                            3 => "discharging".to_string(),
+                            4 => "not_charging".to_string(),
+                            5 => "full".to_string(),
+                            _ => "unknown".to_string(),
+                        };
+                    } else if line.starts_with("temperature:") {
+                        if let Ok(temp) = line.split(':').nth(1).unwrap_or("0").trim().parse::<i32>() {
+                            temperature = temp as f32 / 10.0;
+                        }
+                    }
+                }
+                BatteryState { capacity, status, temperature }
+            }
+            Err(_) => BatteryState { capacity: 0, status: "unknown".to_string(), temperature: 0.0 },
+        }
+    }).await.unwrap_or(BatteryState { capacity: 0, status: "unknown".to_string(), temperature: 0.0 });
+
     let mut last = LAST_BATTERY_STATE.lock().unwrap_or_else(|e| e.into_inner());
     
     match last.as_ref() {
@@ -238,7 +308,30 @@ async fn check_battery_state() {
 }
 
 async fn check_screen_state() {
-    let current = get_screen_state().await;
+    let current = tokio::task::spawn_blocking(|| {
+        let output = StdCommand::new("/system/bin/dumpsys").arg("power").output();
+        match output {
+            Ok(o) => {
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                let lines: Vec<&str> = stdout.lines().collect();
+                let mut on = false;
+                let mut brightness = 0;
+                for line in lines {
+                    if line.contains("mWakefulness=") || line.contains("Display Power: state=ON") {
+                        on = true;
+                    }
+                    if line.contains("mScreenBrightness=") {
+                        if let Ok(b) = line.split('=').nth(1).unwrap_or("0").trim().parse::<i32>() {
+                            brightness = b;
+                        }
+                    }
+                }
+                ScreenState { on, brightness }
+            }
+            Err(_) => ScreenState { on: false, brightness: 0 },
+        }
+    }).await.unwrap_or(ScreenState { on: false, brightness: 0 });
+
     let mut last = LAST_SCREEN_STATE.lock().unwrap_or_else(|e| e.into_inner());
     
     match last.as_ref() {

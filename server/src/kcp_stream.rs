@@ -1,11 +1,10 @@
 //! KCP 可靠 UDP 传输模块
 //! 借鉴 RustDesk 的 KCP 低延迟传输方案，为局域网投屏提供比 WebSocket (TCP) 更低延迟的传输
 //!
-//! KCP 相比 TCP 的优势：
-//! 1. 更小的延迟：无 TCP 的慢启动和拥塞控制
-//! 2. 快速重传：丢包时快速重传，不等待超时
-//! 3. 无队头阻塞：单个包丢失不会阻塞后续数据
-//! 4. 可配置：可以调整 nodelay 参数实现极低延迟
+//! 性能优化:
+//! - per-session 细粒度锁，避免一个慢客户端阻塞所有客户端
+//! - FEC 缓冲区使用 Arc<Vec<u8>> 避免深拷贝
+//! - update 间隔 20ms 平衡延迟与 CPU 占用
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -35,41 +34,34 @@ impl Write for UdpOutput {
     }
 }
 
-/// KCP 服务端口（HTTP 端口 + 1）
 const KCP_PORT_OFFSET: u16 = 1;
-/// KCP 会话 ID（用于标识视频流）
-const KCP_VIDEO_CONV: u32 = 0x544D; // "TM" in ASCII
-/// KCP 接收缓冲区大小
+const KCP_VIDEO_CONV: u32 = 0x544D;
 const KCP_RECV_BUF_SIZE: usize = 65536;
-/// KCP MTU（局域网场景可以使用更大的 MTU）
 const KCP_MTU: usize = 1400;
-/// KCP 更新间隔（毫秒）- 越小延迟越低，但 CPU 占用越高
-const KCP_UPDATE_INTERVAL_MS: u64 = 5;
-/// 最大 KCP 客户端数
+/// KCP 更新间隔（毫秒）- 20ms 平衡延迟与 CPU 占用
+const KCP_UPDATE_INTERVAL_MS: u64 = 20;
 const MAX_KCP_CLIENTS: usize = 10;
-/// FEC 前向纠错组大小（每N帧生成1个FEC包，20%冗余，借鉴 Sunshine 的 FEC 策略）
 const FEC_GROUP_SIZE: usize = 5;
 
-/// KCP 客户端会话
+/// KCP 客户端会话（每个客户端独立锁，避免全局写锁阻塞）
 struct KcpSession {
     kcp: kcp::Kcp<UdpOutput>,
     addr: SocketAddr,
     last_active: std::time::Instant,
-    /// FEC 组缓冲区：累积帧数据用于 XOR 纠错
-    fec_buffer: Vec<Vec<u8>>,
-    /// 当前 FEC 组 ID
+    /// FEC 组缓冲区：使用 Arc 避免深拷贝
+    fec_buffer: Vec<Arc<Vec<u8>>>,
     fec_group_id: u32,
 }
 
 /// KCP 服务端
 pub struct KcpServer {
     socket: Arc<UdpSocket>,
-    sessions: Arc<RwLock<HashMap<SocketAddr, KcpSession>>>,
+    /// 外层 RwLock 只保护 HashMap 结构（增删客户端），内层 per-session Mutex 保护会话操作
+    sessions: Arc<RwLock<HashMap<SocketAddr, Arc<std::sync::Mutex<KcpSession>>>>>,
     video_rx: broadcast::Receiver<Vec<u8>>,
 }
 
 impl KcpServer {
-    /// 启动 KCP 服务端
     pub async fn start(
         listen_port: u16,
         state: SharedMirrorState,
@@ -82,7 +74,7 @@ impl KcpServer {
         tracing::info!("[KCP] 服务端启动在 UDP {}:{}", addr.ip(), kcp_port);
 
         let video_rx = state.get_video_rx().ok_or("投屏未启动")?;
-        let sessions: Arc<RwLock<HashMap<SocketAddr, KcpSession>>> =
+        let sessions: Arc<RwLock<HashMap<SocketAddr, Arc<std::sync::Mutex<KcpSession>>>>> =
             Arc::new(RwLock::new(HashMap::new()));
 
         let server = KcpServer {
@@ -91,7 +83,7 @@ impl KcpServer {
             video_rx,
         };
 
-        // 启动接收任务（处理客户端握手和数据）
+        // 接收任务：只需读锁查找 session，per-session 锁执行 input
         let recv_socket = socket.clone();
         let recv_sessions = sessions.clone();
         tokio::spawn(async move {
@@ -100,47 +92,59 @@ impl KcpServer {
                 match recv_socket.recv_from(&mut buf).await {
                     Ok((len, addr)) => {
                         let data = &buf[..len];
-                        let mut sessions = recv_sessions.write().await;
 
-                        if let Some(session) = sessions.get_mut(&addr) {
-                            // 更新现有会话
-                            session.last_active = std::time::Instant::now();
-                            if let Err(e) = session.kcp.input(data) {
-                                tracing::warn!("[KCP] input error from {}: {}", addr, e);
+                        // 读锁查找 session（短暂持有）
+                        let session_arc = {
+                            let sessions = recv_sessions.read().await;
+                            sessions.get(&addr).cloned()
+                        };
+
+                        if let Some(session_arc) = session_arc {
+                            // per-session 锁，不阻塞其他客户端
+                            if let Ok(mut session) = session_arc.lock() {
+                                session.last_active = std::time::Instant::now();
+                                if let Err(e) = session.kcp.input(data) {
+                                    tracing::warn!("[KCP] input error from {}: {}", addr, e);
+                                }
                             }
                         } else if len >= 4 {
-                            // 新客户端连接：检查握手包
-                            // 握手协议: [4字节 conv (大端)] + [可选数据]
-                            if data.len() >= 4 {
-                                let conv = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
-                                if conv == KCP_VIDEO_CONV && sessions.len() < MAX_KCP_CLIENTS {
+                            // 新客户端握手
+                            let conv = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
+                            if conv == KCP_VIDEO_CONV {
+                                let can_accept = {
+                                    let sessions = recv_sessions.read().await;
+                                    sessions.len() < MAX_KCP_CLIENTS
+                                };
+                                if can_accept {
                                     tracing::info!("[KCP] 新客户端连接: {}", addr);
                                     let output = UdpOutput {
                                         socket: recv_socket.clone(),
                                         addr,
                                     };
                                     let mut kcp = kcp::Kcp::new(conv, output);
-                                    // 设置极低延迟模式（借鉴 RustDesk 的 KCP 配置）
-                                    // nodelay: 1 = 启用 nodelay
-                                    // interval: 5ms 更新间隔
-                                    // resend: 2 = 快速重传（2次ACK跨越就重传）
-                                    // nc: 1 = 关闭流控
                                     let _ = kcp.set_nodelay(true, 5, 2, true);
                                     let _ = kcp.set_mtu(KCP_MTU);
-                                    let _ = kcp.set_wndsize(256, 256); // 大窗口减少丢包
+                                    let _ = kcp.set_wndsize(256, 256);
 
                                     if let Err(e) = kcp.input(data) {
                                         tracing::warn!("[KCP] 初始 input error: {}", e);
                                     }
 
-                                    sessions.insert(addr, KcpSession {
+                                    let session = Arc::new(std::sync::Mutex::new(KcpSession {
                                         kcp,
                                         addr,
                                         last_active: std::time::Instant::now(),
                                         fec_buffer: Vec::with_capacity(FEC_GROUP_SIZE),
                                         fec_group_id: 0,
-                                    });
-                                } else if sessions.len() >= MAX_KCP_CLIENTS {
+                                    }));
+
+                                    let mut sessions = recv_sessions.write().await;
+                                    if sessions.len() < MAX_KCP_CLIENTS {
+                                        sessions.insert(addr, session);
+                                    } else {
+                                        tracing::warn!("[KCP] 客户端数已达上限，拒绝 {}", addr);
+                                    }
+                                } else {
                                     tracing::warn!("[KCP] 客户端数已达上限，拒绝 {}", addr);
                                 }
                             }
@@ -154,47 +158,58 @@ impl KcpServer {
             }
         });
 
-        // 启动发送任务（将视频帧发送给所有 KCP 客户端）
+        // 发送任务：读锁获取 session 列表，per-session 锁发送（不阻塞其他客户端）
         let send_sessions = sessions.clone();
         tokio::spawn(async move {
             let mut video_rx = server.video_rx;
             loop {
                 match video_rx.recv().await {
                     Ok(data) => {
-                        let mut sessions = send_sessions.write().await;
+                        // 将 data 包装为 Arc 避免多客户端 clone
+                        let data_arc = Arc::new(data);
+
+                        // 读锁获取所有 session（短暂持有，不阻塞 recv/update）
+                        let session_list: Vec<(SocketAddr, Arc<std::sync::Mutex<KcpSession>>)> = {
+                            let sessions = send_sessions.read().await;
+                            sessions.iter().map(|(a, s)| (*a, s.clone())).collect()
+                        };
+
                         let mut dead_addrs = Vec::new();
 
-                        for (addr, session) in sessions.iter_mut() {
-                            // 将数据写入 KCP 发送队列
-                            match session.kcp.send(&data) {
-                                Ok(_) => {
-                                    // 立即刷新，确保最低延迟
-                                    let _ = session.kcp.flush();
-                                    // FEC 前向纠错：累积帧数据，每 FEC_GROUP_SIZE 帧生成 XOR FEC 包
-                                    // 借鉴 Sunshine 的20% FEC 冗余策略，可恢复 UDP 传输中任意单帧丢失
-                                    if data.len() <= 65000 {
-                                        session.fec_buffer.push(data.clone());
-                                        if session.fec_buffer.len() >= FEC_GROUP_SIZE {
-                                            let fec_data = generate_kcp_fec_xor(&session.fec_buffer);
-                                            let fec_msg = build_kcp_fec_message(session.fec_group_id, &fec_data);
-                                            let _ = session.kcp.send(&fec_msg);
-                                            let _ = session.kcp.flush();
-                                            session.fec_buffer.clear();
-                                            session.fec_group_id = session.fec_group_id.wrapping_add(1);
+                        for (addr, session_arc) in session_list {
+                            if let Ok(mut session) = session_arc.lock() {
+                                match session.kcp.send(&data_arc[..]) {
+                                    Ok(_) => {
+                                        let _ = session.kcp.flush();
+
+                                        // FEC: 使用 Arc clone（仅引用计数，零拷贝）
+                                        if data_arc.len() <= 65000 {
+                                            session.fec_buffer.push(data_arc.clone());
+                                            if session.fec_buffer.len() >= FEC_GROUP_SIZE {
+                                                let fec_data = generate_kcp_fec_xor(&session.fec_buffer);
+                                                let fec_msg = build_kcp_fec_message(session.fec_group_id, &fec_data);
+                                                let _ = session.kcp.send(&fec_msg);
+                                                let _ = session.kcp.flush();
+                                                session.fec_buffer.clear();
+                                                session.fec_group_id = session.fec_group_id.wrapping_add(1);
+                                            }
                                         }
                                     }
-                                }
-                                Err(e) => {
-                                    tracing::warn!("[KCP] send error to {}: {}", addr, e);
-                                    dead_addrs.push(*addr);
+                                    Err(e) => {
+                                        tracing::warn!("[KCP] send error to {}: {}", addr, e);
+                                        dead_addrs.push(addr);
+                                    }
                                 }
                             }
                         }
 
-                        // 清理断开的客户端
-                        for addr in dead_addrs {
-                            tracing::info!("[KCP] 移除断开的客户端: {}", addr);
-                            sessions.remove(&addr);
+                        // 写锁清理断开的客户端
+                        if !dead_addrs.is_empty() {
+                            let mut sessions = send_sessions.write().await;
+                            for addr in &dead_addrs {
+                                tracing::info!("[KCP] 移除断开的客户端: {}", addr);
+                                sessions.remove(addr);
+                            }
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(_)) => {
@@ -205,32 +220,41 @@ impl KcpServer {
             }
         });
 
-        // 启动 KCP 更新任务（定期调用 kcp.update() 驱动协议栈）
+        // KCP 更新任务：同样使用读锁 + per-session 锁
         let update_sessions = sessions.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_millis(KCP_UPDATE_INTERVAL_MS));
             let start = std::time::Instant::now();
             loop {
                 interval.tick().await;
-                let mut sessions = update_sessions.write().await;
                 let now = std::time::Instant::now();
                 let current_ms = now.duration_since(start).as_millis() as u32;
+
+                let session_list: Vec<(SocketAddr, Arc<std::sync::Mutex<KcpSession>>)> = {
+                    let sessions = update_sessions.read().await;
+                    sessions.iter().map(|(a, s)| (*a, s.clone())).collect()
+                };
+
                 let mut dead_addrs = Vec::new();
 
-                for (addr, session) in sessions.iter_mut() {
-                    // 超过 30 秒无活动的客户端断开
-                    if now.duration_since(session.last_active).as_secs() > 30 {
-                        dead_addrs.push(*addr);
-                        continue;
-                    }
-                    if let Err(e) = session.kcp.update(current_ms) {
-                        tracing::warn!("[KCP] update error for {}: {}", addr, e);
+                for (addr, session_arc) in session_list {
+                    if let Ok(mut session) = session_arc.lock() {
+                        if now.duration_since(session.last_active).as_secs() > 30 {
+                            dead_addrs.push(addr);
+                            continue;
+                        }
+                        if let Err(e) = session.kcp.update(current_ms) {
+                            tracing::warn!("[KCP] update error for {}: {}", addr, e);
+                        }
                     }
                 }
 
-                for addr in dead_addrs {
-                    tracing::info!("[KCP] 超时移除客户端: {}", addr);
-                    sessions.remove(&addr);
+                if !dead_addrs.is_empty() {
+                    let mut sessions = update_sessions.write().await;
+                    for addr in &dead_addrs {
+                        tracing::info!("[KCP] 超时移除客户端: {}", addr);
+                        sessions.remove(addr);
+                    }
                 }
             }
         });
@@ -239,8 +263,8 @@ impl KcpServer {
     }
 }
 
-/// 生成 XOR 前向纠错数据（所有帧异或，可恢复组内任意单帧丢失）
-fn generate_kcp_fec_xor(frames: &[Vec<u8>]) -> Vec<u8> {
+/// 生成 XOR 前向纠错数据
+fn generate_kcp_fec_xor(frames: &[Arc<Vec<u8>>]) -> Vec<u8> {
     if frames.is_empty() {
         return Vec::new();
     }
@@ -254,8 +278,6 @@ fn generate_kcp_fec_xor(frames: &[Vec<u8>]) -> Vec<u8> {
     fec
 }
 
-/// 构建 KCP FEC 消息
-/// 格式: [tag="fec"(3B)][group_id(4B)][fec_data]
 fn build_kcp_fec_message(group_id: u32, fec_data: &[u8]) -> Vec<u8> {
     let mut msg = Vec::with_capacity(3 + 4 + fec_data.len());
     msg.extend_from_slice(b"fec");

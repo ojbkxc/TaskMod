@@ -17,8 +17,19 @@ start_web_server() {
   if [ -f "$SERVER_BIN" ]; then
     chmod 755 "$SERVER_BIN"
     mkdir -p "$SCREENSHOTS_DIR"
-    nohup "$SERVER_BIN" >> "$LOG_FILE" 2>&1 &
-    log "Web 管理服务已启动 (端口 9527)"
+    # 使用 env 确保子进程继承完整的 PATH 环境变量
+    # nohup 后台启动，>> "$LOG_FILE" 2>&1 捕获所有输出
+    env -i PATH="$PATH" ANDROID_ROOT="/system" HOME="/data/adb/modules/TaskMod" \
+      nohup "$SERVER_BIN" >> "$LOG_FILE" 2>&1 &
+    SERVER_PID=$!
+    log "Web 管理服务已启动 (端口 9527, PID: $SERVER_PID)"
+    # 等待 1 秒后检查进程是否存活
+    sleep 1
+    if kill -0 "$SERVER_PID" 2>/dev/null; then
+      log "Web 服务进程存活确认"
+    else
+      log "Web 服务进程启动后立即退出，请检查日志"
+    fi
   else
     log "Web 服务二进制不存在: $SERVER_BIN"
   fi

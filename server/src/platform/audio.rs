@@ -61,8 +61,10 @@ impl AudioCapture for AndroidAudioCapture {
             };
 
             use tokio::io::AsyncReadExt;
-            let mut reader = tokio::io::BufReader::with_capacity(65536, stdout);
-            let mut buf = vec![0u8; 65536];
+            // 缓冲区从 64KB 减小到 16KB（约 170ms 延迟，48kHz/16bit/mono）
+            // 减少内存分配频率和音频延迟
+            let mut reader = tokio::io::BufReader::with_capacity(16384, stdout);
+            let mut buf = vec![0u8; 16384];
             let mut wav_header_skipped = false;
             let mut header_buf = Vec::new();
 
@@ -162,13 +164,15 @@ impl AudioCapture for DesktopAudioCapture {
             };
 
             use tokio::io::AsyncReadExt;
-            let mut reader = tokio::io::BufReader::with_capacity(65536, stdout);
-            let mut buf = vec![0u8; 65536];
+            // 缓冲区从 64KB 减小到 16KB（约 170ms 延迟），减少内存分配
+            let mut reader = tokio::io::BufReader::with_capacity(16384, stdout);
+            let mut buf = vec![0u8; 16384];
 
             loop {
                 match reader.read(&mut buf).await {
                     Ok(0) => break,
                     Ok(n) => {
+                        // 直接从 buf 切片创建 Vec，避免中间拷贝
                         if tx.send(AudioFrame::Pcm(buf[..n].to_vec())).await.is_err() {
                             break;
                         }

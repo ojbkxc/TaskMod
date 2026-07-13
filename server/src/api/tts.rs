@@ -212,55 +212,69 @@ async fn apply_tts_params(rate: f32, pitch: f32, volume: f32) {
     }
 }
 
-/// 执行单次 cmd tts speak（带详细日志和多重容错）
+/// 执行单次 TTS 朗读（多重容错，优先使用 Android TTS Intent 机制）
+///
+/// 策略优先级:
+/// 1. am startservice 通过 Intent 调用系统 TTS（兼容性最好，几乎所有设备都有）
+/// 2. am broadcast 广播方式触发 TTS
+/// 3. cmd tts speak（部分设备不支持此命令，如 MIUI）
+/// 4. 通过 intent + EXTRA_TEXT 直接调用 TTS 引擎（最终 fallback）
 async fn exec_speak(text: &str, engine: Option<&str>, language: Option<&str>) -> bool {
-    // 尝试多种方式执行 TTS
-    let methods: Vec<(&str, Vec<String>)> = vec![
-        // 方法1: /system/bin/cmd tts speak（标准路径）
-        ("/system/bin/cmd", {
-            let mut args = vec!["tts".to_string(), "speak".to_string()];
-            if let Some(e) = engine {
-                args.push("-e".to_string());
-                args.push(e.to_string());
-            }
-            if let Some(l) = language {
-                args.push("-l".to_string());
-                args.push(l.to_string());
-            }
-            args.push(text.to_string());
-            args
-        }),
-        // 方法2: cmd tts speak（PATH查找）
-        ("cmd", {
-            let mut args = vec!["tts".to_string(), "speak".to_string()];
-            if let Some(e) = engine {
-                args.push("-e".to_string());
-                args.push(e.to_string());
-            }
-            if let Some(l) = language {
-                args.push("-l".to_string());
-                args.push(l.to_string());
-            }
-            args.push(text.to_string());
-            args
-        }),
-    ];
+    let escaped = text.replace('\'', "'\\''");
+    let engine_pkg = engine.unwrap_or("");
 
-    for (bin, args) in &methods {
-        match Command::new(bin)
-            .args(args)
+    // 方法1: 使用 am startservice 通过 Intent 调用系统 TTS Service
+    // 这是最兼容的方式，几乎所有 Android 设备都支持
+    let engine_extra = if !engine_pkg.is_empty() {
+        format!(" --es engine {}", engine_pkg)
+    } else {
+        String::new()
+    };
+    let lang_extra = if let Some(l) = language {
+        format!(" --es language {}", l)
+    } else {
+        String::new()
+    };
+
+    // 先尝试用 am startservice 直接启动 TTS 播放 Intent
+    for (bin, args) in [
+        (
+            "/system/bin/am",
+            vec![
+                "startservice".to_string(),
+                "-a".to_string(),
+                "android.speech.tts.TTS_SERVICE".to_string(),
+                "--es".to_string(),
+                "text".to_string(),
+                text.to_string(),
+            ],
+        ),
+        (
+            "/system/bin/am",
+            vec![
+                "broadcast".to_string(),
+                "-a".to_string(),
+                "android.speech.tts.TTS_SERVICE".to_string(),
+                "--es".to_string(),
+                "text".to_string(),
+                text.to_string(),
+                "--ei".to_string(),
+                "stream".to_string(),
+                "3".to_string(),
+            ],
+        ),
+    ] {
+        match Command::new(bin).args(&args)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .output()
-            .await
+            .output().await
         {
             Ok(output) => {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 let stdout = String::from_utf8_lossy(&output.stdout);
-                if output.status.success() {
+                if output.status.success() && !stderr.contains("Error") && !stderr.contains("error") {
                     return true;
                 }
-                // 记录失败原因
                 eprintln!("[TTS] {} 返回失败: status={:?}, stdout={}, stderr={}",
                     bin, output.status.code(), stdout.trim(), stderr.trim());
             }
@@ -270,11 +284,45 @@ async fn exec_speak(text: &str, engine: Option<&str>, language: Option<&str>) ->
         }
     }
 
-    // 方法3: 通过 sh -c 执行（兼容更多shell环境）
-    let engine_arg = engine.map(|e| format!(" -e {}", e)).unwrap_or_default();
-    let lang_arg = language.map(|l| format!(" -l {}", l)).unwrap_or_default();
-    let sh_cmd = format!("cmd tts speak{}{} '{}'", engine_arg, lang_arg, text.replace('\'', "'\\''"));
-    match Command::new("sh").arg("-c").arg(&sh_cmd)
+    // 方法2: cmd tts speak（仅部分设备支持）
+    let mut cmd_args = vec!["tts".to_string(), "speak".to_string()];
+    if !engine_pkg.is_empty() {
+        cmd_args.push("-e".to_string());
+        cmd_args.push(engine_pkg.to_string());
+    }
+    if let Some(l) = language {
+        cmd_args.push("-l".to_string());
+        cmd_args.push(l.to_string());
+    }
+    cmd_args.push(text.to_string());
+
+    for bin in &["/system/bin/cmd", "cmd"] {
+        match Command::new(bin).args(&cmd_args)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output().await
+        {
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if output.status.success() && !stderr.contains("Can't find service") {
+                    return true;
+                }
+                eprintln!("[TTS] {} 返回失败: status={:?}, stdout={}, stderr={}",
+                    bin, output.status.code(), stdout.trim(), stderr.trim());
+            }
+            Err(e) => {
+                eprintln!("[TTS] {} 执行错误: {}", bin, e);
+            }
+        }
+    }
+
+    // 方法3: 直接用 intent 调用默认 TTS 引擎
+    let intent_cmd = format!(
+        "am start -a android.speech.action.TTS_TEXT --es text '{}' --ei streamType 3",
+        escaped
+    );
+    match Command::new("/system/bin/sh").arg("-c").arg(&intent_cmd)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .output().await
@@ -284,10 +332,10 @@ async fn exec_speak(text: &str, engine: Option<&str>, language: Option<&str>) ->
                 return true;
             }
             let stderr = String::from_utf8_lossy(&output.stderr);
-            eprintln!("[TTS] sh -c 返回失败: stderr={}", stderr.trim());
+            eprintln!("[TTS] intent fallback 返回失败: stderr={}", stderr.trim());
         }
         Err(e) => {
-            eprintln!("[TTS] sh -c 执行错误: {}", e);
+            eprintln!("[TTS] intent fallback 执行错误: {}", e);
         }
     }
 
@@ -366,7 +414,16 @@ pub async fn speak(Json(req): Json<TtsRequest>) -> Json<ApiResponse<String>> {
 }
 
 pub async fn stop_tts() -> Json<ApiResponse<String>> {
-    // 尝试多种方式停止 TTS
+    // 方法1: am broadcast 停止 TTS
+    let result = Command::new("/system/bin/am")
+        .args(["broadcast", "-a", "android.speech.tts.TTS_SERVICE", "--ez", "stop", "true"])
+        .output().await;
+    if let Ok(output) = result {
+        if output.status.success() {
+            return Json(ApiResponse::ok("语音播放已停止".to_string()));
+        }
+    }
+    // 方法2: cmd tts stop（部分设备支持）
     for bin in &["/system/bin/cmd", "cmd"] {
         let result = Command::new(bin)
             .args(["tts", "stop"])
@@ -376,12 +433,6 @@ pub async fn stop_tts() -> Json<ApiResponse<String>> {
                 return Json(ApiResponse::ok("语音播放已停止".to_string()));
             }
         }
-    }
-    // fallback: 强制停止常见 TTS 引擎
-    for engine in ["com.google.android.tts", "com.miui.tts", "com.iflytek.tts", "com.baidu.tts"] {
-        let _ = Command::new("am")
-            .args(["force-stop", engine])
-            .status().await;
     }
     Json(ApiResponse::ok("语音播放已停止".to_string()))
 }

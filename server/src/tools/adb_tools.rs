@@ -22,13 +22,17 @@ pub struct AdbTtsTool;
 
 impl AiTool for AdbTapTool {
     fn name(&self) -> &str { "adb_tap" }
-    fn description(&self) -> &str { "点击屏幕指定位置" }
+    fn description(&self) -> &str {
+        "模拟点击屏幕指定坐标位置。使用前请先用get_device_info获取屏幕分辨率，确保坐标在有效范围内。\
+         坐标系: 左上角(0,0)，X轴向右增大，Y轴向下增大。\
+         常见1080x2400屏幕: 状态栏约y=100，底部导航栏约y=2300。"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
             "properties": {
-                "x": {"type": "integer", "description": "X坐标"},
-                "y": {"type": "integer", "description": "Y坐标"}
+                "x": {"type": "integer", "description": "X坐标（像素），从左到右，通常范围 0~1080"},
+                "y": {"type": "integer", "description": "Y坐标（像素），从上到下，通常范围 0~2400"}
             },
             "required": ["x", "y"]
         })
@@ -46,7 +50,11 @@ impl AiTool for AdbTapTool {
 
 impl AiTool for AdbSwipeTool {
     fn name(&self) -> &str { "adb_swipe" }
-    fn description(&self) -> &str { "滑动屏幕" }
+    fn description(&self) -> &str {
+        "模拟屏幕滑动操作，从起始坐标滑动到结束坐标。\
+         用于: 下拉通知栏(y1小->y2大)、上滑返回(y1大->y2小)、左右翻页等。\
+         注意: 滑动距离建议>=200像素，否则可能被识别为点击而非滑动。"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -73,12 +81,23 @@ impl AiTool for AdbSwipeTool {
 
 impl AiTool for AdbKeyeventTool {
     fn name(&self) -> &str { "adb_keyevent" }
-    fn description(&self) -> &str { "模拟按键事件" }
+    fn description(&self) -> &str {
+        "模拟物理按键事件。\
+         常用按键: back(返回)、home(主屏幕)、power(电源键/唤醒屏幕)、\
+         volume_up(音量加)、volume_down(音量减)、recents(最近任务)、\
+         enter(回车)、delete(删除)、menu(菜单)、\
+         page_up(上翻页)、page_down(下翻页)、escape(返回/关闭)。\
+         唤醒屏幕: 先用power唤醒，再用adb_unlock_screen解锁。"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
             "properties": {
-                "key": {"type": "string", "description": "按键名称: back, home, power, volume_up, volume_down, recents"}
+                "key": {
+                    "type": "string",
+                    "description": "按键名称",
+                    "enum": ["back", "home", "power", "volume_up", "volume_down", "recents", "menu", "enter", "delete", "tab", "space", "camera", "search", "page_up", "page_down", "escape"]
+                }
             },
             "required": ["key"]
         })
@@ -96,12 +115,15 @@ impl AiTool for AdbKeyeventTool {
 
 impl AiTool for AdbInputTextTool {
     fn name(&self) -> &str { "adb_input_text" }
-    fn description(&self) -> &str { "输入文本" }
+    fn description(&self) -> &str {
+        "向当前聚焦的输入框输入文本。注意: 调用前需确保输入框已获得焦点（可先用adb_tap点击输入框）。\
+         只支持ASCII字符和中文，不支持直接输入换行符。如果输入失败，可以尝试用adb_command执行 'input text \"文本\"'。"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
             "properties": {
-                "text": {"type": "string", "description": "要输入的文本"}
+                "text": {"type": "string", "description": "要输入的文本内容（仅ASCII和中文，空格会被自动处理）"}
             },
             "required": ["text"]
         })
@@ -119,12 +141,14 @@ impl AiTool for AdbInputTextTool {
 
 impl AiTool for AdbScreencapTool {
     fn name(&self) -> &str { "adb_screencap" }
-    fn description(&self) -> &str { "截取屏幕并保存" }
+    fn description(&self) -> &str {
+        "截取当前屏幕画面并保存为PNG文件。文件保存在 /sdcard/TaskMod/screenshots/ 目录下。"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
             "properties": {
-                "filename": {"type": "string", "description": "保存的文件名"}
+                "filename": {"type": "string", "description": "保存的文件名（含路径），如 /sdcard/TaskMod/screenshots/test.png"}
             },
             "required": ["filename"]
         })
@@ -142,12 +166,16 @@ impl AiTool for AdbScreencapTool {
 
 impl AiTool for AdbCommandTool {
     fn name(&self) -> &str { "adb_command" }
-    fn description(&self) -> &str { "执行任意ADB命令" }
+    fn description(&self) -> &str {
+        "执行任意shell命令（通过 /system/bin/sh -c），支持管道、重定向等复杂语法。\
+         当专用工具不够用时可用此工具。例如: 'ls /sdcard/', 'pm list packages', 'dumpsys activity tops'。\
+         危险操作需先确认用户意图。"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
             "properties": {
-                "command": {"type": "string", "description": "要执行的命令"}
+                "command": {"type": "string", "description": "要执行的shell命令字符串"}
             },
             "required": ["command"]
         })
@@ -165,12 +193,16 @@ impl AiTool for AdbCommandTool {
 
 impl AiTool for AdbStartAppTool {
     fn name(&self) -> &str { "adb_start_app" }
-    fn description(&self) -> &str { "启动指定应用" }
+    fn description(&self) -> &str {
+        "启动指定应用。需传入应用包名(package name)，如 com.android.settings(设置)、\
+         com.tencent.mm(微信)、com.android.chrome(浏览器)。\
+         如果不确定包名，先用get_running_apps查看或用adb_command执行'pm list packages -3'查看第三方应用。"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
             "properties": {
-                "package_name": {"type": "string", "description": "应用包名，如 com.android.settings"}
+                "package_name": {"type": "string", "description": "应用包名，如 com.android.settings、com.tencent.mm"}
             },
             "required": ["package_name"]
         })
@@ -188,7 +220,9 @@ impl AiTool for AdbStartAppTool {
 
 impl AiTool for AdbStopAppTool {
     fn name(&self) -> &str { "adb_stop_app" }
-    fn description(&self) -> &str { "强制停止指定应用" }
+    fn description(&self) -> &str {
+        "强制停止指定应用（am force-stop），等同于从任务管理器中结束应用。"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -211,7 +245,9 @@ impl AiTool for AdbStopAppTool {
 
 impl AiTool for GetWifiInfoTool {
     fn name(&self) -> &str { "get_wifi_info" }
-    fn description(&self) -> &str { "获取当前WiFi连接信息" }
+    fn description(&self) -> &str {
+        "获取当前WiFi连接信息，包括SSID(网络名称)、BSSID(路由器MAC)、IP地址。"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -227,7 +263,9 @@ impl AiTool for GetWifiInfoTool {
 
 impl AiTool for GetDeviceInfoTool {
     fn name(&self) -> &str { "get_device_info" }
-    fn description(&self) -> &str { "获取设备系统信息（电池、存储、型号等）" }
+    fn description(&self) -> &str {
+        "获取设备系统信息，包括设备型号、Android版本、存储空间。建议在执行屏幕操作前先调用此工具获取屏幕分辨率。"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -243,7 +281,9 @@ impl AiTool for GetDeviceInfoTool {
 
 impl AiTool for GetBatteryInfoTool {
     fn name(&self) -> &str { "get_battery_info" }
-    fn description(&self) -> &str { "获取电池信息（电量、温度等）" }
+    fn description(&self) -> &str {
+        "获取电池详细信息，包括电量百分比、充电状态、温度、健康状态等。"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -259,7 +299,9 @@ impl AiTool for GetBatteryInfoTool {
 
 impl AiTool for GetRunningAppsTool {
     fn name(&self) -> &str { "get_running_apps" }
-    fn description(&self) -> &str { "获取当前运行的应用列表" }
+    fn description(&self) -> &str {
+        "获取当前正在运行的应用列表（最多显示20个第三方应用）。可用于确认某个应用是否在运行。"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -275,7 +317,9 @@ impl AiTool for GetRunningAppsTool {
 
 impl AiTool for AdbRebootTool {
     fn name(&self) -> &str { "adb_reboot" }
-    fn description(&self) -> &str { "重启设备" }
+    fn description(&self) -> &str {
+        "重启设备。这是一个危险操作，执行前务必确认用户意图！"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -291,7 +335,9 @@ impl AiTool for AdbRebootTool {
 
 impl AiTool for AdbShutdownTool {
     fn name(&self) -> &str { "adb_shutdown" }
-    fn description(&self) -> &str { "关闭设备（需要root权限）" }
+    fn description(&self) -> &str {
+        "关闭设备（需要root权限）。这是一个危险操作，执行前务必确认用户意图！"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -307,7 +353,10 @@ impl AiTool for AdbShutdownTool {
 
 impl AiTool for AdbClearAppDataTool {
     fn name(&self) -> &str { "adb_clear_app_data" }
-    fn description(&self) -> &str { "清除指定应用的数据（需要root权限）" }
+    fn description(&self) -> &str {
+        "清除指定应用的所有数据（缓存、用户数据、数据库等），等同于在设置中"清除数据"。\
+         需要root权限。此操作不可逆，执行前务必确认用户意图！"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -330,7 +379,10 @@ impl AiTool for AdbClearAppDataTool {
 
 impl AiTool for AdbTtsTool {
     fn name(&self) -> &str { "adb_tts" }
-    fn description(&self) -> &str { "使用系统TTS语音播放文本（支持小爱同学等语音助手）" }
+    fn description(&self) -> &str {
+        "使用系统TTS语音引擎播放文本语音。会依次尝试广播、cmd speech、am startservice三种方式。\
+         如果播放失败可能是因为设备未安装TTS引擎。"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -355,7 +407,10 @@ pub struct AdbUnlockTool;
 
 impl AiTool for AdbUnlockTool {
     fn name(&self) -> &str { "adb_unlock_screen" }
-    fn description(&self) -> &str { "上滑解锁屏幕（从屏幕底部向上滑动）" }
+    fn description(&self) -> &str {
+        "唤醒屏幕并上滑解锁。会自动获取屏幕分辨率计算滑动坐标。\
+         仅适用于无密码/图案锁屏的设备（滑动锁屏）。如果有密码锁屏，此操作只能唤醒屏幕并上滑，但无法解锁。"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
