@@ -710,7 +710,7 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> axum::response::Response {
 pub fn load_ai_providers() -> Vec<AiProvider> {
     // 检查文件修改时间，只在文件变化时重新读取磁盘
     let mtime = std::fs::metadata(AI_CONF).ok().and_then(|m| m.modified().ok());
-    if let Ok(mut cache) = PROVIDER_CACHE.lock() {
+    if let Ok(cache) = PROVIDER_CACHE.lock() {
         if cache.0 == mtime && !cache.1.is_empty() {
             return cache.1.clone();
         }

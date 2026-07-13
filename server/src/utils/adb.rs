@@ -18,7 +18,7 @@ const REBOOT: &str = "/system/bin/reboot";
 
 /// 解析命令输出，返回成功/失败及完整信息
 fn parse_output(o: &std::process::Output, success_msg: &str, fail_msg: &str) -> String {
-    let _stdout = String::from_utf8_lossy(&o.stdout);
+    let stdout = String::from_utf8_lossy(&o.stdout);
     let stderr = String::from_utf8_lossy(&o.stderr);
     if o.status.success() {
         if stdout.trim().is_empty() {
@@ -47,7 +47,7 @@ pub async fn run_command(cmd: &str) -> Result<String, String> {
     info!("[adb] run_command: {}", cmd);
     match Command::new(SH).arg("-c").arg(cmd).output().await {
         Ok(o) => {
-            let _stdout = String::from_utf8_lossy(&o.stdout);
+            let stdout = String::from_utf8_lossy(&o.stdout);
             let stderr = String::from_utf8_lossy(&o.stderr);
             if o.status.success() {
                 Ok(stdout.to_string())
@@ -213,7 +213,7 @@ pub async fn start_app(package_name: &str) -> String {
         .await
     {
         Ok(o) => {
-            let _stdout = String::from_utf8_lossy(&o.stdout);
+            let stdout = String::from_utf8_lossy(&o.stdout);
             let stderr = String::from_utf8_lossy(&o.stderr);
             if o.status.success() {
                 format!("应用启动成功: {}", stdout.trim())
@@ -233,7 +233,6 @@ pub async fn stop_app(package_name: &str) -> String {
         .await
     {
         Ok(o) => {
-            let _stdout = String::from_utf8_lossy(&o.stdout);
             let stderr = String::from_utf8_lossy(&o.stderr);
             if o.status.success() {
                 format!("应用已停止: {}", package_name)
@@ -253,7 +252,7 @@ pub async fn clear_app_data(package_name: &str) -> String {
         .await
     {
         Ok(o) => {
-            let _stdout = String::from_utf8_lossy(&o.stdout);
+            let stdout = String::from_utf8_lossy(&o.stdout);
             let stderr = String::from_utf8_lossy(&o.stderr);
             if o.status.success() {
                 format!("数据清除成功: {}", stdout.trim())
@@ -275,7 +274,6 @@ pub async fn tap(x: i32, y: i32) -> String {
         .await
     {
         Ok(o) => {
-            let _stdout = String::from_utf8_lossy(&o.stdout);
             let stderr = String::from_utf8_lossy(&o.stderr);
             if o.status.success() {
                 format!("点击成功: ({}, {})", x, y)
@@ -308,7 +306,6 @@ pub async fn swipe(x1: i32, y1: i32, x2: i32, y2: i32) -> String {
         .await
     {
         Ok(o) => {
-            let _stdout = String::from_utf8_lossy(&o.stdout);
             let stderr = String::from_utf8_lossy(&o.stderr);
             if o.status.success() {
                 format!("滑动成功: ({}, {}) -> ({}, {})", x1, y1, x2, y2)
@@ -358,7 +355,6 @@ pub async fn keyevent(key: &str) -> String {
         .await
     {
         Ok(o) => {
-            let _stdout = String::from_utf8_lossy(&o.stdout);
             let stderr = String::from_utf8_lossy(&o.stderr);
             if o.status.success() {
                 format!("按键模拟成功: {}", key)
@@ -396,7 +392,6 @@ pub async fn input_text(text: &str) -> String {
         .await
     {
         Ok(o) => {
-            let _stdout = String::from_utf8_lossy(&o.stdout);
             let stderr = String::from_utf8_lossy(&o.stderr);
             if o.status.success() {
                 format!("输入成功: {}", text)
@@ -426,7 +421,6 @@ pub async fn screencap(filename: &str) -> String {
         .await
     {
         Ok(o) => {
-            let _stdout = String::from_utf8_lossy(&o.stdout);
             let stderr = String::from_utf8_lossy(&o.stderr);
             if o.status.success() {
                 format!("截图成功: {}", filename)
@@ -573,4 +567,5 @@ pub async fn tts_speak(text: &str, engine: Option<String>) -> String {
         Err(e) => format!("TTS语音播放失败: {}", e),
     }
 }
+
 
