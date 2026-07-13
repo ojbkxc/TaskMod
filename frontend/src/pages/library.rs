@@ -7,7 +7,8 @@ use crate::api::client::{
     list_presets, save_preset, update_preset, delete_preset,
     list_skills, create_skill, update_skill, delete_skill,
     list_projects, create_project, update_project, delete_project,
-    list_scenarios, list_saved_items, create_saved_item, update_saved_item, delete_saved_item,
+    list_scenarios, create_scenario, update_scenario, delete_scenario,
+    list_saved_items, create_saved_item, update_saved_item, delete_saved_item,
     list_mcp_servers, create_mcp_server, update_mcp_server, delete_mcp_server,
     list_screenshots, get_prompt_settings, update_prompt_settings, PromptSettings,
     Memory, Preset, Skill, Project, Scenario, SavedItem, McpServer,
@@ -142,6 +143,12 @@ pub fn LibraryPage() -> Element {
                     let auto_inject = data.get("auto_inject").and_then(|a| a.as_bool()).unwrap_or(false);
                     let _ = create_project(name, description, instructions, enabled, auto_inject).await;
                 }
+                TabType::Scenario => {
+                    let label = data.get("label").and_then(|n| n.as_str()).unwrap_or("");
+                    let template = data.get("template").and_then(|t| t.as_str()).unwrap_or("");
+                    let enabled = data.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true);
+                    let _ = create_scenario(label, template, enabled).await;
+                }
                 TabType::Saved => {
                     let title = data.get("title").and_then(|t| t.as_str()).unwrap_or("");
                     let content = data.get("content").and_then(|c| c.as_str()).unwrap_or("");
@@ -203,6 +210,12 @@ pub fn LibraryPage() -> Element {
                     let enabled = data.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true);
                     let auto_inject = data.get("auto_inject").and_then(|a| a.as_bool()).unwrap_or(false);
                     let _ = update_project(id, name, description, instructions, enabled, auto_inject).await;
+                }
+                TabType::Scenario => {
+                    let label = data.get("label").and_then(|n| n.as_str()).unwrap_or("");
+                    let template = data.get("template").and_then(|t| t.as_str()).unwrap_or("");
+                    let enabled = data.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true);
+                    let _ = update_scenario(id, label, template, enabled).await;
                 }
                 TabType::Saved => {
                     let title = data.get("title").and_then(|t| t.as_str()).unwrap_or("");
@@ -386,6 +399,31 @@ pub fn LibraryPage() -> Element {
                                 scenarios: filtered_scenarios,
                                 search_query: state.read().search_query.clone(),
                                 on_search: handle_search,
+                                on_create: open_create_modal,
+                                on_edit: move |s| {
+                                    state.write().editing_item = Some(json!({
+                                        "id": s.id,
+                                        "label": s.label,
+                                        "template": s.template,
+                                        "enabled": s.enabled,
+                                        "built_in": s.built_in,
+                                    }));
+                                    state.write().show_create_modal = true;
+                                },
+                                on_delete: move |id| {
+                                    let state = state.clone();
+                                    spawn(async move {
+                                        let _ = delete_scenario(&id).await;
+                                        load_data(state).await;
+                                    });
+                                },
+                                on_update: move |(id, label, template, enabled)| {
+                                    let state = state.clone();
+                                    spawn(async move {
+                                        let _ = update_scenario(&id, &label, &template, enabled).await;
+                                        load_data(state).await;
+                                    });
+                                },
                             }
                         }
                     }
@@ -857,10 +895,21 @@ struct ScenarioListProps {
     scenarios: Vec<Scenario>,
     search_query: String,
     on_search: EventHandler<String>,
+    on_create: EventHandler<()>,
+    on_edit: EventHandler<Scenario>,
+    on_delete: EventHandler<String>,
+    on_update: EventHandler<(String, String, String, bool)>,
 }
 
 #[component]
 fn ScenarioList(props: ScenarioListProps) -> Element {
+    let toggle_enabled = move |scenario: &Scenario| {
+        let props = props.clone();
+        async move {
+            let _ = update_scenario(&scenario.id, &scenario.label, &scenario.template, !scenario.enabled).await;
+        }
+    };
+
     rsx! {
         div { class: "flex flex-col h-full",
             div { class: "flex gap-2 p-3 border-b border-[var(--ds-border)]",
@@ -870,6 +919,12 @@ fn ScenarioList(props: ScenarioListProps) -> Element {
                     value: props.search_query.clone(),
                     oninput: move |e| props.on_search.call(e.value()),
                 }
+                EqButton {
+                    variant: EqButtonVariant::Primary,
+                    size: EqButtonSize::Sm,
+                    onclick: move |_| props.on_create.call(()),
+                    "新建场景"
+                }
             }
             div { class: "flex-1 overflow-y-auto p-3 space-y-2",
                 if props.scenarios.is_empty() {
@@ -877,14 +932,49 @@ fn ScenarioList(props: ScenarioListProps) -> Element {
                 } else {
                     for scenario in &props.scenarios {
                         div {
-                            class: "flex items-center justify-between p-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)]",
-                            div { class: "flex items-center gap-2",
-                                span { class: "text-sm text-[var(--ds-text)]", "{scenario.label}" }
-                                if scenario.built_in {
-                                    span { class: "text-[10px] px-1.5 py-0.5 rounded bg-[var(--ds-surface)] text-[var(--ds-text-tertiary)]", "内置" }
+                            class: "flex items-start justify-between p-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] hover:border-[var(--ds-blue)] transition-colors",
+                            div { class: "flex-1",
+                                div { class: "flex items-center gap-2 mb-1",
+                                    span { class: "text-sm font-medium text-[var(--ds-text)]", "{scenario.label}" }
+                                    if scenario.built_in {
+                                        span { class: "text-[10px] px-1.5 py-0.5 rounded bg-[var(--ds-surface)] text-[var(--ds-text-tertiary)]", "内置" }
+                                    }
+                                    if scenario.enabled {
+                                        div { class: "w-2 h-2 rounded-full bg-green-500" }
+                                    }
                                 }
-                                if scenario.enabled {
-                                    div { class: "w-2 h-2 rounded-full bg-green-500" }
+                                div { class: "text-[10px] text-[var(--ds-text-tertiary)] line-clamp-2", "{scenario.template}" }
+                            }
+                            div { class: "flex items-center gap-1 ml-2",
+                                button {
+                                    class: "p-1.5 hover:bg-[var(--ds-surface)] rounded transition-colors",
+                                    onclick: move |_| {
+                                        spawn(async move { toggle_enabled(scenario).await; });
+                                    },
+                                    svg { 
+                                        class: "w-4 h-4", 
+                                        fill: "none", 
+                                        view_box: "0 0 24 24", 
+                                        stroke: "currentColor",
+                                        class: if scenario.enabled { "text-green-500" } else { "text-[var(--ds-text-tertiary)]" },
+                                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" }
+                                    }
+                                }
+                                if !scenario.built_in {
+                                    button {
+                                        class: "p-1.5 hover:bg-[var(--ds-surface)] rounded transition-colors",
+                                        onclick: move |_| props.on_edit.call(scenario.clone()),
+                                        svg { class: "w-4 h-4 text-[var(--ds-text-secondary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
+                                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" }
+                                        }
+                                    }
+                                    button {
+                                        class: "p-1.5 hover:bg-red-50 rounded transition-colors",
+                                        onclick: move |_| props.on_delete.call(scenario.id.clone()),
+                                        svg { class: "w-4 h-4 text-red-500", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
+                                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1289,6 +1379,12 @@ fn CreateModal(props: CreateModalProps) -> Element {
                 "enabled": enabled.read(),
                 "auto_inject": auto_inject.read(),
             }),
+            TabType::Scenario => json!({
+                "id": editing.get("id").and_then(|i| i.as_str()).unwrap_or(""),
+                "label": name.read(),
+                "template": content.read(),
+                "enabled": enabled.read(),
+            }),
             TabType::Saved => json!({
                 "id": editing.get("id").and_then(|i| i.as_str()).unwrap_or(""),
                 "title": title.read(),
@@ -1334,6 +1430,8 @@ fn CreateModal(props: CreateModalProps) -> Element {
         (TabType::Saved, false) => "新建保存项",
         (TabType::MCP, true) => "编辑MCP服务器",
         (TabType::MCP, false) => "新建MCP服务器",
+        (TabType::Scenario, true) => "编辑场景",
+        (TabType::Scenario, false) => "新建场景",
         _ => "新建",
     };
 
@@ -1511,6 +1609,38 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                         onchange: move |e| auto_inject.write(e.checked()),
                                     }
                                     label { class: "text-xs text-[var(--ds-text-secondary)]", "自动注入上下文" }
+                                }
+                            }
+                        }
+                        TabType::Scenario => {
+                            rsx! {
+                                div {
+                                    label { class: "block text-xs font-medium text-[var(--ds-text-secondary)] mb-1", "场景名称" }
+                                    input {
+                                        class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
+                                        value: name.read().clone(),
+                                        oninput: move |e| name.write(e.value()),
+                                        onmounted: move |md| {
+                                            md.get().ok().map(|el| el.focus());
+                                        },
+                                    }
+                                }
+                                div {
+                                    label { class: "block text-xs font-medium text-[var(--ds-text-secondary)] mb-1", "场景模板" }
+                                    textarea {
+                                        class: "w-full min-h-[100px] px-3 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)] resize-none",
+                                        placeholder: "输入场景的提示模板...",
+                                        value: content.read().clone(),
+                                        oninput: move |e| content.write(e.value()),
+                                    }
+                                }
+                                div { class: "flex items-center gap-2",
+                                    input {
+                                        r#type: "checkbox",
+                                        checked: enabled.read(),
+                                        onchange: move |e| enabled.write(e.checked()),
+                                    }
+                                    label { class: "text-xs text-[var(--ds-text-secondary)]", "启用" }
                                 }
                             }
                         }

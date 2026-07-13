@@ -201,6 +201,19 @@ pub async fn delete_script(name: &str) -> Result<String, reqwest::Error> {
     Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
 }
 
+/// 触发脚本执行
+pub async fn trigger_script(name: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/trigger", API_BASE);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .json(&serde_json::json!({ "script": name }))
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
 /// 获取日志（后端返回 Vec<String>）
 pub async fn get_logs(limit: usize) -> Result<Vec<String>, reqwest::Error> {
     let url = format!("{}/logs?limit={}", API_BASE, limit);
@@ -769,6 +782,41 @@ pub async fn list_scenarios() -> Result<Vec<Scenario>, reqwest::Error> {
     let url = format!("{}/ai/scenarios", API_BASE);
     let resp: ApiResponse<Vec<Scenario>> = reqwest::get(&url).await?.json().await?;
     Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn create_scenario(label: &str, template: &str, enabled: bool) -> Result<Scenario, reqwest::Error> {
+    let url = format!("{}/ai/scenarios", API_BASE);
+    let resp: ApiResponse<Scenario> = reqwest::Client::new()
+        .post(&url)
+        .json(&serde_json::json!({ "label": label, "template": template, "enabled": enabled }))
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn update_scenario(id: &str, label: &str, template: &str, enabled: bool) -> Result<Scenario, reqwest::Error> {
+    let url = format!("{}/ai/scenarios/{}", API_BASE, id);
+    let resp: ApiResponse<Scenario> = reqwest::Client::new()
+        .put(&url)
+        .json(&serde_json::json!({ "label": label, "template": template, "enabled": enabled }))
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.data.unwrap_or_default())
+}
+
+pub async fn delete_scenario(id: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/ai/scenarios/{}", API_BASE, id);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .delete(&url)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
 }
 
 pub async fn screenshot_analyze(prompt: Option<&str>) -> Result<String, reqwest::Error> {
