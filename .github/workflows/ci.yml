@@ -35,8 +35,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             server/target
-            daemon/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('server/Cargo.lock', 'daemon/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('server/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
@@ -53,10 +52,6 @@ jobs:
         working-directory: server
         run: cargo ndk -t arm64-v8a build --release
 
-      - name: Build Daemon
-        working-directory: daemon
-        run: cargo ndk -t arm64-v8a build --release
-
       - name: Package Magisk Module
         id: package
         run: |
@@ -65,9 +60,7 @@ jobs:
           # 将编译产物复制到模块目录
           mkdir -p bin/arm64
           cp server/target/aarch64-linux-android/release/taskmod-server bin/arm64/
-          cp daemon/target/aarch64-linux-android/release/taskmod-daemon bin/arm64/
           chmod +x bin/arm64/taskmod-server
-          chmod +x bin/arm64/taskmod-daemon
 
           # 打包 Magisk 模块 (从仓库根目录打包)
           zip -r TaskMod-${VERSION}.zip . \
