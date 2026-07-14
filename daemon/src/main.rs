@@ -22,6 +22,7 @@ mod r#loop;
 mod process;
 
 use error::Result;
+use ipc::{Command, Response};
 
 fn main() {
     // 初始化日志
@@ -112,18 +113,23 @@ fn cmd_start() -> Result<()> {
 
 /// 停止守护进程
 fn cmd_stop() -> Result<()> {
-    let response = ipc::client_send_command("STOP")?;
-    println!("{}", response);
+    let response = ipc::client_send_command(&Command::Stop)?;
+    match response {
+        Response::Success(msg) => println!("{}", msg),
+        Response::Error(msg) => eprintln!("错误: {}", msg),
+        Response::Json(val) => println!("{}", val),
+    }
     Ok(())
 }
 
 /// 查询状态
 fn cmd_status() -> Result<()> {
-    let response = ipc::client_send_command("STATUS")?;
+    let response = ipc::client_send_command(&Command::Status)?;
 
-    // 尝试格式化 JSON 输出
-    match serde_json::from_str::<serde_json::Value>(&response) {
-        Ok(json) => {
+    match response {
+        Response::Success(msg) => println!("{}", msg),
+        Response::Error(msg) => eprintln!("错误: {}", msg),
+        Response::Json(json) => {
             if let (Some(pid), Some(uptime)) = (
                 json.get("pid").and_then(|v| v.as_u64()),
                 json.get("uptime_secs").and_then(|v| v.as_u64()),
@@ -132,10 +138,9 @@ fn cmd_status() -> Result<()> {
                 println!("PID: {}", pid);
                 println!("运行时长: {} 秒", uptime);
             } else {
-                println!("{}", response);
+                println!("{}", json);
             }
         }
-        Err(_) => println!("{}", response),
     }
 
     Ok(())
@@ -143,8 +148,12 @@ fn cmd_status() -> Result<()> {
 
 /// 触发热重载
 fn cmd_restart() -> Result<()> {
-    let response = ipc::client_send_command("RESTART")?;
-    println!("{}", response);
+    let response = ipc::client_send_command(&Command::RestartAll)?;
+    match response {
+        Response::Success(msg) => println!("{}", msg),
+        Response::Error(msg) => eprintln!("错误: {}", msg),
+        Response::Json(val) => println!("{}", val),
+    }
     Ok(())
 }
 
