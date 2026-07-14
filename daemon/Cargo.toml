@@ -15,7 +15,7 @@ nix = { version = "0.29", features = ["signal", "process", "fs"] }
 libc = "0.2"
 
 # --- HTTP客户端 (用于下载cloudflared) ---
-reqwest = { version = "0.12", features = ["blocking"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 
 # --- 错误处理 ---
 thiserror = "2"
