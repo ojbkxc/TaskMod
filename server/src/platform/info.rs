@@ -222,7 +222,7 @@ async fn get_ip_address() -> String {
         .await
         .and_then(|s| {
             s.split_whitespace()
-                .find(|w| w.chars().all(|c| c.is_digit(10) || c == '.'))
+                .find(|w| w.chars().all(|c| c.is_ascii_digit() || c == '.'))
                 .map(|s| s.to_string())
         })
         .unwrap_or_else(|| "Unknown".to_string())

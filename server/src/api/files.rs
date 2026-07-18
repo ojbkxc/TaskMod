@@ -145,7 +145,7 @@ pub async fn read_file(Query(q): Query<FilePath>) -> Json<ApiResponse<String>> {
     }
 
     // 限制读取大小
-    let meta = match fs::metadata(&p) {
+    let meta = match fs::metadata(p) {
         Ok(m) => m,
         Err(e) => return Json(ApiResponse::err(&format!("获取文件信息失败: {}", e))),
     };
@@ -153,7 +153,7 @@ pub async fn read_file(Query(q): Query<FilePath>) -> Json<ApiResponse<String>> {
         return Json(ApiResponse::err("文件过大（>2MB），请使用其他工具查看"));
     }
 
-    match fs::read_to_string(&p) {
+    match fs::read_to_string(p) {
         Ok(content) => Json(ApiResponse::ok(content)),
         Err(e) => Json(ApiResponse::err(&format!("读取失败: {}", e))),
     }
@@ -296,7 +296,7 @@ pub async fn file_info(Query(q): Query<FilePath>) -> Json<ApiResponse<serde_json
         return Json(ApiResponse::err("路径不存在"));
     }
 
-    let meta = match fs::metadata(&p) {
+    let meta = match fs::metadata(p) {
         Ok(m) => m,
         Err(e) => return Json(ApiResponse::err(&format!("获取信息失败: {}", e))),
     };
@@ -324,7 +324,7 @@ pub async fn file_info(Query(q): Query<FilePath>) -> Json<ApiResponse<serde_json
 
     // 如果是目录，统计子项数量
     let children_count = if is_dir {
-        fs::read_dir(&p).map(|d| d.count()).unwrap_or(0)
+        fs::read_dir(p).map(|d| d.count()).unwrap_or(0)
     } else {
         0
     };
@@ -411,7 +411,7 @@ pub async fn download_file(Query(q): Query<FilePath>) -> impl axum::response::In
         return (axum::http::StatusCode::BAD_REQUEST, "无法下载目录").into_response();
     }
 
-    let data = match fs::read(&p) {
+    let data = match fs::read(p) {
         Ok(d) => d,
         Err(e) => return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("读取失败: {}", e)).into_response(),
     };

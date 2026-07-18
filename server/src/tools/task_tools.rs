@@ -21,7 +21,7 @@ fn read_tasks() -> Vec<(String, String, String, String, Option<u32>)> {
         .map(|line| {
             let parts: Vec<&str> = line.split('|').collect();
             (
-                parts.get(0).map(|s| s.trim().to_string()).unwrap_or_default(),
+                parts.first().map(|s| s.trim().to_string()).unwrap_or_default(),
                 parts.get(1).map(|s| s.trim().to_string()).unwrap_or_else(|| "*".to_string()),
                 parts.get(2).map(|s| s.trim().to_string()).unwrap_or_default(),
                 parts.get(3).map(|s| s.trim().to_string()).unwrap_or_else(|| "daily".to_string()),

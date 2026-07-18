@@ -343,6 +343,7 @@ async fn exec_speak(text: &str, engine: Option<&str>, language: Option<&str>) ->
 }
 
 /// 异步执行TTS（后台播放，不阻塞HTTP请求）
+#[allow(dead_code)]
 fn exec_speak_background(text: String, engine: Option<String>, language: Option<String>) {
     tokio::spawn(async move {
         let ok = exec_speak(&text, engine.as_deref(), language.as_deref()).await;

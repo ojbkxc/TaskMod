@@ -19,7 +19,7 @@ pub async fn list_tasks() -> Json<ApiResponse<Vec<Task>>> {
             let parts: Vec<&str> = line.split('|').collect();
             Task {
                 id: idx + 1,
-                time: parts.get(0).map(|s| s.trim().to_string()).unwrap_or_default(),
+                time: parts.first().map(|s| s.trim().to_string()).unwrap_or_default(),
                 weeks: parts.get(1).map(|s| s.trim().to_string()).unwrap_or_default(),
                 script: parts.get(2).map(|s| s.trim().to_string()).unwrap_or_default(),
                 task_type: parts.get(3).map(|s| s.trim().to_string()).unwrap_or_default(),
@@ -132,7 +132,7 @@ pub async fn trigger_script(Json(req): Json<TriggerRequest>) -> Json<ApiResponse
                             .replace("{script}", &script_name_clone)
                             .replace("{time}", &now.format("%H:%M:%S").to_string())
                             .replace("{date}", &now.format("%Y-%m-%d").to_string())
-                            .replace("{result}", &result.to_string()),
+                            .replace("{result}", result.as_ref()),
                         timeout_secs: email_conf.get("timeout_secs").and_then(|s| s.parse().ok()).unwrap_or(30),
                         max_retries: email_conf.get("max_retries").and_then(|s| s.parse().ok()).unwrap_or(3),
                         retry_interval: email_conf.get("retry_interval").and_then(|s| s.parse().ok()).unwrap_or(1),

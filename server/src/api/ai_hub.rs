@@ -47,7 +47,7 @@ async fn list_json_dir<T: serde::de::DeserializeOwned>(dir: &str) -> Vec<T> {
     if let Ok(mut entries) = fs::read_dir(dir).await {
         while let Ok(Some(entry)) = entries.next_entry().await {
             let path = entry.path();
-            if path.extension().map_or(false, |e| e == "json") {
+            if path.extension().is_some_and(|e| e == "json") {
                 paths.push(path);
             }
         }
@@ -102,7 +102,7 @@ fn session_path(id: &str) -> String {
 
 pub async fn list_sessions() -> Json<ApiResponse<Vec<ChatSession>>> {
     let mut sessions: Vec<ChatSession> = list_json_dir(CHAT_HISTORY_DIR).await;
-    sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    sessions.sort_by_key(|b| std::cmp::Reverse(b.updated_at));
     Json(ApiResponse::ok(sessions))
 }
 
@@ -308,7 +308,7 @@ pub fn get_all_memories_sync() -> Vec<Memory> {
     if let Ok(entries) = std::fs::read_dir(MEMORY_DIR) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(false, |e| e == "json") {
+            if path.extension().is_some_and(|e| e == "json") {
                 if let Ok(data) = std::fs::read(&path) {
                     if let Ok(item) = serde_json::from_slice::<Memory>(&data) {
                         items.push(item);
@@ -317,7 +317,7 @@ pub fn get_all_memories_sync() -> Vec<Memory> {
             }
         }
     }
-    items.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    items.sort_by_key(|b| std::cmp::Reverse(b.updated_at));
     items
 }
 
@@ -635,7 +635,7 @@ pub fn get_enabled_skills_sync() -> Vec<Skill> {
     if let Ok(entries) = std::fs::read_dir(SKILLS_DIR) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(false, |e| e == "json") {
+            if path.extension().is_some_and(|e| e == "json") {
                 if let Ok(data) = std::fs::read(&path) {
                     if let Ok(item) = serde_json::from_slice::<Skill>(&data) {
                         if item.enabled {
@@ -737,7 +737,7 @@ fn saved_item_path(id: &str) -> String {
 
 pub async fn list_saved_items() -> Json<ApiResponse<Vec<SavedItem>>> {
     let mut items: Vec<SavedItem> = list_json_dir(SAVED_ITEMS_DIR).await;
-    items.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    items.sort_by_key(|b| std::cmp::Reverse(b.updated_at));
     Json(ApiResponse::ok(items))
 }
 
@@ -823,7 +823,7 @@ pub fn get_active_projects_sync() -> Vec<Project> {
     if let Ok(entries) = std::fs::read_dir(PROJECTS_DIR) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(false, |e| e == "json") {
+            if path.extension().is_some_and(|e| e == "json") {
                 if let Ok(data) = std::fs::read(&path) {
                     if let Ok(item) = serde_json::from_slice::<Project>(&data) {
                         if item.enabled && item.auto_inject {
@@ -839,7 +839,7 @@ pub fn get_active_projects_sync() -> Vec<Project> {
 
 pub async fn list_projects() -> Json<ApiResponse<Vec<Project>>> {
     let mut items: Vec<Project> = list_json_dir(PROJECTS_DIR).await;
-    items.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    items.sort_by_key(|b| std::cmp::Reverse(b.updated_at));
     Json(ApiResponse::ok(items))
 }
 
@@ -943,7 +943,7 @@ pub fn get_enabled_mcp_servers_sync() -> Vec<McpServer> {
     if let Ok(entries) = std::fs::read_dir(MCP_DIR) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(false, |e| e == "json") {
+            if path.extension().is_some_and(|e| e == "json") {
                 if let Ok(data) = std::fs::read(&path) {
                     if let Ok(item) = serde_json::from_slice::<McpServer>(&data) {
                         if item.enabled {
@@ -1388,7 +1388,7 @@ pub async fn import_skill_from_github(Json(req): Json<SkillImportReq>) -> Json<s
                 // 作为纯文本 prompt_template 处理
                 let id = gen_id();
                 let name = req.name.clone().unwrap_or_else(|| {
-                    raw_url.split('/').last().unwrap_or("imported_skill").replace(".json", "").replace(".md", "")
+                    raw_url.split('/').next_back().unwrap_or("imported_skill").replace(".json", "").replace(".md", "")
                 });
                 let skill = Skill {
                     id: id.clone(),
@@ -1441,14 +1441,14 @@ pub async fn list_mcp_history(Query(params): Query<HashMap<String, String>>) -> 
             if path.extension().and_then(|e| e.to_str()) == Some("json") {
                 if let Ok(data) = fs::read_to_string(&path).await {
                     if let Ok(call) = serde_json::from_str::<McpToolCall>(&data) {
-                        if server_id.map_or(true, |sid| &call.server_id == sid) {
+                        if server_id.is_none_or(|sid| &call.server_id == sid) {
                             calls.push(call);
                         }
                     }
                 }
             }
         }
-        calls.sort_by(|a, b| b.called_at.cmp(&a.called_at));
+        calls.sort_by_key(|b| std::cmp::Reverse(b.called_at));
         calls.truncate(limit);
         Json(json!({"ok": true, "history": calls}))
     } else {

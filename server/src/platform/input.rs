@@ -261,7 +261,7 @@ impl InputController for LinuxInput {
 
     async fn key_event(&self, keycode: i32) -> Result<(), String> {
         let xk = android_keycode_to_linux_xk(keycode);
-        run_cmd("xdotool", &["key", &xk.to_string()]).await
+        run_cmd("xdotool", &["key", xk]).await
     }
 
     async fn input_text(&self, text: &str) -> Result<(), String> {

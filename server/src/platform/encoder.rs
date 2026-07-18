@@ -72,12 +72,14 @@ impl NaluParser {
         }
     }
 
+    #[allow(dead_code)]
     pub fn next_frame_seq(&mut self) -> u32 {
         self.frame_seq = self.frame_seq.wrapping_add(1);
         self.frame_seq as u32
     }
 
     /// 返回相对时间戳（从流开始的毫秒数），避免 u32 溢出
+    #[allow(dead_code)]
     pub fn current_timestamp_ms(&self) -> u32 {
         (self.frame_timestamp - self.start_time) as u32
     }
@@ -169,6 +171,7 @@ impl NaluParser {
 // ==================== Opus 音频编码 ====================
 
 /// Opus 编码配置
+#[allow(dead_code)]
 pub struct OpusConfig {
     pub sample_rate: u32,
     pub channels: u32,
@@ -188,6 +191,7 @@ impl Default for OpusConfig {
 }
 
 /// 使用 ffmpeg 将 PCM 数据编码为 Opus
+#[allow(dead_code)]
 pub async fn encode_pcm_to_opus(pcm: &[u8], config: &OpusConfig) -> Result<Vec<u8>, String> {
     use tokio::io::AsyncWriteExt;
 
@@ -300,6 +304,7 @@ fn now_millis() -> u64 {
 }
 
 /// 判断 NALU 是否是 IDR 关键帧
+#[allow(dead_code)]
 pub fn is_idr_nalu(codec: VideoCodec, nalu_type: u8) -> bool {
     match codec {
         VideoCodec::H264 => nalu_type == 5,
@@ -313,6 +318,7 @@ pub fn is_idr_nalu(codec: VideoCodec, nalu_type: u8) -> bool {
 }
 
 /// 判断 NALU 是否是参考帧
+#[allow(dead_code)]
 pub fn is_reference_frame(codec: VideoCodec, nalu_type: u8) -> bool {
     match codec {
         VideoCodec::H264 => nalu_type == 1 || nalu_type == 5,

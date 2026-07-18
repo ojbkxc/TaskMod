@@ -18,15 +18,20 @@ pub struct ServiceInfo {
     pub last_used: std::time::Instant,
 }
 
+#[allow(dead_code)]
 type ServiceId = String;
+#[allow(dead_code)]
 type LoadFn = Arc<Box<dyn Fn() -> Result<(), String> + Send + Sync + 'static>>;
+#[allow(dead_code)]
 type UnloadFn = Arc<Box<dyn Fn() -> Result<(), String> + Send + Sync + 'static>>;
 
+#[allow(dead_code)]
 struct ServiceDefinition {
     load_fn: LoadFn,
     unload_fn: UnloadFn,
 }
 
+#[allow(dead_code)]
 struct ServiceManagerInner {
     services: HashMap<ServiceId, ServiceDefinition>,
     service_info: HashMap<ServiceId, ServiceInfo>,
@@ -39,6 +44,7 @@ lazy_static::lazy_static! {
     }));
 }
 
+#[allow(dead_code)]
 pub fn register_service(id: &str, load_fn: Box<dyn Fn() -> Result<(), String> + Send + Sync + 'static>, unload_fn: Box<dyn Fn() -> Result<(), String> + Send + Sync + 'static>) {
     let mut inner = SERVICE_MANAGER.lock().unwrap_or_else(|e| e.into_inner());
     inner.services.insert(id.to_string(), ServiceDefinition { load_fn: Arc::new(load_fn), unload_fn: Arc::new(unload_fn) });
@@ -49,11 +55,13 @@ pub fn register_service(id: &str, load_fn: Box<dyn Fn() -> Result<(), String> + 
     });
 }
 
+#[allow(dead_code)]
 pub fn get_service_status(id: &str) -> Option<ServiceStatus> {
     let inner = SERVICE_MANAGER.lock().unwrap_or_else(|e| e.into_inner());
     inner.service_info.get(id).map(|info| info.status.clone())
 }
 
+#[allow(dead_code)]
 pub fn load_service(id: &str) -> Result<(), String> {
     let load_fn;
     {
@@ -99,6 +107,7 @@ pub fn load_service(id: &str) -> Result<(), String> {
     }
 }
 
+#[allow(dead_code)]
 pub fn unload_service(id: &str) -> Result<(), String> {
     let unload_fn;
     {
@@ -149,6 +158,7 @@ pub fn unload_service(id: &str) -> Result<(), String> {
     }
 }
 
+#[allow(dead_code)]
 pub fn use_service<F, T>(id: &str, f: F) -> Result<T, String>
 where
     F: FnOnce() -> T,

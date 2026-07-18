@@ -19,6 +19,7 @@ use std::os::unix::net::UnixDatagram;
 use tokio::net::TcpStream;
 
 const SOCKET_PATH: &str = "/tmp/taskmod.sock";
+#[allow(dead_code)]
 const TCP_IPC_ADDR: &str = "127.0.0.1:8765";
 
 #[derive(Debug, Serialize, Deserialize)]

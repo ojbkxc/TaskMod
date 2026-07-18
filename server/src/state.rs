@@ -210,6 +210,7 @@ pub struct MirrorState {
     pub video_tx: Arc<RwLock<Option<broadcast::Sender<Vec<u8>>>>>,
     pub audio_tx: Arc<RwLock<Option<broadcast::Sender<Vec<u8>>>>>,
     pub is_running: Arc<AtomicBool>,
+    #[allow(dead_code)]
     pub original_brightness: Arc<RwLock<Option<String>>>,
     pub last_touch: Arc<RwLock<Option<(i32, i32)>>>,
     /// 关键帧请求标志（客户端通过 WebSocket 发送 "keyframe" 消息触发）
@@ -249,6 +250,7 @@ impl MirrorState {
         }) = Some(tx);
     }
 
+    #[allow(dead_code)]
     pub fn set_original_brightness(&self, brightness: String) {
         *self.original_brightness.write().unwrap_or_else(|e| {
             tracing::warn!("original_brightness 锁中毒，已恢复");
@@ -284,6 +286,7 @@ impl MirrorState {
         }).as_ref().map(|tx| tx.subscribe())
     }
 
+    #[allow(dead_code)]
     pub fn get_original_brightness(&self) -> Option<String> {
         self.original_brightness.read().unwrap_or_else(|e| {
             tracing::warn!("original_brightness 锁中毒，已恢复");
@@ -317,6 +320,7 @@ impl MirrorState {
         self.request_keyframe.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
+    #[allow(dead_code)]
     pub fn take_keyframe_request(&self) -> bool {
         self.request_keyframe.swap(false, std::sync::atomic::Ordering::Relaxed)
     }

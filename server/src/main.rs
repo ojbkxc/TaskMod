@@ -1,5 +1,4 @@
 use axum::{routing::{delete, get, post, put}, Router, Json};
-use serde_json;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -78,7 +77,7 @@ async fn start_discovery_server(port: u16) {
     use tokio::net::UdpSocket;
     use std::net::UdpSocket as StdUdpSocket;
 
-    let std_socket = match StdUdpSocket::bind(&format!("0.0.0.0:{}", port)) {
+    let std_socket = match StdUdpSocket::bind(format!("0.0.0.0:{}", port)) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("[Discovery] 无法绑定UDP端口 {}: {}", port, e);

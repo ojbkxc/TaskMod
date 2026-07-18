@@ -503,61 +503,62 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> axum::response::Response {
                                             continue;
                                         }
                                         if line.starts_with("data: ") {
-                                            let data = &line[6..];
-                                            if data == "[DONE]" {
-                                                break;
-                                            }
-                                            if let Ok(json_data) = serde_json::from_str::<serde_json::Value>(data) {
-                                                if let Some(choices) = json_data.get("choices") {
-                                                    if let Some(first) = choices.as_array().and_then(|a| a.first()) {
-                                                        if let Some(delta) = first.get("delta") {
-                                                            let content = delta.get("content").and_then(|c| c.as_str()).unwrap_or("");
-                                                            // 思考链捕获 (DeepSeek reasoning_content)
-                                                            let reasoning = delta.get("reasoning_content")
-                                                                .and_then(|c| c.as_str())
-                                                                .or_else(|| delta.get("reasoning").and_then(|c| c.as_str()))
-                                                                .unwrap_or("");
-                                                            if !reasoning.is_empty() {
-                                                                full_thinking.push_str(reasoning);
-                                                                // 优化: 用 format! 替代 json!()+to_string()，避免 serde_json::Value 分配
-                                                                let msg = format!(
-                                                                    "{{\"type\":\"thinking\",\"content\":{}}}",
-                                                                    serde_json::Value::String(reasoning.to_string())
-                                                                );
-                                                                let _ = write.send(axum::extract::ws::Message::Text(msg)).await;
-                                                            }
-                                                            if !content.is_empty() {
-                                                                full_response.push_str(content);
-                                                                // 优化: 直接拼接 JSON 字符串，避免 json! 宏分配 + to_string 二次分配
-                                                                let msg = format!(
-                                                                    "{{\"type\":\"chunk\",\"content\":{}}}",
-                                                                    serde_json::Value::String(content.to_string())
-                                                                );
-                                                                let _ = write.send(axum::extract::ws::Message::Text(msg)).await;
-                                                                streaming_msg_sent = true;
-                                                            }
-                                                            if let Some(tc) = delta.get("tool_calls") {
-                                                                if let Some(tc_array) = tc.as_array() {
-                                                                    for tc_item in tc_array {
-                                                                        has_tool_call = true;
-                                                                        let index = tc_item.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                                                                        if let Some(existing) = tool_call_fragments.get_mut(&index) {
-                                                                            if let Some(existing_func) = existing.get_mut("function") {
-                                                                                if let Some(tc_func) = tc_item.get("function") {
-                                                                                    if let Some(tc_name) = tc_func.get("name").and_then(|v| v.as_str()) {
-                                                                                        existing_func["name"] = serde_json::Value::String(tc_name.to_string());
-                                                                                    }
-                                                                                    if let Some(tc_args) = tc_func.get("arguments").and_then(|v| v.as_str()) {
-                                                                                        let existing_args = existing_func.get("arguments").and_then(|v| v.as_str()).unwrap_or("");
-                                                                                        existing_func["arguments"] = serde_json::Value::String(format!("{}{}", existing_args, tc_args));
+                                            if let Some(data) = line.strip_prefix("data: ") {
+                                                if data == "[DONE]" {
+                                                    break;
+                                                }
+                                                if let Ok(json_data) = serde_json::from_str::<serde_json::Value>(data) {
+                                                    if let Some(choices) = json_data.get("choices") {
+                                                        if let Some(first) = choices.as_array().and_then(|a| a.first()) {
+                                                            if let Some(delta) = first.get("delta") {
+                                                                let content = delta.get("content").and_then(|c| c.as_str()).unwrap_or("");
+                                                                // 思考链捕获 (DeepSeek reasoning_content)
+                                                                let reasoning = delta.get("reasoning_content")
+                                                                    .and_then(|c| c.as_str())
+                                                                    .or_else(|| delta.get("reasoning").and_then(|c| c.as_str()))
+                                                                    .unwrap_or("");
+                                                                if !reasoning.is_empty() {
+                                                                    full_thinking.push_str(reasoning);
+                                                                    // 优化: 用 format! 替代 json!()+to_string()，避免 serde_json::Value 分配
+                                                                    let msg = format!(
+                                                                        "{{\"type\":\"thinking\",\"content\":{}}}",
+                                                                        serde_json::Value::String(reasoning.to_string())
+                                                                    );
+                                                                    let _ = write.send(axum::extract::ws::Message::Text(msg)).await;
+                                                                }
+                                                                if !content.is_empty() {
+                                                                    full_response.push_str(content);
+                                                                    // 优化: 直接拼接 JSON 字符串，避免 json! 宏分配 + to_string 二次分配
+                                                                    let msg = format!(
+                                                                        "{{\"type\":\"chunk\",\"content\":{}}}",
+                                                                        serde_json::Value::String(content.to_string())
+                                                                    );
+                                                                    let _ = write.send(axum::extract::ws::Message::Text(msg)).await;
+                                                                    streaming_msg_sent = true;
+                                                                }
+                                                                if let Some(tc) = delta.get("tool_calls") {
+                                                                    if let Some(tc_array) = tc.as_array() {
+                                                                        for tc_item in tc_array {
+                                                                            has_tool_call = true;
+                                                                            let index = tc_item.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                                                                            if let Some(existing) = tool_call_fragments.get_mut(&index) {
+                                                                                if let Some(existing_func) = existing.get_mut("function") {
+                                                                                    if let Some(tc_func) = tc_item.get("function") {
+                                                                                        if let Some(tc_name) = tc_func.get("name").and_then(|v| v.as_str()) {
+                                                                                            existing_func["name"] = serde_json::Value::String(tc_name.to_string());
+                                                                                        }
+                                                                                        if let Some(tc_args) = tc_func.get("arguments").and_then(|v| v.as_str()) {
+                                                                                            let existing_args = existing_func.get("arguments").and_then(|v| v.as_str()).unwrap_or("");
+                                                                                            existing_func["arguments"] = serde_json::Value::String(format!("{}{}", existing_args, tc_args));
+                                                                                        }
                                                                                     }
                                                                                 }
+                                                                                if let Some(tc_id) = tc_item.get("id").and_then(|v| v.as_str()) {
+                                                                                    existing["id"] = serde_json::Value::String(tc_id.to_string());
+                                                                                }
+                                                                            } else {
+                                                                                tool_call_fragments.insert(index, tc_item.clone());
                                                                             }
-                                                                            if let Some(tc_id) = tc_item.get("id").and_then(|v| v.as_str()) {
-                                                                                existing["id"] = serde_json::Value::String(tc_id.to_string());
-                                                                            }
-                                                                        } else {
-                                                                            tool_call_fragments.insert(index, tc_item.clone());
                                                                         }
                                                                     }
                                                                 }

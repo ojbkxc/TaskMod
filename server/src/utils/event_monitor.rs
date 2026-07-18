@@ -62,6 +62,7 @@ fn notify_event(event: SystemEvent) {
     });
 }
 
+#[allow(dead_code)]
 pub async fn get_wifi_state() -> WifiState {
     let output = match Command::new("dumpsys")
         .arg("wifi")
@@ -107,6 +108,7 @@ pub async fn get_wifi_state() -> WifiState {
     WifiState { ssid, connected, signal_level }
 }
 
+#[allow(dead_code)]
 pub async fn get_battery_state() -> BatteryState {
     let output = match Command::new("dumpsys")
         .arg("battery")
@@ -149,6 +151,7 @@ pub async fn get_battery_state() -> BatteryState {
     BatteryState { capacity, status, temperature }
 }
 
+#[allow(dead_code)]
 pub async fn get_screen_state() -> ScreenState {
     let output = match Command::new("dumpsys")
         .arg("power")

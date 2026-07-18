@@ -1,4 +1,4 @@
-﻿use tokio::process::Command;
+use tokio::process::Command;
 use tracing::{info, warn};
 
 /// Android 系统命令绝对路径常量
@@ -17,6 +17,7 @@ const SCREENCAP: &str = "/system/bin/screencap";
 const REBOOT: &str = "/system/bin/reboot";
 
 /// 解析命令输出，返回成功/失败及完整信息
+#[allow(dead_code)]
 fn parse_output(o: &std::process::Output, success_msg: &str, fail_msg: &str) -> String {
     let stdout = String::from_utf8_lossy(&o.stdout);
     let stderr = String::from_utf8_lossy(&o.stderr);
@@ -75,6 +76,7 @@ pub async fn run_command_raw(cmd: &str) -> Result<std::process::Output, String> 
 }
 
 /// 执行命令（参数列表方式，适合精确控制参数）
+#[allow(dead_code)]
 pub async fn execute_command(cmd_parts: &[String]) -> Result<std::process::Output, String> {
     if cmd_parts.is_empty() {
         return Err("命令为空".to_string());
@@ -184,20 +186,17 @@ pub async fn start_app(package_name: &str) -> String {
         let activity = String::from_utf8_lossy(&o.stdout).trim().to_string();
         if !activity.is_empty() && !activity.contains("Error") && activity.contains('/') {
             // 成功解析到Activity，用 am start -n 启动
-            match Command::new(AM)
+            if let Ok(o) = Command::new(AM)
                 .arg("start")
                 .arg("-n")
                 .arg(&activity)
                 .output()
                 .await
             {
-                Ok(o) => {
-                    let stderr = String::from_utf8_lossy(&o.stderr);
-                    if !stderr.contains("Error") && !stderr.contains("error") {
-                        return format!("应用启动成功: {}", activity);
-                    }
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                if !stderr.contains("Error") && !stderr.contains("error") {
+                    return format!("应用启动成功: {}", activity);
                 }
-                Err(_) => {}
             }
         }
     }
@@ -476,7 +475,7 @@ pub async fn shutdown() -> String {
 pub async fn tts(text: &str) -> String {
     info!("[adb] tts: {}", text);
     // 方法1: 使用 Android TTS Engine 的标准广播
-    match Command::new(AM)
+    if let Ok(o) = Command::new(AM)
         .arg("broadcast")
         .arg("-a")
         .arg("com.android.tts.SPEAK")
@@ -489,34 +488,28 @@ pub async fn tts(text: &str) -> String {
         .output()
         .await
     {
-        Ok(o) => {
-            let output = String::from_utf8_lossy(&o.stdout);
-            if o.status.success() && !output.contains("Error") {
-                return format!("TTS语音播放成功: {}", text);
-            }
+        let output = String::from_utf8_lossy(&o.stdout);
+        if o.status.success() && !output.contains("Error") {
+            return format!("TTS语音播放成功: {}", text);
         }
-        Err(_) => {}
     }
     
     // 方法2: 使用 cmd speech 命令触发 TTS（部分设备支持）
-    match Command::new(CMD)
+    if let Ok(o) = Command::new(CMD)
         .arg("speech")
         .arg("speak")
         .arg(text)
         .output()
         .await
     {
-        Ok(o) => {
-            let output = String::from_utf8_lossy(&o.stdout);
-            if o.status.success() && !output.contains("Error") && !output.contains("Unknown") {
-                return format!("TTS语音播放成功: {}", text);
-            }
+        let output = String::from_utf8_lossy(&o.stdout);
+        if o.status.success() && !output.contains("Error") && !output.contains("Unknown") {
+            return format!("TTS语音播放成功: {}", text);
         }
-        Err(_) => {}
     }
     
     // 方法3: 使用 content provider 触发 TTS（兼容更多设备）
-    match Command::new(SH)
+    if let Ok(o) = Command::new(SH)
         .arg("-c")
         .arg(format!(
             "content call --uri content://com.android.providers.settings/system --method GET_system --arg tts_default_synth --extra _value:s:{} 2>/dev/null || am startservice -a android.intent.action.TTS_SERVICE --es text '{}'",
@@ -526,16 +519,13 @@ pub async fn tts(text: &str) -> String {
         .output()
         .await
     {
-        Ok(o) => {
-            let output = String::from_utf8_lossy(&o.stdout);
-            if !output.contains("error") && !output.contains("Error") && !output.contains("Unknown") {
-                return format!("TTS语音播放成功: {}", text);
-            }
+        let output = String::from_utf8_lossy(&o.stdout);
+        if !output.contains("error") && !output.contains("Error") && !output.contains("Unknown") {
+            return format!("TTS语音播放成功: {}", text);
         }
-        Err(_) => {}
     }
     
-    format!("TTS语音播放失败: 设备不支持TTS命令，请安装TTS引擎")
+    format!("TTS语音播放失败: 设备不支持TTS命令，请安装TTS引擎").to_string()
 }
 
 pub async fn tts_speak(text: &str, engine: Option<String>) -> String {

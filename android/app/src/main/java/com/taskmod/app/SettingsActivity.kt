@@ -119,7 +119,6 @@ class SettingsActivity : AppCompatActivity() {
 
         buttonRow.addView(MaterialButton(this).apply {
             text = "保存并重启"
-            style = com.google.android.material.R.style.Widget_Material3_Button_TonalButton
             layoutParams = android.widget.LinearLayout.LayoutParams(
                 0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f
             ).apply { marginStart = 8 }

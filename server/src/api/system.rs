@@ -433,7 +433,7 @@ pub fn list_workflows() -> Vec<Workflow> {
     std::fs::read_dir(WORKFLOWS_DIR)
         .map(|dir| {
             dir.filter_map(|e| e.ok())
-                .filter(|e| e.path().extension().map_or(false, |ext| ext == "json"))
+                .filter(|e| e.path().extension().is_some_and(|ext| ext == "json"))
                 .filter_map(|e| std::fs::read_to_string(e.path()).ok())
                 .filter_map(|content| serde_json::from_str(&content).ok())
                 .collect()
@@ -465,7 +465,7 @@ pub async fn execute_workflow(workflow: Workflow, context: Option<serde_json::Va
     let mut adj: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
     for edge in &workflow.edges {
         adj.entry(edge.source.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(edge.target.clone());
     }
 
@@ -662,7 +662,7 @@ pub async fn execute_workflow(workflow: Workflow, context: Option<serde_json::Va
                 
                 match result {
                     Ok(response) => {
-                        log(&format!("AI生成成功"));
+                        log(&"AI生成成功".to_string());
                         let output_var = node.config.get("output_var").and_then(|v| v.as_str()).unwrap_or("ai_result");
                         context_vars.insert(output_var.to_string(), serde_json::Value::String(response));
                     }

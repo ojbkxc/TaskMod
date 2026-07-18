@@ -25,7 +25,7 @@ impl Write for UdpOutput {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self.socket.try_send_to(buf, self.addr) {
             Ok(n) => Ok(n),
-            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
+            Err(e) => Err(std::io::Error::other(e)),
         }
     }
 
@@ -46,6 +46,7 @@ const FEC_GROUP_SIZE: usize = 5;
 /// KCP 客户端会话（每个客户端独立锁，避免全局写锁阻塞）
 struct KcpSession {
     kcp: kcp::Kcp<UdpOutput>,
+    #[allow(dead_code)]
     addr: SocketAddr,
     last_active: std::time::Instant,
     /// FEC 组缓冲区：使用 Arc 避免深拷贝
@@ -55,8 +56,10 @@ struct KcpSession {
 
 /// KCP 服务端
 pub struct KcpServer {
+    #[allow(dead_code)]
     socket: Arc<UdpSocket>,
     /// 外层 RwLock 只保护 HashMap 结构（增删客户端），内层 per-session Mutex 保护会话操作
+    #[allow(dead_code)]
     sessions: Arc<RwLock<HashMap<SocketAddr, Arc<std::sync::Mutex<KcpSession>>>>>,
     video_rx: broadcast::Receiver<Vec<u8>>,
 }
@@ -122,9 +125,9 @@ impl KcpServer {
                                         addr,
                                     };
                                     let mut kcp = kcp::Kcp::new(conv, output);
-                                    let _ = kcp.set_nodelay(true, 5, 2, true);
-                                    let _ = kcp.set_mtu(KCP_MTU);
-                                    let _ = kcp.set_wndsize(256, 256);
+                                    kcp.set_nodelay(true, 5, 2, true);
+                                    kcp.set_mtu(KCP_MTU);
+                                    kcp.set_wndsize(256, 256);
 
                                     if let Err(e) = kcp.input(data) {
                                         tracing::warn!("[KCP] 初始 input error: {}", e);

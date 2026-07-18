@@ -314,7 +314,7 @@ class MagiskGuideActivity : AppCompatActivity() {
                             val progress = (bytesDownloaded * 100 / bytesTotal)
                             downloadProgress.isIndeterminate = false
                             downloadProgress.progress = progress
-                            downloadProgressText.text = formatFileSize(bytesDownloaded) + " / " + formatFileSize(bytesTotal)
+                            downloadProgressText.text = formatFileSize(bytesDownloaded.toLong()) + " / " + formatFileSize(bytesTotal.toLong())
                         }
                         cursor.close()
                         handler.postDelayed(this, 500)

@@ -18,6 +18,7 @@ const VIDEO_CHANNEL_CAP: usize = 128;
 /// 音频广播通道容量
 const AUDIO_CHANNEL_CAP: usize = 64;
 /// H.264/H.265 流读取缓冲区大小（512KB，视频流需要更大缓冲区减少 read 系统调用次数）
+#[allow(dead_code)]
 const READ_BUF_SIZE: usize = 524288;
 /// 默认视频码率 4Mbps（原 10Mbps 在手机上发热严重，4Mbps 在局域网足够清晰）
 const DEFAULT_BIT_RATE: usize = 4_000_000;
@@ -32,6 +33,7 @@ const FEC_GROUP_SIZE: usize = 5;
 /// 输入活动加速持续时间（毫秒）：触摸时临时提升帧率，借鉴 Sunshine 的 Input Activity Boost
 const INPUT_BOOST_DURATION_MS: u64 = 300;
 /// 输入活动加速时的最低帧率
+#[allow(dead_code)]
 const INPUT_BOOST_FPS: u32 = 60;
 
 // H.265 NALU 类型和编码器类型已移至 platform::encoder 模块
@@ -40,6 +42,7 @@ const INPUT_BOOST_FPS: u32 = 60;
 pub struct MirrorStartRequest {
     bit_rate: Option<usize>,
     fps: Option<usize>,
+    #[allow(dead_code)]
     keep_screen: Option<bool>,
     /// 编码器偏好: "h264", "h265", "auto"(自动检测)
     codec: Option<String>,
@@ -190,7 +193,7 @@ pub async fn start_mirror(
                                     consecutive_static_frames += 1;
                                     if consecutive_static_frames > 3 {
                                         frame_skip_counter += 1;
-                                        if frame_skip_counter % STATIC_SKIP_FRAMES != 0 {
+                                        if !frame_skip_counter.is_multiple_of(STATIC_SKIP_FRAMES) {
                                             continue;
                                         }
                                     }
@@ -394,7 +397,7 @@ pub async fn send_control(
             controller.swipe(x, y, x, y + dy, 300).await
         }
         "keyevent" => {
-            let keycode = req.keycode.or(req.key_code).unwrap_or(0) as i32;
+            let keycode = req.keycode.or(req.key_code).unwrap_or(0);
             controller.key_event(keycode).await
         }
         "set_clipboard" => {

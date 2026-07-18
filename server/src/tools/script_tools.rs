@@ -205,10 +205,7 @@ impl AiTool for ViewLogsTool {
     fn execute(&self, args: &str) -> BoxFuture<'_, String> {
         let args = args.to_string();
         Box::pin(async move {
-            let lines = match parse_arg::<usize>(&args, "lines") {
-                Ok(l) => l,
-                Err(_) => 100,
-            };
+            let lines = parse_arg::<usize>(&args, "lines").unwrap_or(100);
             match fs::read_to_string(LOG_FILE) {
                 Ok(content) => {
                     let log_lines: Vec<&str> = content.lines().collect();

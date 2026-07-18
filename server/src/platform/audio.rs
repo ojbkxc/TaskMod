@@ -3,12 +3,14 @@ use async_trait::async_trait;
 /// 音频编码格式
 pub enum AudioCodec {
     Pcm,
+    #[allow(dead_code)]
     Opus,
 }
 
 /// 采集的音频帧
 pub enum AudioFrame {
     Pcm(Vec<u8>),
+    #[allow(dead_code)]
     Opus(Vec<u8>),
 }
 
@@ -18,6 +20,7 @@ pub trait AudioCapture: Send {
     /// 启动音频采集
     async fn start(&mut self, tx: tokio::sync::mpsc::Sender<AudioFrame>) -> Result<(), String>;
     /// 停止音频采集
+    #[allow(dead_code)]
     async fn stop(&mut self) -> Result<(), String>;
 }
 
@@ -25,6 +28,7 @@ pub trait AudioCapture: Send {
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
 pub struct AndroidAudioCapture {
+    #[allow(dead_code)]
     codec: AudioCodec,
     running: Option<tokio::task::JoinHandle<()>>,
 }
@@ -114,6 +118,7 @@ impl AudioCapture for AndroidAudioCapture {
 
 #[cfg(not(target_os = "android"))]
 pub struct DesktopAudioCapture {
+    #[allow(dead_code)]
     codec: AudioCodec,
     running: Option<tokio::task::JoinHandle<()>>,
 }

@@ -6,6 +6,7 @@ pub mod input;
 
 /// 跨平台平台类型
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 pub enum Platform {
     Android,
     Windows,

@@ -21,6 +21,7 @@ pub trait ScreenCapture: Send {
     /// 启动采集，将帧通过 channel 发送
     async fn start(&mut self, tx: tokio::sync::mpsc::Sender<CapturedFrame>) -> Result<(), String>;
     /// 停止采集
+    #[allow(dead_code)]
     async fn stop(&mut self) -> Result<(), String>;
     /// 请求关键帧
     async fn request_keyframe(&self) -> Result<(), String>;
@@ -68,7 +69,7 @@ impl ScreenCapture for AndroidScreenCapture {
                     "--output-format=h264",
                     &format!("--codec={}", codec_str),
                     &format!("--bit-rate={}", bitrate_str),
-                    &format!("--size=1280x720"),
+                    &format!("--size=1280x720").to_string(),
                     "--verbose",
                     "/dev/stdout",
                 ])
