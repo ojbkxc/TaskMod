@@ -89,7 +89,8 @@ pub async fn get_session(Path(id): Path<String>) -> Json<ApiResponse<ChatSession
 }
 
 pub async fn create_session(Json(req): Json<CreateSessionReq>) -> Json<ApiResponse<ChatSession>> {
-    ensure_dir(CHAT_HISTORY_DIR).await;
+    let config = get_config();
+    ensure_dir(&config.chat_history_dir).await;
     let now = now_ms();
     let session = ChatSession {
         id: gen_id(),
@@ -286,13 +287,15 @@ pub struct MemoryQuery {
 }
 
 fn memory_path(id: &str) -> String {
-    format!("{}/{}.json", MEMORY_DIR, id)
+    let config = get_config();
+    format!("{}/{}.json", config.memory_dir, id)
 }
 
 /// 获取所有记忆（同步，供AI模块调用）
 pub fn get_all_memories_sync() -> Vec<Memory> {
+    let config = get_config();
     let mut items = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(MEMORY_DIR) {
+    if let Ok(entries) = std::fs::read_dir(&config.memory_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().is_some_and(|e| e == "json") {
@@ -649,7 +652,8 @@ pub struct SkillReq {
 }
 
 fn skill_path(id: &str) -> String {
-    format!("{}/{}.json", SKILLS_DIR, id)
+    let config = get_config();
+    format!("{}/{}.json", config.skills_dir, id)
 }
 
 /// 获取所有已启用的Skill（同步，供AI模块调用）
@@ -766,7 +770,8 @@ pub struct SavedItemReq {
 }
 
 fn saved_item_path(id: &str) -> String {
-    format!("{}/{}.json", SAVED_ITEMS_DIR, id)
+    let config = get_config();
+    format!("{}/{}.json", config.saved_items_dir, id)
 }
 
 pub async fn list_saved_items() -> Json<ApiResponse<Vec<SavedItem>>> {
@@ -854,7 +859,8 @@ pub struct ProjectReq {
 }
 
 fn project_path(id: &str) -> String {
-    format!("{}/{}.json", PROJECTS_DIR, id)
+    let config = get_config();
+    format!("{}/{}.json", config.projects_dir, id)
 }
 
 /// 获取所有已启用且自动注入的项目（同步，供AI模块调用）
@@ -977,7 +983,8 @@ pub struct McpServerReq {
 }
 
 fn mcp_path(id: &str) -> String {
-    format!("{}/{}.json", MCP_DIR, id)
+    let config = get_config();
+    format!("{}/{}.json", config.mcp_dir, id)
 }
 
 /// 获取所有已启用的MCP服务器（同步）
@@ -1545,7 +1552,8 @@ pub struct McpToolCall {
 }
 
 fn mcp_history_path(id: &str) -> String {
-    format!("{}/{}.json", MCP_HISTORY_DIR, id)
+    let config = get_config();
+    format!("{}/{}.json", config.mcp_history_dir, id)
 }
 
 pub async fn list_mcp_history(
