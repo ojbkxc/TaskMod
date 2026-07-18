@@ -86,7 +86,10 @@ impl Config {
             mcp_history_dir: env_or("TASKMOD_MCP_HISTORY_DIR", &default.mcp_history_dir),
             usage_stats_file: env_or("TASKMOD_USAGE_STATS_FILE", &default.usage_stats_file),
             upload_dir: env_or("TASKMOD_UPLOAD_DIR", &default.upload_dir),
-            prompt_settings_file: env_or("TASKMOD_PROMPT_SETTINGS_FILE", &default.prompt_settings_file),
+            prompt_settings_file: env_or(
+                "TASKMOD_PROMPT_SETTINGS_FILE",
+                &default.prompt_settings_file,
+            ),
             scenarios_file: env_or("TASKMOD_SCENARIOS_FILE", &default.scenarios_file),
         }
     }
