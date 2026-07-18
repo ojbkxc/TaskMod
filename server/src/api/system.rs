@@ -662,7 +662,7 @@ pub async fn execute_workflow(workflow: Workflow, context: Option<serde_json::Va
                 
                 match result {
                     Ok(response) => {
-                        log(&"AI生成成功".to_string());
+                        log("AI生成成功");
                         let output_var = node.config.get("output_var").and_then(|v| v.as_str()).unwrap_or("ai_result");
                         context_vars.insert(output_var.to_string(), serde_json::Value::String(response));
                     }

@@ -69,7 +69,7 @@ impl ScreenCapture for AndroidScreenCapture {
                     "--output-format=h264",
                     &format!("--codec={}", codec_str),
                     &format!("--bit-rate={}", bitrate_str),
-                    &format!("--size=1280x720").to_string(),
+                    "--size=1280x720",
                     "--verbose",
                     "/dev/stdout",
                 ])

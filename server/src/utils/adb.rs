@@ -525,7 +525,7 @@ pub async fn tts(text: &str) -> String {
         }
     }
     
-    format!("TTS语音播放失败: 设备不支持TTS命令，请安装TTS引擎").to_string()
+    "TTS语音播放失败: 设备不支持TTS命令，请安装TTS引擎".to_string()
 }
 
 pub async fn tts_speak(text: &str, engine: Option<String>) -> String {

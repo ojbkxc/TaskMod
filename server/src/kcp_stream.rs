@@ -126,7 +126,7 @@ impl KcpServer {
                                     };
                                     let mut kcp = kcp::Kcp::new(conv, output);
                                     kcp.set_nodelay(true, 5, 2, true);
-                                    kcp.set_mtu(KCP_MTU);
+                                    let _ = kcp.set_mtu(KCP_MTU);
                                     kcp.set_wndsize(256, 256);
 
                                     if let Err(e) = kcp.input(data) {
