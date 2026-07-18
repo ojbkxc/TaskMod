@@ -70,11 +70,13 @@ pub struct UpdateSessionReq {
 }
 
 fn session_path(id: &str) -> String {
-    format!("{}/{}.json", CHAT_HISTORY_DIR, id)
+    let config = get_config();
+    format!("{}/{}.json", config.chat_history_dir, id)
 }
 
 pub async fn list_sessions() -> Json<ApiResponse<Vec<ChatSession>>> {
-    let mut sessions: Vec<ChatSession> = list_json_dir(CHAT_HISTORY_DIR).await;
+    let config = get_config();
+    let mut sessions: Vec<ChatSession> = list_json_dir(&config.chat_history_dir).await;
     sessions.sort_by_key(|b| std::cmp::Reverse(b.updated_at));
     Json(ApiResponse::ok(sessions))
 }
