@@ -9,6 +9,7 @@ use tokio::fs;
 
 use crate::config::*;
 use crate::data::response::ApiResponse;
+use crate::utils::io::{ensure_dir, list_json_dir, read_json_file, write_json_file};
 
 // ==================== 通用工具函数 ====================
 
@@ -28,38 +29,7 @@ fn gen_id() -> String {
     format!("{:x}_{:04x}", ts, seq & 0xFFFF)
 }
 
-async fn ensure_dir(path: &str) {
-    let _ = fs::create_dir_all(path).await;
-}
-
-async fn read_json_file<T: serde::de::DeserializeOwned>(path: &str) -> Option<T> {
-    let data = fs::read(path).await.ok()?;
-    serde_json::from_slice(&data).ok()
-}
-
-async fn write_json_file<T: Serialize>(path: &str, data: &T) -> Result<(), String> {
-    let json = serde_json::to_vec_pretty(data).map_err(|e| e.to_string())?;
-    fs::write(path, json).await.map_err(|e| e.to_string())
-}
-
-async fn list_json_dir<T: serde::de::DeserializeOwned>(dir: &str) -> Vec<T> {
-    let mut paths = Vec::new();
-    if let Ok(mut entries) = fs::read_dir(dir).await {
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let path = entry.path();
-            if path.extension().is_some_and(|e| e == "json") {
-                paths.push(path);
-            }
-        }
-    }
-    let items: Vec<Option<T>> = futures::future::join_all(
-        paths
-            .iter()
-            .map(|p| read_json_file::<T>(p.to_str().unwrap_or(""))),
-    )
-    .await;
-    items.into_iter().flatten().collect()
-}
+// IO工具函数已移至 utils::io 模块
 
 // ==================== 对话历史 ====================
 
