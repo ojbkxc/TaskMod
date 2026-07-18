@@ -46,7 +46,6 @@ jobs:
       - name: Update version
         id: version
         run: |
-          # 优先使用手动输入的版本号，否则从 tag 提取
           if [ -n "${{ github.event.inputs.version }}" ]; then
             TAG_VERSION="${{ github.event.inputs.version }}"
           else
@@ -54,11 +53,10 @@ jobs:
           fi
           echo "tag=$TAG_VERSION" >> $GITHUB_OUTPUT
 
-          # 去掉 v 前缀用于文件更新
           VERSION=${TAG_VERSION#v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-          # 计算 versionCode (1.0.1 -> 1000001)
+          # 计算 versionCode
           IFS='.' read -ra PARTS <<< "$VERSION"
           VERSION_CODE=0
           for i in "${!PARTS[@]}"; do
@@ -76,7 +74,7 @@ jobs:
 
           echo "Updated to $TAG_VERSION (code: $VERSION_CODE)"
 
-      - name: Create and push tag (workflow_dispatch only)
+      - name: Commit version bump and push tag (workflow_dispatch only)
         if: github.event_name == 'workflow_dispatch'
         run: |
           TAG_VERSION="${{ github.event.inputs.version }}"
@@ -84,37 +82,33 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add module.prop server/Cargo.toml
-          # 如果版本文件有变更则提交，没有变更则跳过（版本已是最新）
           if git diff --cached --quiet; then
             echo "Version files already up to date, skipping commit"
           else
             git commit -m "chore: bump version to $TAG_VERSION"
             git push origin "$BRANCH"
           fi
-          # 创建并推送 tag（如果已存在则跳过）
+          # 创建 tag（如果已存在则跳过）
           if git rev-parse "$TAG_VERSION" >/dev/null 2>&1; then
-            echo "Tag $TAG_VERSION already exists, skipping"
+            echo "Tag $TAG_VERSION already exists"
           else
             git tag "$TAG_VERSION"
             git push origin "$TAG_VERSION"
           fi
-          echo "Created and pushed tag: $TAG_VERSION on branch $BRANCH"
+          echo "Pushed tag: $TAG_VERSION"
 
       - name: Build Server
         working-directory: server
         run: cargo ndk -t arm64-v8a build --release
 
       - name: Package Magisk Module
-        id: package
         run: |
           VERSION=${{ steps.version.outputs.version }}
 
-          # 将编译产物复制到模块目录
           mkdir -p bin/arm64
           cp server/target/aarch64-linux-android/release/taskmod-server bin/arm64/
           chmod +x bin/arm64/taskmod-server
 
-          # 打包 Magisk 模块 (从仓库根目录打包)
           zip -r TaskMod-${VERSION}.zip . \
             -x ".git/*" \
             -x ".github/*" \
@@ -140,17 +134,22 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.5'
 
-      - name: Generate debug keystore
+      - name: Generate Gradle Wrapper
         run: |
-          keytool -genkey -v -keystore android/app/debug.keystore \
-            -storepass android -alias androiddebugkey -keypass android \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=Android Debug,O=Android,C=US"
-          ls -la android/app/debug.keystore
+          cd /tmp
+          mkdir -p gradle-gen && cd gradle-gen
+          echo 'rootProject.name = "temp"' > settings.gradle
+          gradle wrapper --gradle-version 8.5
+          cd "$GITHUB_WORKSPACE/android"
+          mkdir -p gradle/wrapper
+          cp /tmp/gradle-gen/gradlew /tmp/gradle-gen/gradlew.bat .
+          cp /tmp/gradle-gen/gradle/wrapper/gradle-wrapper.jar /tmp/gradle-gen/gradle/wrapper/gradle-wrapper.properties gradle/wrapper/
+          chmod +x gradlew
+          rm -rf /tmp/gradle-gen
 
       - name: Update APK version
         id: version
@@ -177,7 +176,7 @@ jobs:
 
       - name: Build Debug APK
         working-directory: android
-        run: gradle assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --no-daemon
 
       - name: Rename APK
         run: |

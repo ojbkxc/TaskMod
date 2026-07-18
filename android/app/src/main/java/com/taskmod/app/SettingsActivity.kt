@@ -3,8 +3,14 @@ package com.taskmod.app
 import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.switchmaterial.SwitchMaterial
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -17,8 +23,8 @@ class SettingsActivity : AppCompatActivity() {
 
         val toolbar = MaterialToolbar(this).apply {
             title = "设置"
-            setTitleTextColor(getColor(R.color.on_surface))
-            setBackgroundColor(getColor(R.color.surface))
+            setTitleTextColor(ContextCompat.getColor(this@SettingsActivity, R.color.on_surface))
+            setBackgroundColor(ContextCompat.getColor(this@SettingsActivity, R.color.surface))
             setNavigationIcon(android.R.drawable.ic_menu_revert)
             setNavigationOnClickListener { finish() }
         }
@@ -80,9 +86,20 @@ class SettingsActivity : AppCompatActivity() {
         }
         layout.addView(urlEdit)
 
-        // === 保存按钮 ===
-        layout.addView(com.google.android.material.button.MaterialButton(this).apply {
+        // === 保存按钮 + 重启按钮 ===
+        val buttonRow = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = 24 }
+        }
+
+        buttonRow.addView(MaterialButton(this).apply {
             text = "保存设置"
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+            ).apply { marginEnd = 8 }
             setOnClickListener {
                 val port = portEdit.text.toString().trim().toIntOrNull() ?: TaskModApp.DEFAULT_PORT
                 if (port < 1024 || port > 65535) {
@@ -99,6 +116,38 @@ class SettingsActivity : AppCompatActivity() {
                 Toast.makeText(this@SettingsActivity, "已保存，重启服务生效", Toast.LENGTH_SHORT).show()
             }
         })
+
+        buttonRow.addView(MaterialButton(this).apply {
+            text = "保存并重启"
+            style = com.google.android.material.R.style.Widget_Material3_Button_TonalButton
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+            ).apply { marginStart = 8 }
+            setOnClickListener {
+                val port = portEdit.text.toString().trim().toIntOrNull() ?: TaskModApp.DEFAULT_PORT
+                if (port < 1024 || port > 65535) {
+                    Toast.makeText(this@SettingsActivity, "端口范围: 1024-65535", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                ConfigManager.update {
+                    copy(
+                        port = port,
+                        customIp = ipEdit.text.toString().trim(),
+                        customUrl = urlEdit.text.toString().trim()
+                    )
+                }
+                Toast.makeText(this@SettingsActivity, "正在重启服务…", Toast.LENGTH_SHORT).show()
+                lifecycleScope.launch(Dispatchers.IO) {
+                    TaskModService.stop(this@SettingsActivity)
+                    kotlinx.coroutines.delay(1000)
+                    TaskModService.start(this@SettingsActivity)
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@SettingsActivity, "服务已重启", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        })
+        layout.addView(buttonRow)
 
         layout.addView(makeDivider())
 
@@ -126,13 +175,13 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun makeHint(text: String) = android.widget.TextView(this).apply {
         this.text = text; textSize = 12f; setPadding(0, 4, 0, 8)
-        setTextColor(0xFF71717A.toInt())
+        setTextColor(ContextCompat.getColor(this@SettingsActivity, R.color.text_secondary))
     }
 
     private fun makeDivider() = android.view.View(this).apply {
         layoutParams = android.widget.LinearLayout.LayoutParams(
             android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 1
         ).apply { topMargin = 24; bottomMargin = 24 }
-        setBackgroundColor(0xFF2A2A3C.toInt())
+        setBackgroundColor(ContextCompat.getColor(this@SettingsActivity, R.color.surface_variant))
     }
 }

@@ -230,6 +230,25 @@
                             android:layout_marginTop="8dp"
                             app:cornerRadius="20dp"
                             app:backgroundTint="@color/primary" />
+
+                        <ProgressBar
+                            android:id="@+id/download_progress"
+                            style="@android:style/Widget.ProgressBar.Horizontal"
+                            android:layout_width="match_parent"
+                            android:layout_height="6dp"
+                            android:visibility="gone"
+                            android:layout_marginTop="8dp"
+                            android:progressTint="@color/primary" />
+
+                        <TextView
+                            android:id="@+id/download_progress_text"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text=""
+                            android:textSize="12sp"
+                            android:textColor="#71717A"
+                            android:visibility="gone"
+                            android:layout_marginTop="4dp" />
                     </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>

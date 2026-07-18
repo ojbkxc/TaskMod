@@ -2,13 +2,17 @@ package com.taskmod.app
 
 import android.app.DownloadManager
 import android.content.*
+import android.database.Cursor
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
@@ -50,6 +54,8 @@ class MagiskGuideActivity : AppCompatActivity() {
     private lateinit var step3Status: ImageView
     private lateinit var step3Text: TextView
     private lateinit var btnDownload: MaterialButton
+    private lateinit var downloadProgress: ProgressBar
+    private lateinit var downloadProgressText: TextView
 
     private lateinit var step4Card: MaterialCardView
     private lateinit var step4Status: ImageView
@@ -64,6 +70,8 @@ class MagiskGuideActivity : AppCompatActivity() {
     private var latestZipName: String = ""
     private var downloadedFile: File? = null
     private var downloadId: Long = -1
+    private val handler = Handler(Looper.getMainLooper())
+    private var progressRunnable: Runnable? = null
 
     private val downloadReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -111,6 +119,8 @@ class MagiskGuideActivity : AppCompatActivity() {
         step3Status = findViewById(R.id.step3_status)
         step3Text = findViewById(R.id.step3_text)
         btnDownload = findViewById(R.id.btn_download)
+        downloadProgress = findViewById(R.id.download_progress)
+        downloadProgressText = findViewById(R.id.download_progress_text)
 
         step4Card = findViewById(R.id.step4_card)
         step4Status = findViewById(R.id.step4_status)
@@ -147,7 +157,7 @@ class MagiskGuideActivity : AppCompatActivity() {
     // Step 1: 检测 Magisk
     private fun step1CheckMagisk() {
         tvCurrentStep.text = "步骤 1/4：检测 Magisk 环境"
-        step1Card.setCardBackgroundColor(getColor(R.color.surface_variant))
+        step1Card.setCardBackgroundColor(ContextCompat.getColor(this, R.color.surface_variant))
         step1Text.text = "正在检测 Magisk…"
 
         lifecycleScope.launch(Dispatchers.IO) {
@@ -169,7 +179,7 @@ class MagiskGuideActivity : AppCompatActivity() {
     // Step 2: 获取最新版本
     private fun step2FetchLatest() {
         tvCurrentStep.text = "步骤 2/4：获取最新版本信息"
-        step2Card.setCardBackgroundColor(getColor(R.color.surface_variant))
+        step2Card.setCardBackgroundColor(ContextCompat.getColor(this, R.color.surface_variant))
         step2Text.text = "正在查询 GitHub Releases…"
 
         lifecycleScope.launch(Dispatchers.IO) {
@@ -188,13 +198,15 @@ class MagiskGuideActivity : AppCompatActivity() {
 
                     // 找到 Magisk 模块 zip 文件
                     val assets = json.getAsJsonArray("assets")
-                    for (asset in assets) {
-                        val assetObj = asset.asJsonObject
-                        val name = assetObj.get("name")?.asString ?: ""
-                        if (name.endsWith(".zip") && !name.contains("apk", ignoreCase = true)) {
-                            latestZipUrl = assetObj.get("browser_download_url")?.asString ?: ""
-                            latestZipName = name
-                            break
+                    if (assets != null) {
+                        for (asset in assets) {
+                            val assetObj = asset.asJsonObject
+                            val name = assetObj.get("name")?.asString ?: ""
+                            if (name.endsWith(".zip") && !name.contains("apk", ignoreCase = true)) {
+                                latestZipUrl = assetObj.get("browser_download_url")?.asString ?: ""
+                                latestZipName = name
+                                break
+                            }
                         }
                     }
 
@@ -240,7 +252,7 @@ class MagiskGuideActivity : AppCompatActivity() {
     // Step 3: 下载模块
     private fun step3Download() {
         tvCurrentStep.text = "步骤 3/4：下载 Magisk 模块"
-        step3Card.setCardBackgroundColor(getColor(R.color.surface_variant))
+        step3Card.setCardBackgroundColor(ContextCompat.getColor(this, R.color.surface_variant))
         step3Text.text = "点击下方按钮下载"
         btnDownload.visibility = View.VISIBLE
         btnDownload.text = "下载 TaskMod v$latestVersion"
@@ -249,17 +261,22 @@ class MagiskGuideActivity : AppCompatActivity() {
     private fun downloadModule() {
         btnDownload.isEnabled = false
         btnDownload.text = "正在下载…"
+        downloadProgress.visibility = View.VISIBLE
+        downloadProgress.isIndeterminate = true
+        downloadProgressText.visibility = View.VISIBLE
+        downloadProgressText.text = "正在准备下载…"
         step3Text.text = "正在下载 $latestZipName …"
 
         try {
             val request = DownloadManager.Request(Uri.parse(latestZipUrl))
                 .setTitle("TaskMod Magisk 模块")
                 .setDescription("正在下载 TaskMod v$latestVersion")
-                .setDestinationInExternalPublicDir(
+                .setDestinationInExternalFilesDir(
+                    this,
                     Environment.DIRECTORY_DOWNLOADS,
                     "$DOWNLOAD_DIR/$latestZipName"
                 )
-                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_HIDDEN)
                 .setAllowedOverMetered(true)
                 .setAllowedOverRoaming(true)
 
@@ -272,31 +289,81 @@ class MagiskGuideActivity : AppCompatActivity() {
                 .putString("magisk_zip_name", latestZipName)
                 .apply()
 
+            // 开始轮询下载进度
+            startProgressPolling(dm)
+
         } catch (e: Exception) {
             btnDownload.isEnabled = true
             btnDownload.text = "重新下载"
+            downloadProgress.visibility = View.GONE
+            downloadProgressText.visibility = View.GONE
             step3Text.text = "下载失败: ${e.message}"
         }
     }
 
+    private fun startProgressPolling(dm: DownloadManager) {
+        progressRunnable = object : Runnable {
+            override fun run() {
+                try {
+                    val query = DownloadManager.Query().setFilterById(downloadId)
+                    val cursor: Cursor = dm.query(query)
+                    if (cursor.moveToFirst()) {
+                        val bytesDownloaded = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+                        val bytesTotal = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
+                        if (bytesTotal > 0) {
+                            val progress = (bytesDownloaded * 100 / bytesTotal)
+                            downloadProgress.isIndeterminate = false
+                            downloadProgress.progress = progress
+                            downloadProgressText.text = formatFileSize(bytesDownloaded) + " / " + formatFileSize(bytesTotal)
+                        }
+                        cursor.close()
+                        handler.postDelayed(this, 500)
+                    } else {
+                        cursor.close()
+                        // 下载可能已完成，等待广播
+                    }
+                } catch (e: Exception) {
+                    // 忽略轮询错误
+                }
+            }
+        }
+        handler.post(progressRunnable!!)
+    }
+
+    private fun stopProgressPolling() {
+        progressRunnable?.let { handler.removeCallbacks(it) }
+        progressRunnable = null
+    }
+
+    private fun formatFileSize(bytes: Long): String = when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+        else -> "${"%.1f".format(bytes.toDouble() / (1024 * 1024))} MB"
+    }
+
     private fun onDownloadComplete() {
+        stopProgressPolling()
         val file = File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
             "$DOWNLOAD_DIR/$latestZipName"
         )
 
         if (file.exists()) {
             downloadedFile = file
-            runOnUiThread {
+            lifecycleScope.launch(Dispatchers.Main) {
                 step3Status.setImageResource(android.R.drawable.presence_online)
                 step3Text.text = "下载完成: ${file.name}"
+                downloadProgress.visibility = View.GONE
+                downloadProgressText.visibility = View.GONE
                 btnDownload.visibility = View.GONE
                 step4Flash()
             }
         } else {
-            runOnUiThread {
+            lifecycleScope.launch(Dispatchers.Main) {
                 step3Status.setImageResource(android.R.drawable.presence_busy)
                 step3Text.text = "下载完成但文件未找到"
+                downloadProgress.visibility = View.GONE
+                downloadProgressText.visibility = View.GONE
                 btnDownload.isEnabled = true
                 btnDownload.text = "重新下载"
             }
@@ -306,7 +373,7 @@ class MagiskGuideActivity : AppCompatActivity() {
     // Step 4: 刷入模块
     private fun step4Flash() {
         tvCurrentStep.text = "步骤 4/4：刷入 Magisk 模块"
-        step4Card.setCardBackgroundColor(getColor(R.color.surface_variant))
+        step4Card.setCardBackgroundColor(ContextCompat.getColor(this, R.color.surface_variant))
         step4Text.text = "请在 Magisk 中刷入下载的模块"
         btnFlash.visibility = View.VISIBLE
     }

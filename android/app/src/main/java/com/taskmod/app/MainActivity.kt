@@ -32,8 +32,6 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "MainActivity"
         private const val STATUS_CHECK_INTERVAL = 3000L
-        private const val STATUS_CHECK_FAST_INTERVAL = 800L
-        private const val FAST_CHECK_DURATION = 15000L
     }
 
     private lateinit var serverManager: ServerManager
@@ -43,6 +41,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
     private lateinit var placeholder: LinearLayout
+    private lateinit var tvPlaceholderHint: TextView
     private lateinit var tvStatusText: TextView
     private lateinit var statusDot: View
     private lateinit var tvAddress: TextView
@@ -51,10 +50,9 @@ class MainActivity : AppCompatActivity() {
 
     private var statusCheckRunnable: Runnable? = null
     private var isPageLoaded = false
-    private var lastKnownRunning = false
-    private var webViewLoadPending = false
-    private var isStartingService = false
-    private var startCheckStartTime: Long = 0
+    private var isToggling = false
+    private var webViewRetryCount = 0
+    private val maxRetryCount = 3
 
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ -> }
@@ -74,6 +72,7 @@ class MainActivity : AppCompatActivity() {
         setupWebView()
         setupListeners()
         checkRootStatus()
+        updateUIAsync()
         startStatusCheck()
 
         // 先做一次状态检查，再根据状态决定是否自动启动
@@ -91,7 +90,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        UpdateChecker(this).checkForUpdates()
+        UpdateChecker.checkForUpdates(this)
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -121,33 +120,55 @@ class MainActivity : AppCompatActivity() {
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                val requestUrl = request?.url.toString()
-                if (requestUrl.contains("localhost") || requestUrl.contains("127.0.0.1")) {
-                    return false
+                val requestUrl = request?.url
+                if (requestUrl != null) {
+                    val host = requestUrl.host ?: ""
+                    if (host in setOf("localhost", "127.0.0.1", "10.0.2.2") ||
+                    host.startsWith("10.") || host.startsWith("192.168.") ||
+                    host.startsWith("172.16.") || host.startsWith("172.17.") ||
+                    host.startsWith("172.18.") || host.startsWith("172.19.") ||
+                    host.startsWith("172.20.") || host.startsWith("172.21.") ||
+                    host.startsWith("172.22.") || host.startsWith("172.23.") ||
+                    host.startsWith("172.24.") || host.startsWith("172.25.") ||
+                    host.startsWith("172.26.") || host.startsWith("172.27.") ||
+                    host.startsWith("172.28.") || host.startsWith("172.29.") ||
+                    host.startsWith("172.30.") || host.startsWith("172.31.")) {
+                        return false
+                    }
                 }
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(requestUrl)))
+                val uri = request?.url ?: return true
+                startActivity(Intent(Intent.ACTION_VIEW, uri))
                 return true
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 isPageLoaded = true
-                webViewLoadPending = false
+                webViewRetryCount = 0
             }
 
-            override fun onReceivedError(
-                view: WebView?,
-                request: WebResourceRequest?,
-                error: WebResourceError?
-            ) {
+            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
                 super.onReceivedError(view, request, error)
+                // 只在主资源加载失败时处理（忽略子资源错误）
                 if (request?.isForMainFrame == true) {
-                    Log.w(TAG, "WebView 加载失败: ${error?.errorCode} ${error?.description}")
-                    // 主页面加载失败时不标记为已加载，下次 updateUI 会重试
                     isPageLoaded = false
-                    webViewLoadPending = false
+                    Log.w("MainActivity", "WebView 加载失败: ${error?.description} (code=${error?.errorCode})")
+                    showWebViewError()
                 }
             }
+        }
+    }
+
+    /**
+     * WebView 加载失败时显示错误提示，点击可重试
+     */
+    private fun showWebViewError() {
+        webView.visibility = View.GONE
+        placeholder.visibility = View.VISIBLE
+        tvPlaceholderHint.text = if (webViewRetryCount < maxRetryCount) {
+            "连接失败，点击重试 ($webViewRetryCount/$maxRetryCount)"
+        } else {
+            "连接失败，请检查服务是否正常运行\n点击重试"
         }
     }
 
@@ -155,6 +176,7 @@ class MainActivity : AppCompatActivity() {
         webView = findViewById(R.id.webview)
         progressBar = findViewById(R.id.progress_bar)
         placeholder = findViewById(R.id.placeholder)
+        tvPlaceholderHint = findViewById(R.id.tv_placeholder_hint)
         tvStatusText = findViewById(R.id.tv_status_text)
         statusDot = findViewById(R.id.status_dot)
         tvAddress = findViewById(R.id.tv_address)
@@ -164,24 +186,95 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupListeners() {
         btnToggle.setOnClickListener {
-            if (serverManager.isRunning()) {
-                TaskModService.stop(this)
-                isPageLoaded = false
-                webViewLoadPending = false
-                isStartingService = false
-            } else {
-                TaskModService.start(this)
-                isStartingService = true
-                startCheckStartTime = System.currentTimeMillis()
-                webViewLoadPending = true
-                handler.post { updateUI() }
+            if (isToggling) {
+                Toast.makeText(this, "操作进行中，请稍候…", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            isToggling = true
+            btnToggle.isEnabled = false
+
+            lifecycleScope.launch(Dispatchers.IO) {
+                val running = serverManager.isRunning()
+                withContext(Dispatchers.Main) {
+                    if (running) {
+                        btnToggle.text = "停止中…"
+                        Toast.makeText(this@MainActivity, "正在停止服务…", Toast.LENGTH_SHORT).show()
+                    } else {
+                        btnToggle.text = "启动中…"
+                        Toast.makeText(this@MainActivity, "正在启动服务…", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                if (running) {
+                    TaskModService.stop(this@MainActivity)
+                    withContext(Dispatchers.Main) {
+                        isPageLoaded = false
+                        webViewRetryCount = 0
+                        Toast.makeText(this@MainActivity, "服务已停止", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    TaskModService.start(this@MainActivity)
+                    // 等待服务启动，最多轮询 10 秒
+                    var started = false
+                    for (i in 1..20) {
+                        delay(500)
+                        if (serverManager.isRunning()) {
+                            started = true
+                            break
+                        }
+                    }
+                    withContext(Dispatchers.Main) {
+                        if (started) {
+                            Toast.makeText(this@MainActivity, "服务已启动", Toast.LENGTH_SHORT).show()
+                            loadWebView()
+                        } else {
+                            Toast.makeText(this@MainActivity, "服务启动超时，请检查日志", Toast.LENGTH_LONG).show()
+                            showWebViewError()
+                        }
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    isToggling = false
+                    btnToggle.isEnabled = true
+                    updateUIAsync()
+                }
             }
         }
 
         btnMenu.setOnClickListener { showPopupMenu(it) }
 
         placeholder.setOnClickListener {
-            tryDiscoverServer()
+            retryLoadWebView()
+        }
+    }
+
+    /**
+     * 重试加载 WebView
+     */
+    private fun retryLoadWebView() {
+        if (webViewRetryCount >= maxRetryCount) {
+            webViewRetryCount = 0 // 重置计数器允许继续重试
+        }
+        webViewRetryCount++
+        tvPlaceholderHint.text = "正在连接…"
+        lifecycleScope.launch(Dispatchers.IO) {
+            // 先尝试发现局域网服务
+            val serverUrl = serverManager.findAvailableServer()
+            withContext(Dispatchers.Main) {
+                if (serverUrl != null) {
+                    Log.i("MainActivity", "发现可用服务: $serverUrl")
+                    webView.loadUrl(serverUrl)
+                    webView.visibility = View.VISIBLE
+                    placeholder.visibility = View.GONE
+                    tvAddress.text = serverUrl
+                } else if (serverManager.state == ServerManager.ServerState.RUNNING) {
+                    // 本地服务正在运行，直接加载
+                    loadWebViewInternal()
+                } else {
+                    tvPlaceholderHint.text = "未发现可用服务\n点击重试或启动服务"
+                }
+            }
         }
     }
 
@@ -195,6 +288,17 @@ class MainActivity : AppCompatActivity() {
         popup.menu.add(0, 6, 0, "设置")
         popup.menu.add(0, 7, 0, "检查更新")
         popup.menu.add(0, 8, 0, "关于")
+
+        // 服务未运行时禁用需要 Root 的操作
+        lifecycleScope.launch(Dispatchers.IO) {
+            val running = serverManager.isRunning()
+            withContext(Dispatchers.Main) {
+                popup.menu.findItem(1)?.isEnabled = running
+                popup.menu.findItem(2)?.isEnabled = running
+                popup.menu.findItem(3)?.isEnabled = running
+            }
+        }
+
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> doScreenshot()
@@ -203,7 +307,7 @@ class MainActivity : AppCompatActivity() {
                 4 -> doShare()
                 5 -> startActivity(Intent(this, MagiskGuideActivity::class.java))
                 6 -> startActivity(Intent(this, SettingsActivity::class.java))
-                7 -> UpdateChecker(this).checkForUpdates(force = true)
+                7 -> UpdateChecker.checkForUpdates(this, force = true)
                 8 -> showAboutDialog()
             }
             true
@@ -212,11 +316,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun doScreenshot() {
-        if (!serverManager.isRunning()) {
-            Toast.makeText(this, "服务未运行", Toast.LENGTH_SHORT).show()
-            return
-        }
         lifecycleScope.launch(Dispatchers.IO) {
+            if (!serverManager.isRunning()) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "服务未运行", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
             val (success, _) = serverManager.executeCommand("screencap -p /sdcard/screenshot.png")
             withContext(Dispatchers.Main) {
                 Toast.makeText(this@MainActivity, if (success) "截屏成功" else "截屏失败", Toast.LENGTH_SHORT).show()
@@ -247,26 +353,40 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun doShare() {
-        val urls = serverManager.getAllAccessUrls()
-        val text = "TaskMod 管理面板:\n${urls.joinToString("\n")}"
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, text)
+        lifecycleScope.launch(Dispatchers.IO) {
+            val urls = serverManager.getAllAccessUrls()
+            withContext(Dispatchers.Main) {
+                val text = "TaskMod 管理面板:\n${urls.joinToString("\n")}"
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, text)
+                }
+                startActivity(Intent.createChooser(intent, "分享面板地址"))
+            }
         }
-        startActivity(Intent.createChooser(intent, "分享面板地址"))
     }
 
     private fun loadWebView() {
-        if (serverManager.isRunning()) {
-            val url = serverManager.getLocalUrl()
-            webView.loadUrl(url)
-            webView.visibility = View.VISIBLE
-            placeholder.visibility = View.GONE
-            Log.i(TAG, "加载 WebView: $url")
-        } else {
-            webView.visibility = View.GONE
-            placeholder.visibility = View.VISIBLE
+        lifecycleScope.launch(Dispatchers.IO) {
+            val running = serverManager.isRunning()
+            withContext(Dispatchers.Main) {
+                if (running) {
+                    loadWebViewInternal()
+                } else {
+                    webView.visibility = View.GONE
+                    placeholder.visibility = View.VISIBLE
+                    tvPlaceholderHint.text = "服务未运行\n点击启动服务"
+                }
+            }
         }
+    }
+
+    private fun loadWebViewInternal() {
+        val url = serverManager.getLocalUrl()
+        webView.loadUrl(url)
+        webView.visibility = View.VISIBLE
+        placeholder.visibility = View.GONE
+        tvPlaceholderHint.text = "正在加载…"
     }
 
     private fun checkRootStatus() {
@@ -274,12 +394,10 @@ class MainActivity : AppCompatActivity() {
             val result = RootHelper.checkRoot()
             val moduleInstalled = RootHelper.isMagiskModuleInstalled()
             withContext(Dispatchers.Main) {
-                if (!result.hasRoot) {
-                    // 无Root时在地址栏提示
-                }
                 val prefs = getSharedPreferences("taskmod", MODE_PRIVATE)
                 if (result.hasRoot && result.method == "magisk" && !moduleInstalled
-                    && prefs.getBoolean("show_guide_first", true)) {
+                    && prefs.getBoolean("show_guide_first", true)
+                ) {
                     prefs.edit().putBoolean("show_guide_first", false).apply()
                     startActivity(Intent(this@MainActivity, MagiskGuideActivity::class.java))
                 }
@@ -287,50 +405,51 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateUI() {
+    private fun updateUIAsync() {
         lifecycleScope.launch(Dispatchers.IO) {
             val running = serverManager.isRunning()
             withContext(Dispatchers.Main) {
-                updateUIWithResult(running)
+                updateUIInternal(running)
             }
         }
     }
 
-    private fun updateUIWithResult(running: Boolean) {
-        if (running && !lastKnownRunning) {
-            isPageLoaded = false
-            isStartingService = false
-            startCheckStartTime = 0
-        }
-        if (!running && lastKnownRunning) {
-            isPageLoaded = false
-            webViewLoadPending = false
-        }
-        lastKnownRunning = running
+    private fun updateUI() {
+        updateUIAsync()
+    }
 
-        tvStatusText.text = if (running) "运行中" else if (isStartingService) "启动中..." else "已停止"
-        tvStatusText.setTextColor(getColor(if (running) R.color.success else if (isStartingService) R.color.warning else R.color.error))
+    private fun updateUIInternal(running: Boolean) {
+        if (isToggling) return // 操作进行中，不更新 UI
+
+        tvStatusText.text = if (running) "运行中" else "已停止"
+        tvStatusText.setTextColor(
+            ContextCompat.getColor(this, if (running) R.color.success else R.color.error)
+        )
         statusDot.setBackgroundResource(
-            if (running) R.drawable.status_dot_running 
-            else if (isStartingService) R.drawable.status_dot_starting 
+            if (running) R.drawable.status_dot_running
             else R.drawable.status_dot_stopped
         )
         if (running) {
             tvAddress.text = serverManager.getLocalUrl()
             btnToggle.text = "停止"
-            btnToggle.backgroundTintList = ColorStateList.valueOf(getColor(R.color.error))
+            btnToggle.backgroundTintList = ColorStateList.valueOf(
+                ContextCompat.getColor(this, R.color.error)
+            )
             if (!isPageLoaded) loadWebView()
         } else {
             tvAddress.text = "--"
-            btnToggle.text = if (isStartingService) "启动中..." else "启动"
-            btnToggle.backgroundTintList = ColorStateList.valueOf(getColor(if (isStartingService) R.color.warning else R.color.primary))
-            btnToggle.isEnabled = !isStartingService
+            btnToggle.text = "启动"
+            btnToggle.backgroundTintList = ColorStateList.valueOf(
+                ContextCompat.getColor(this, R.color.primary)
+            )
             webView.visibility = View.GONE
             placeholder.visibility = View.VISIBLE
+            tvPlaceholderHint.text = "服务未运行\n点击启动服务或下拉刷新"
         }
     }
 
     private fun tryDiscoverServer() {
+        tvPlaceholderHint.text = "正在搜索局域网服务…"
         lifecycleScope.launch(Dispatchers.IO) {
             val serverUrl = serverManager.findAvailableServer()
             withContext(Dispatchers.Main) {
@@ -341,8 +460,12 @@ class MainActivity : AppCompatActivity() {
                     placeholder.visibility = View.GONE
                     tvAddress.text = serverUrl
                     tvStatusText.text = "已连接"
-                    tvStatusText.setTextColor(getColor(R.color.success))
+                    tvStatusText.setTextColor(
+                        ContextCompat.getColor(this@MainActivity, R.color.success)
+                    )
                     statusDot.setBackgroundResource(R.drawable.status_dot_running)
+                } else {
+                    tvPlaceholderHint.text = "未发现可用服务\n点击重试或启动本机服务"
                 }
             }
         }
@@ -352,13 +475,7 @@ class MainActivity : AppCompatActivity() {
         statusCheckRunnable = object : Runnable {
             override fun run() {
                 updateUI()
-                val interval = if (isStartingService && 
-                    System.currentTimeMillis() - startCheckStartTime < FAST_CHECK_DURATION) {
-                    STATUS_CHECK_FAST_INTERVAL
-                } else {
-                    STATUS_CHECK_INTERVAL
-                }
-                handler.postDelayed(this, interval)
+                handler.postDelayed(this, STATUS_CHECK_INTERVAL)
             }
         }
         handler.post(statusCheckRunnable!!)

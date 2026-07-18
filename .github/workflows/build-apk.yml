@@ -27,24 +27,36 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.5'
+
+      - name: Generate Gradle Wrapper
+        run: |
+          cd /tmp
+          mkdir -p gradle-gen && cd gradle-gen
+          echo 'rootProject.name = "temp"' > settings.gradle
+          gradle wrapper --gradle-version 8.5
+          cd "$GITHUB_WORKSPACE/android"
+          mkdir -p gradle/wrapper
+          cp /tmp/gradle-gen/gradlew /tmp/gradle-gen/gradlew.bat .
+          cp /tmp/gradle-gen/gradle/wrapper/gradle-wrapper.jar /tmp/gradle-gen/gradle/wrapper/gradle-wrapper.properties gradle/wrapper/
+          chmod +x gradlew
+          rm -rf /tmp/gradle-gen
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - name: Add Android targets
         run: |
           rustup target add aarch64-linux-android
-          rustup target add armv7-linux-androideabi
 
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
         id: setup-ndk
         with:
-          ndk-version: r25c
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.5'
+          ndk-version: r27c
 
       - name: Update version
         id: version
@@ -75,16 +87,12 @@ jobs:
       - name: Build Rust server for Android (arm64)
         env:
           NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-          TARGET: aarch64-linux-android
-          API_LEVEL: 26
         run: |
           # 创建 linker 配置
+          mkdir -p ~/.cargo
           cat > ~/.cargo/config.toml << EOF
           [target.aarch64-linux-android]
           linker = "${NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
-          ar = "${NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
-          [target.armv7-linux-androideabi]
-          linker = "${NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi26-clang"
           ar = "${NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
           EOF
 
@@ -93,18 +101,16 @@ jobs:
           cargo build --release --target aarch64-linux-android
           # 复制到 assets 目录
           mkdir -p ../android/app/src/main/assets
-          cp ../target/aarch64-linux-android/release/taskmod-server \
-             ../android/app/src/main/assets/taskmod-server || \
           cp target/aarch64-linux-android/release/taskmod-server \
              ../android/app/src/main/assets/taskmod-server
 
       - name: Build Release APK
         working-directory: android
-        run: gradle assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: Build Debug APK
         working-directory: android
-        run: gradle assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --no-daemon
 
       - name: Rename APKs
         run: |
@@ -132,7 +138,9 @@ jobs:
             ## TaskMod APK ${{ steps.version.outputs.version }}
 
             ### 功能
-            - 通知栏常驻服务（保活）
+            - 通知栏常驻服务（保活：WakeLock + startForeground + onTaskRemoved 重启）
+            - 持久化 su shell 提升 Root 命令执行效率
+            - 进程监控线程自动检测 server 意外退出
             - 快捷操作（截屏/解锁/重启）
             - Quick Settings 磁贴
             - 桌面小组件

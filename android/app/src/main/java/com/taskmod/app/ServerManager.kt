@@ -27,6 +27,8 @@ class ServerManager private constructor(private val context: Context) {
     }
 
     private var process: Process? = null
+    private var processMonitor: Thread? = null
+
     private val binaryFile: File
         get() = File(context.filesDir, BINARY_NAME)
     
@@ -53,7 +55,6 @@ class ServerManager private constructor(private val context: Context) {
         private set
 
     fun prepare(): Boolean {
-        // 从 assets 复制二进制文件
         if (!binaryFile.exists()) {
             try {
                 context.assets.open(BINARY_NAME).use { input ->
@@ -132,6 +133,9 @@ class ServerManager private constructor(private val context: Context) {
 
         state = ServerState.STARTING
         try {
+            // 先确保旧进程已停止
+            killExistingProcess()
+
             val dataDir = File(context.filesDir, "data")
             dataDir.mkdirs()
 
@@ -139,13 +143,15 @@ class ServerManager private constructor(private val context: Context) {
             builder.directory(context.filesDir)
             builder.environment()["TMPDIR"] = context.cacheDir.absolutePath
             builder.redirectErrorStream(true)
-
-            // 通过环境变量传递端口给服务端
             builder.environment()["TASKMOD_PORT"] = port.toString()
 
             process = builder.start()
 
-            val maxWait = 8000L
+            // 启动进程监控线程
+            startProcessMonitor()
+
+            // 轮询等待服务就绪（最多 5 秒，每 200ms 检查一次）
+            val maxWait = 5000L
             val interval = 200L
             var waited = 0L
             while (waited < maxWait) {
@@ -159,16 +165,20 @@ class ServerManager private constructor(private val context: Context) {
                 autoRestartCount = 0
                 lastAutoRestartTime = 0L
                 Log.i(TAG, "服务已启动，端口: $port")
-                startProcessMonitor()
                 return true
             } else {
-                var outputLog = ""
-                try {
-                    process?.inputStream?.bufferedReader()?.use { reader ->
-                        outputLog = reader.readText().take(500)
+                // 检查进程是否已退出
+                val proc = process
+                if (proc != null) {
+                    try {
+                        val exitCode = proc.exitValue()
+                        lastError = "进程启动后立即退出 (exit=$exitCode)"
+                    } catch (_: IllegalThreadStateException) {
+                        lastError = "进程运行中但 HTTP 服务未就绪，端口: $port"
                     }
-                } catch (_: Exception) {}
-                lastError = "进程启动后立即退出${if (outputLog.isNotBlank()) ": $outputLog" else ""}"
+                } else {
+                    lastError = "进程启动失败"
+                }
                 state = ServerState.ERROR
                 process = null
                 scheduleAutoRestart()
@@ -183,20 +193,37 @@ class ServerManager private constructor(private val context: Context) {
     }
 
     fun stop() {
+        stopProcessMonitor()
         try {
             // 先尝试优雅停止
             process?.destroy()
             process = null
-            // 等待一小段时间让进程退出
-            Thread.sleep(200)
-            // 如果还有残留，强制杀死
-            if (isProcessAlive()) {
-                killAllProcesses()
-            }
         } catch (e: Exception) {
-            Log.e(TAG, "停止失败", e)
+            Log.e(TAG, "停止进程失败", e)
         }
+        // 确保进程被彻底杀死（使用 ps 命令，兼容所有 Android 设备）
+        killExistingProcess()
         state = ServerState.STOPPED
+    }
+
+    /**
+     * 确保已存在的 server 进程被杀死
+     */
+    private fun killExistingProcess() {
+        try {
+            val checkProcess = Runtime.getRuntime().exec(arrayOf("sh", "-c", "ps -A -o PID,ARGS= 2>/dev/null | grep $BINARY_NAME | awk '{print \$1}'"))
+            val pidOutput = checkProcess.inputStream.bufferedReader().readText().trim()
+            checkProcess.waitFor()
+            if (pidOutput.isNotEmpty()) {
+                val pids = pidOutput.split("\n").filter { it.isNotBlank() }
+                for (pid in pids) {
+                    Runtime.getRuntime().exec(arrayOf("kill", "-9", pid.trim())).waitFor()
+                    Log.i(TAG, "已杀死旧进程: pid=$pid")
+                }
+            }
+        } catch (_: Exception) {
+            // 静默忽略
+        }
     }
 
     /**
@@ -228,71 +255,85 @@ class ServerManager private constructor(private val context: Context) {
         }
     }
 
-    @Volatile
-    private var lastCheckTime: Long = 0
-    @Volatile
-    private var lastCheckResult: Boolean = false
-    @Volatile
-    private var isChecking = false
+    /**
+     * 启动进程监控线程 — 检测 server 进程是否意外退出
+     */
+    private fun startProcessMonitor() {
+        stopProcessMonitor()
+        processMonitor = Thread {
+            try {
+                val proc = process ?: return@Thread
+                proc.waitFor()
+                Log.w(TAG, "Server 进程意外退出，exitCode=${proc.exitValue()}")
+                if (state == ServerState.RUNNING) {
+                    state = ServerState.STOPPED
+                    lastError = "进程意外退出"
+                }
+            } catch (_: InterruptedException) {
+                // 正常停止
+            } catch (e: Exception) {
+                Log.e(TAG, "进程监控异常", e)
+            }
+        }.apply {
+            name = "ServerProcessMonitor"
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun stopProcessMonitor() {
+        processMonitor?.interrupt()
+        processMonitor = null
+    }
 
     fun isRunning(): Boolean {
-        val now = System.currentTimeMillis()
-        
-        if (state == ServerState.STARTING) {
-            return isPortInUse(port)
-        }
-
-        if (now - lastCheckTime < 2000 && lastCheckResult && state == ServerState.RUNNING) {
-            return true
-        }
-
-        if (state == ServerState.STOPPED && !lastCheckResult && now - lastCheckTime < 1000) {
-            return false
-        }
-
+        // 快速路径：检查进程是否存活
         val proc = process
         if (proc != null) {
             try {
                 proc.exitValue()
+                // 进程已退出
                 process = null
+                if (state == ServerState.RUNNING) {
+                    state = ServerState.STOPPED
+                }
+                return false
             } catch (_: IllegalThreadStateException) {
+                // 进程仍在运行，检查 HTTP 服务
             }
         }
 
-        lastCheckTime = now
-
+        // 通过 HTTP 接口验证服务是否真正可用
         return try {
             val url = URL("http://127.0.0.1:$port/api/status")
             val conn = url.openConnection() as HttpURLConnection
-            conn.connectTimeout = 300
-            conn.readTimeout = 500
+            conn.connectTimeout = 1000
+            conn.readTimeout = 1000
             conn.requestMethod = "HEAD"
             conn.setRequestProperty("Connection", "close")
             val result = conn.responseCode == 200
             conn.disconnect()
-
-            updateStateBasedOnResult(result, proc)
+            if (result && state != ServerState.RUNNING) {
+                state = ServerState.RUNNING
+            }
             result
         } catch (_: Exception) {
-            val fallback = isProcessAlive() && isPortInUse(port)
-            updateStateBasedOnResult(fallback, proc)
-            fallback
-        }
-    }
-
-    private fun updateStateBasedOnResult(result: Boolean, proc: Process?) {
-        if (result) {
-            if (state != ServerState.RUNNING) {
-                state = ServerState.RUNNING
-                Log.i(TAG, "检测到服务已在运行")
+            // HTTP 不可用，但进程可能还在（启动中）
+            if (proc == null) {
+                // 检查是否有孤儿进程
+                try {
+                    val checkProcess = Runtime.getRuntime().exec(arrayOf("sh", "-c", "ps -A -o ARGS= 2>/dev/null | grep -q $BINARY_NAME"))
+                    val exitCode = checkProcess.waitFor()
+                    if (exitCode == 0) {
+                        if (state != ServerState.RUNNING) {
+                            state = ServerState.RUNNING
+                        }
+                        return true
+                    }
+                } catch (_: Exception) {
+                }
             }
-            lastCheckResult = true
-        } else {
-            if (proc == null && state == ServerState.RUNNING) {
-                state = ServerState.STOPPED
-                Log.i(TAG, "检测到服务已停止")
-            }
-            lastCheckResult = false
+            false
         }
     }
 
@@ -300,32 +341,10 @@ class ServerManager private constructor(private val context: Context) {
         if (state == ServerState.STARTING) {
             return false
         }
-        if (state == ServerState.RUNNING && lastCheckResult) {
-            val now = System.currentTimeMillis()
-            if (now - lastCheckTime < 5000) {
-                return true
-            }
+        if (state == ServerState.RUNNING) {
+            return isRunning()
         }
-        return isRunning()
-    }
-
-    private fun startProcessMonitor() {
-        Thread {
-            while (true) {
-                Thread.sleep(2000)
-                val proc = process
-                if (proc == null) break
-                
-                try {
-                    proc.exitValue()
-                    Log.w(TAG, "检测到进程意外退出，尝试自动重启")
-                    process = null
-                    scheduleAutoRestart()
-                    break
-                } catch (_: IllegalThreadStateException) {
-                }
-            }
-        }.start()
+        return false
     }
 
     private fun scheduleAutoRestart() {
@@ -359,8 +378,6 @@ class ServerManager private constructor(private val context: Context) {
     fun resetState() {
         process = null
         state = ServerState.STOPPED
-        lastCheckResult = false
-        lastCheckTime = 0
         autoRestartCount = 0
         autoRestartScheduled = false
     }
@@ -412,8 +429,13 @@ class ServerManager private constructor(private val context: Context) {
 
         val config = ConfigManager.load()
         if (config.customUrl.isNotBlank()) {
-            if (NetworkHelper.isReachable(config.customUrl.replace("http://", "").split(":")[0], port, 500)) {
-                return config.customUrl
+            try {
+                val parsedUrl = URL(config.customUrl)
+                if (NetworkHelper.isReachable(parsedUrl.host, parsedUrl.port.takeIf { it > 0 } ?: port, 500)) {
+                    return config.customUrl
+                }
+            } catch (_: Exception) {
+                // URL 解析失败，跳过
             }
         } else if (config.customIp.isNotBlank()) {
             if (NetworkHelper.isReachable(config.customIp, port, 500)) {

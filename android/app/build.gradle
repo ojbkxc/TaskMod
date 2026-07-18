@@ -9,16 +9,51 @@ android {
 
     defaultConfig {
         applicationId "com.taskmod.app"
-        minSdk 26
+        minSdk 21
         targetSdk 34
         versionCode 1
         versionName "1.0.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables {
+            useSupportLibrary true
+        }
+    }
+
+    buildFeatures {
+        buildConfig = true
+        viewBinding = true
+    }
+
+    signingConfigs {
+        release {
+            // 使用环境变量或 local.properties 配置签名
+            def keystoreFile = System.getenv("ANDROID_KEYSTORE_FILE") ?: ""
+            def keystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: ""
+            def keyAlias = System.getenv("ANDROID_KEY_ALIAS") ?: ""
+            def keyPassword = System.getenv("ANDROID_KEY_PASSWORD") ?: ""
+
+            if (!keystoreFile.isEmpty()) {
+                storeFile file(keystoreFile)
+                storePassword keystorePassword
+                keyAlias keyAlias
+                keyPassword keyPassword
+            }
+        }
     }
 
     buildTypes {
+        debug {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
         release {
             minifyEnabled true
             shrinkResources true
+            // 只有配置了签名才使用 release signingConfig
+            if (signingConfigs.release.storeFile != null) {
+                signingConfig signingConfigs.release
+            }
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
@@ -32,23 +67,39 @@ android {
         jvmTarget = '17'
     }
 
-    sourceSets {
-        main {
-            assets.srcDirs = ['src/main/assets']
-        }
+    lint {
+        disable 'ExpiredTargetSdkVersion'
+        checkReleaseBuilds false
     }
 }
 
 dependencies {
-    implementation 'androidx.core:core-ktx:1.12.0'
-    implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.11.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation 'androidx.webkit:webkit:1.9.0'
-    implementation 'androidx.work:work-runtime-ktx:2.9.0'
-    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
-    implementation 'com.google.code.gson:gson:2.10.1'
-    implementation 'androidx.glance:glance-appwidget:1.0.0'
-    implementation 'androidx.glance:glance-material3:1.0.0'
+    // AndroidX
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'androidx.activity:activity-ktx:1.9.3'
+    implementation 'androidx.fragment:fragment-ktx:1.8.5'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7'
+    implementation 'androidx.preference:preference-ktx:1.2.1'
+
+    // Material Design
+    implementation 'com.google.android.material:material:1.12.0'
+
+    // Coroutines
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
+
+    // Networking
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'com.google.code.gson:gson:2.11.0'
+
+    // WebView
+    implementation 'androidx.webkit:webkit:1.12.1'
+
+    // Testing
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
 }

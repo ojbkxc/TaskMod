@@ -29,7 +29,7 @@ class UpdateReceiver : BroadcastReceiver() {
     }
 
     private fun installUpdate(context: Context) {
-        val file = File(context.getExternalFilesDir(null), "TaskMod-update.apk")
+        val file = File(context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS), "TaskMod-update.apk")
         if (!file.exists()) {
             Log.e(TAG, "更新文件不存在")
             return

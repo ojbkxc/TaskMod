@@ -109,11 +109,13 @@
                 android:textColor="@color/on_surface" />
 
             <TextView
+                android:id="@+id/tv_placeholder_hint"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="点击上方「启动」按钮开始"
                 android:textSize="14sp"
                 android:textColor="@color/text_secondary"
+                android:gravity="center"
                 android:layout_marginTop="8dp" />
         </LinearLayout>
     </FrameLayout>

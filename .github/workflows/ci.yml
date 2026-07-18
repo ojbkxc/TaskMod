@@ -10,8 +10,6 @@ on:
 jobs:
   build-server:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -39,31 +37,22 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Get version
-        id: version
-        run: |
-          VERSION=$(grep '^version' server/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          MAJOR=$(echo $VERSION | cut -d. -f1)
-          MINOR=$(echo $VERSION | cut -d. -f2)
-          NEXT_MINOR=$((MINOR + 1))
-          echo "version=v${MAJOR}.${NEXT_MINOR}.0-dev" >> $GITHUB_OUTPUT
-
       - name: Build Server
         working-directory: server
         run: cargo ndk -t arm64-v8a build --release
 
       - name: Package Magisk Module
-        id: package
         run: |
-          VERSION=${{ steps.version.outputs.version }}
+          VERSION=$(grep '^version' server/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=$VERSION"
 
           # 将编译产物复制到模块目录
           mkdir -p bin/arm64
           cp server/target/aarch64-linux-android/release/taskmod-server bin/arm64/
           chmod +x bin/arm64/taskmod-server
 
-          # 打包 Magisk 模块 (从仓库根目录打包)
-          zip -r TaskMod-${VERSION}.zip . \
+          # 打包 Magisk 模块
+          zip -r TaskMod-${VERSION}-ci.zip . \
             -x ".git/*" \
             -x ".github/*" \
             -x "server/*" \
@@ -73,8 +62,8 @@ jobs:
       - name: Upload Server artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TaskMod-${{ steps.version.outputs.version }}
-          path: TaskMod-${{ steps.version.outputs.version }}.zip
+          name: TaskMod-Magisk-CI
+          path: TaskMod-*-ci.zip
 
   build-apk:
     runs-on: ubuntu-latest
@@ -88,123 +77,45 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.5'
 
-      - name: Get version
-        id: version
+      - name: Generate Gradle Wrapper
         run: |
-          VERSION=$(grep '^version' server/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          MAJOR=$(echo $VERSION | cut -d. -f1)
-          MINOR=$(echo $VERSION | cut -d. -f2)
-          NEXT_MINOR=$((MINOR + 1))
-          echo "version=v${MAJOR}.${NEXT_MINOR}.0-dev" >> $GITHUB_OUTPUT
+          cd /tmp
+          mkdir -p gradle-gen && cd gradle-gen
+          echo 'rootProject.name = "temp"' > settings.gradle
+          gradle wrapper --gradle-version 8.5
+          cd "$GITHUB_WORKSPACE/android"
+          mkdir -p gradle/wrapper
+          cp /tmp/gradle-gen/gradlew /tmp/gradle-gen/gradlew.bat .
+          cp /tmp/gradle-gen/gradle/wrapper/gradle-wrapper.jar /tmp/gradle-gen/gradle/wrapper/gradle-wrapper.properties gradle/wrapper/
+          chmod +x gradlew
+          rm -rf /tmp/gradle-gen
 
       - name: Build Debug APK
         working-directory: android
-        run: gradle assembleDebug --no-daemon
-
-      - name: Rename APK
-        run: |
-          VERSION=${{ steps.version.outputs.version }}
-          cp android/app/build/outputs/apk/debug/app-debug.apk TaskMod-app-${VERSION}.apk
+        run: ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TaskMod-APK-${{ steps.version.outputs.version }}
-          path: TaskMod-app-*.apk
+          name: TaskMod-APK-CI
+          path: android/app/build/outputs/apk/debug/app-debug.apk
 
-  prerelease:
-    needs: [build-server, build-apk]
+  lint:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
 
-      - name: Get version
-        id: version
-        run: |
-          VERSION=$(grep '^version' server/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          MAJOR=$(echo $VERSION | cut -d. -f1)
-          MINOR=$(echo $VERSION | cut -d. -f2)
-          NEXT_MINOR=$((MINOR + 1))
-          echo "version=v${MAJOR}.${NEXT_MINOR}.0-dev" >> $GITHUB_OUTPUT
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Download Server artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: TaskMod-${{ steps.version.outputs.version }}
-          path: ./release-files
+      - name: Run Clippy
+        working-directory: server
+        run: cargo clippy -- -D warnings
 
-      - name: Download APK artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: TaskMod-APK-${{ steps.version.outputs.version }}
-          path: ./release-files
-
-      - name: List release files
-        run: ls -la ./release-files/
-
-      - name: Delete old dev prerelease
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const tagName = '${{ steps.version.outputs.version }}';
-            const releases = await github.rest.repos.listReleases({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              per_page: 100
-            });
-            for (const rel of releases.data) {
-              if (rel.prerelease && rel.tag_name === tagName) {
-                try {
-                  await github.rest.repos.deleteRelease({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    release_id: rel.id
-                  });
-                  console.log(`Deleted old prerelease: ${rel.tag_name}`);
-                } catch (e) {
-                  console.log(`Failed to delete ${rel.tag_name}: ${e.message}`);
-                }
-              }
-            }
-            // 删除旧 tag
-            try {
-              await github.rest.git.deleteRef({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref: `tags/${tagName}`
-              });
-            } catch (e) { /* tag 可能不存在 */ }
-
-      - name: Create Pre-release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.version }}
-          name: "[预发布] TaskMod ${{ steps.version.outputs.version }}"
-          body: |
-            ## TaskMod ${{ steps.version.outputs.version }} (预发布)
-
-            > 此版本由 CI 自动构建，基于 main 分支最新提交 `${{ github.sha }}`
-
-            ### 安装
-
-            **Magisk 模块 (推荐)**
-            1. 下载 `TaskMod-${{ steps.version.outputs.version }}.zip`
-            2. 通过 Magisk 刷入
-            3. 浏览器访问 `http://设备IP:9527`
-
-            **APK 安装**
-            1. 下载 `TaskMod-app-${{ steps.version.outputs.version }}.apk`
-            2. 允许安装未知来源应用
-            3. 安装并打开
-          files: |
-            release-files/TaskMod-${{ steps.version.outputs.version }}.zip
-            release-files/TaskMod-app-${{ steps.version.outputs.version }}.apk
-          draft: false
-          prerelease: true
+      - name: Check formatting
+        working-directory: server
+        run: cargo fmt --check

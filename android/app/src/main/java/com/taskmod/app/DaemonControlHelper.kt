@@ -4,6 +4,7 @@ import android.app.Activity
 import android.view.View
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.*
 
@@ -109,19 +110,26 @@ class DaemonControlHelper(
         statusCheckJob?.cancel()
         statusCheckJob = scope.launch(Dispatchers.IO) {
             while (isActive) {
-                refreshStatus()
+                val result = daemonManager.getStatus()
+                withContext(Dispatchers.Main) {
+                    if (result.success && result.data != null) {
+                        val status = result.data
+                        updateUIRunning(status.pid, daemonManager.formatUptime(status.uptimeSeconds))
+                    } else {
+                        updateUIStopped(result.error)
+                    }
+                }
                 delay(5000) // 每5秒检查一次
             }
         }
     }
 
     /**
-     * 刷新状态显示
+     * 刷新状态显示（立即刷新，不启动新协程）
      */
     fun refreshStatus() {
         scope.launch(Dispatchers.IO) {
             val result = daemonManager.getStatus()
-
             withContext(Dispatchers.Main) {
                 if (result.success && result.data != null) {
                     val status = result.data
@@ -139,7 +147,7 @@ class DaemonControlHelper(
     private fun updateUIRunning(pid: Int, uptime: String) {
         statusDot?.setBackgroundResource(R.drawable.status_dot_running)
         tvStatus?.text = "运行中"
-        tvStatus?.setTextColor(activity.getColor(R.color.success))
+        tvStatus?.setTextColor(ContextCompat.getColor(activity, R.color.success))
         tvPid?.text = "PID: $pid"
         tvUptime?.text = "运行时长: $uptime"
 
@@ -154,7 +162,7 @@ class DaemonControlHelper(
     private fun updateUIStopped(error: String? = null) {
         statusDot?.setBackgroundResource(R.drawable.status_dot_stopped)
         tvStatus?.text = "未运行"
-        tvStatus?.setTextColor(activity.getColor(R.color.text_secondary))
+        tvStatus?.setTextColor(ContextCompat.getColor(activity, R.color.text_secondary))
         tvPid?.text = ""
         tvUptime?.text = error ?: ""
 

@@ -10,18 +10,22 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
 
-class TaskModService : Service(), CoroutineScope by CoroutineScope(Dispatchers.Default + SupervisorJob()) {
+class TaskModService : Service() {
 
     companion object {
         private const val TAG = "TaskModService"
         private const val NOTIFICATION_ID = 1001
-        private const val WAKE_LOCK_TIMEOUT = 30 * 60 * 1000L  // 30分钟（可自动续期）
 
         const val ACTION_START = "com.taskmod.action.START"
         const val ACTION_STOP = "com.taskmod.action.STOP"
         const val ACTION_SCREENSHOT = "com.taskmod.action.SCREENSHOT"
         const val ACTION_UNLOCK = "com.taskmod.action.UNLOCK"
         const val ACTION_REBOOT = "com.taskmod.action.REBOOT"
+
+        @Volatile
+        private var instance: TaskModService? = null
+
+        fun getInstance(): TaskModService? = instance
 
         fun start(context: Context) {
             val intent = Intent(context, TaskModService::class.java).apply {
@@ -42,18 +46,33 @@ class TaskModService : Service(), CoroutineScope by CoroutineScope(Dispatchers.D
         }
     }
 
+    private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private lateinit var serverManager: ServerManager
     private var wakeLock: PowerManager.WakeLock? = null
     private var wakeLockRenewJob: Job? = null
 
+    @Volatile
+    private var stopping = false
+
     override fun onCreate() {
         super.onCreate()
+        instance = this
+        Log.i(TAG, "onCreate")
+
         serverManager = ServerManager.getInstance(this)
         // START_STICKY 重建时，重置 ServerManager 状态以避免使用旧的 Process 引用
         serverManager.resetState()
+
+        // 立即启动前台服务 — 必须在 onCreate 5 秒内调用
+        startForeground(NOTIFICATION_ID, buildNotification("启动中…"))
+
+        // 获取 WakeLock，防止 CPU 休眠
+        acquireWakeLock()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.i(TAG, "onStartCommand: action=${intent?.action}")
+
         when (intent?.action) {
             ACTION_START -> handleStart()
             ACTION_STOP -> handleStop()
@@ -66,69 +85,63 @@ class TaskModService : Service(), CoroutineScope by CoroutineScope(Dispatchers.D
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private var startRetryCount = 0
-    private var startRetryJob: Job? = null
+    /**
+     * 当用户从最近任务列表划掉时，自动重启服务
+     */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        Log.i(TAG, "onTaskRemoved: 尝试重启服务")
+        val restartIntent = Intent(this, TaskModService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(restartIntent)
+        } else {
+            startService(restartIntent)
+        }
+        super.onTaskRemoved(rootIntent)
+    }
 
     private fun handleStart() {
-        startForeground(NOTIFICATION_ID, buildNotification("启动中…"))
-        acquireWakeLock()
-        startRetryCount = 0
-        startRetryJob?.cancel()
+        if (serverManager.state == ServerManager.ServerState.RUNNING) return
+        updateNotification("启动中…")
 
-        launch {
-            attemptStart()
-        }
-    }
-
-    private suspend fun attemptStart() {
-        val success = serverManager.start()
-        if (success) {
-            updateNotification("运行中 - 端口 ${serverManager.port}")
-            sendBroadcast(Intent("com.taskmod.STATUS_CHANGED").putExtra("running", true))
-            startRetryCount = 0
-            return
-        }
-
-        startRetryCount++
-        val maxRetries = 3
-        if (startRetryCount <= maxRetries) {
-            val delayMs = 2000L * startRetryCount
-            updateNotification("启动失败，重试 ${startRetryCount}/$maxRetries...")
-            Log.w(TAG, "启动失败(${serverManager.lastError})，${delayMs}ms 后重试 ${startRetryCount}/$maxRetries")
-            
-            delay(delayMs)
-            
-            if (isActive) {
-                attemptStart()
-            }
-        } else {
-            updateNotification("启动失败: ${serverManager.lastError}")
-            sendBroadcast(Intent("com.taskmod.STATUS_CHANGED").putExtra("running", false))
-            Log.e(TAG, "启动失败，已达最大重试次数")
-        }
-    }
-
-    private fun handleStop() {
-        launch(Dispatchers.IO) {
-            serverManager.stop()
-            releaseWakeLock()
-            withContext(Dispatchers.Main) {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
+        serviceScope.launch {
+            val success = serverManager.start()
+            if (success) {
+                val accessUrl = ConfigManager.getAccessUrl()
+                updateNotification("运行中 - $accessUrl")
+                sendBroadcast(Intent("com.taskmod.STATUS_CHANGED").putExtra("running", true))
+            } else {
+                updateNotification("启动失败: ${serverManager.lastError}")
                 sendBroadcast(Intent("com.taskmod.STATUS_CHANGED").putExtra("running", false))
             }
         }
     }
 
+    private fun handleStop() {
+        if (stopping) return
+        stopping = true
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                serverManager.stop()
+            } finally {
+                withContext(Dispatchers.Main) {
+                    releaseWakeLock()
+                    sendBroadcast(Intent("com.taskmod.STATUS_CHANGED").putExtra("running", false))
+                    stopForeground(STOP_FOREGROUND_DETACH)
+                    stopSelf()
+                }
+            }
+        }
+    }
+
     private fun handleScreenshot() {
-        launch(Dispatchers.IO) {
+        serviceScope.launch(Dispatchers.IO) {
             val (success, _) = serverManager.executeCommand("screencap -p /sdcard/screenshot.png")
             Log.i(TAG, "截屏: ${if (success) "成功" else "失败"}")
         }
     }
 
     private fun handleUnlock() {
-        launch(Dispatchers.IO) {
+        serviceScope.launch(Dispatchers.IO) {
             serverManager.executeCommand("input keyevent KEYCODE_WAKEUP")
             delay(300)
             serverManager.executeCommand("input swipe 540 1800 540 600 300")
@@ -137,7 +150,7 @@ class TaskModService : Service(), CoroutineScope by CoroutineScope(Dispatchers.D
     }
 
     private fun handleReboot() {
-        launch(Dispatchers.IO) {
+        serviceScope.launch(Dispatchers.IO) {
             serverManager.executeCommand("reboot")
         }
     }
@@ -186,7 +199,7 @@ class TaskModService : Service(), CoroutineScope by CoroutineScope(Dispatchers.D
             .build()
     }
 
-    private fun updateNotification(text: String) {
+    fun updateNotification(text: String) {
         val notification = buildNotification(text)
         val manager = getSystemService(NotificationManager::class.java)
         manager.notify(NOTIFICATION_ID, notification)
@@ -194,53 +207,37 @@ class TaskModService : Service(), CoroutineScope by CoroutineScope(Dispatchers.D
 
     private fun acquireWakeLock() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "TaskMod::Server")
-        wakeLock?.acquire(WAKE_LOCK_TIMEOUT)
-
-        wakeLockRenewJob = launch {
-            while (isActive) {
-                delay(WAKE_LOCK_TIMEOUT - 30 * 1000L)
-                val wl = wakeLock
-                if (wl != null) {
-                    if (wl.isHeld) {
-                        try {
-                            wl.acquire(WAKE_LOCK_TIMEOUT)
-                            Log.i(TAG, "WakeLock 已自动续期")
-                        } catch (e: Exception) {
-                            Log.w(TAG, "WakeLock 续期失败: $e")
-                        }
-                    } else {
-                        try {
-                            wl.acquire(WAKE_LOCK_TIMEOUT)
-                            Log.i(TAG, "WakeLock 已重新获取")
-                        } catch (e: Exception) {
-                            Log.w(TAG, "WakeLock 重新获取失败: $e")
-                        }
-                    }
-                }
-            }
-        }
+        wakeLock = pm.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "TaskMod::ServerWakeLock"
+        )
+        // 非引用计数，10 小时超时
+        wakeLock?.setReferenceCounted(false)
+        wakeLock?.acquire(10 * 60 * 60 * 1000L)
+        Log.i(TAG, "WakeLock acquired (10h timeout)")
     }
 
     private fun releaseWakeLock() {
         wakeLockRenewJob?.cancel()
         wakeLockRenewJob = null
         wakeLock?.let {
-            if (it.isHeld) it.release()
+            if (it.isHeld) {
+                it.release()
+                Log.i(TAG, "WakeLock released")
+            }
         }
         wakeLock = null
     }
 
     override fun onDestroy() {
-        releaseWakeLock()
-        startRetryJob?.cancel()
-        startRetryJob = null
-        cancel()
-        try {
+        Log.i(TAG, "onDestroy")
+        if (!stopping) {
+            // 被系统杀死时清理资源
             serverManager.stop()
-        } catch (e: Exception) {
-            Log.e(TAG, "onDestroy 停止服务失败", e)
         }
+        releaseWakeLock()
+        serviceScope.cancel()
+        instance = null
         super.onDestroy()
     }
 }
