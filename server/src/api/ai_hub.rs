@@ -1,4 +1,4 @@
-use axum::{Json, extract::Path, extract::Query, response::IntoResponse};
+use axum::{extract::Path, extract::Query, response::IntoResponse, Json};
 use base64::Engine;
 use chrono::Local;
 use serde::{Deserialize, Serialize};
@@ -53,8 +53,11 @@ async fn list_json_dir<T: serde::de::DeserializeOwned>(dir: &str) -> Vec<T> {
         }
     }
     let items: Vec<Option<T>> = futures::future::join_all(
-        paths.iter().map(|p| read_json_file::<T>(p.to_str().unwrap_or("")))
-    ).await;
+        paths
+            .iter()
+            .map(|p| read_json_file::<T>(p.to_str().unwrap_or(""))),
+    )
+    .await;
     items.into_iter().flatten().collect()
 }
 
@@ -144,11 +147,21 @@ pub async fn update_session(
         Some(s) => s,
         None => return Json(ApiResponse::err("对话不存在")),
     };
-    if let Some(title) = req.title { session.title = title; }
-    if let Some(msgs) = req.messages { session.messages = msgs; }
-    if let Some(pinned) = req.pinned { session.pinned = pinned; }
-    if let Some(archived) = req.archived { session.archived = archived; }
-    if let Some(pid) = req.project_id { session.project_id = pid; }
+    if let Some(title) = req.title {
+        session.title = title;
+    }
+    if let Some(msgs) = req.messages {
+        session.messages = msgs;
+    }
+    if let Some(pinned) = req.pinned {
+        session.pinned = pinned;
+    }
+    if let Some(archived) = req.archived {
+        session.archived = archived;
+    }
+    if let Some(pid) = req.project_id {
+        session.project_id = pid;
+    }
     session.updated_at = now_ms();
     match write_json_file(&path, &session).await {
         Ok(()) => Json(ApiResponse::ok(session)),
@@ -225,7 +238,9 @@ pub async fn update_preset(
         p.name = req.name;
         p.description = req.description.unwrap_or_default();
         p.system_prompt = req.system_prompt;
-        if let Some(enabled) = req.enabled { p.enabled = enabled; }
+        if let Some(enabled) = req.enabled {
+            p.enabled = enabled;
+        }
         let updated = p.clone();
         match write_json_file(PRESETS_FILE, &presets).await {
             Ok(()) => return Json(ApiResponse::ok(updated)),
@@ -330,14 +345,19 @@ pub async fn list_memories(Query(q): Query<MemoryQuery>) -> Json<ApiResponse<Vec
     }
     if let Some(ref keyword) = q.q {
         let kw = keyword.to_lowercase();
-        items.retain(|m| m.content.to_lowercase().contains(&kw) || m.tags.iter().any(|t| t.to_lowercase().contains(&kw)));
+        items.retain(|m| {
+            m.content.to_lowercase().contains(&kw)
+                || m.tags.iter().any(|t| t.to_lowercase().contains(&kw))
+        });
     }
     if let Some(ref cat) = q.category {
         items.retain(|m| m.category == *cat);
     }
 
     items.sort_by(|a, b| {
-        a.pinned.cmp(&b.pinned).reverse()
+        a.pinned
+            .cmp(&b.pinned)
+            .reverse()
             .then_with(|| b.updated_at.cmp(&a.updated_at))
     });
     Json(ApiResponse::ok(items))
@@ -378,14 +398,30 @@ pub async fn update_memory(
         None => return Json(ApiResponse::err("记忆不存在")),
     };
     mem.content = req.content;
-    if let Some(name) = req.name { mem.name = name; }
-    if let Some(cat) = req.category { mem.category = cat; }
-    if let Some(mt) = req.memory_type { mem.memory_type = mt; }
-    if let Some(scope) = req.scope { mem.scope = scope; }
-    if let Some(pid) = req.project_id { mem.project_id = pid; }
-    if let Some(tags) = req.tags { mem.tags = tags; }
-    if let Some(pinned) = req.pinned { mem.pinned = pinned; }
-    if let Some(archived) = req.archived { mem.archived = archived; }
+    if let Some(name) = req.name {
+        mem.name = name;
+    }
+    if let Some(cat) = req.category {
+        mem.category = cat;
+    }
+    if let Some(mt) = req.memory_type {
+        mem.memory_type = mt;
+    }
+    if let Some(scope) = req.scope {
+        mem.scope = scope;
+    }
+    if let Some(pid) = req.project_id {
+        mem.project_id = pid;
+    }
+    if let Some(tags) = req.tags {
+        mem.tags = tags;
+    }
+    if let Some(pinned) = req.pinned {
+        mem.pinned = pinned;
+    }
+    if let Some(archived) = req.archived {
+        mem.archived = archived;
+    }
     mem.updated_at = now_ms();
     match write_json_file(&path, &mem).await {
         Ok(()) => Json(ApiResponse::ok(mem)),
@@ -427,8 +463,13 @@ pub fn get_memory_budget(prompt_tokens: usize) -> usize {
 
 /// 格式化单条记忆为文本行
 fn format_memory_line(mem: &Memory) -> String {
-    let scope_prefix = if mem.scope == "project" { "project " } else { "" };
-    format!("- #{} [{}{}{}] {}",
+    let scope_prefix = if mem.scope == "project" {
+        "project "
+    } else {
+        ""
+    };
+    format!(
+        "- #{} [{}{}{}] {}",
         mem.id,
         scope_prefix,
         mem.memory_type,
@@ -446,12 +487,17 @@ pub fn format_memories_block(memories: &[Memory]) -> String {
     if memories.is_empty() {
         return "暂无相关记忆".to_string();
     }
-    memories.iter().map(format_memory_line).collect::<Vec<_>>().join("\n")
+    memories
+        .iter()
+        .map(format_memory_line)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// 关键词评分（参照deepseek-pp-main的keywordScore）
 fn keyword_score(prompt_words: &[String], mem: &Memory) -> f64 {
-    let prompt_set: std::collections::HashSet<&str> = prompt_words.iter().map(|s| s.as_str()).collect();
+    let prompt_set: std::collections::HashSet<&str> =
+        prompt_words.iter().map(|s| s.as_str()).collect();
 
     let mut tag_hits: f64 = 0.0;
     for tag in &mem.tags {
@@ -504,33 +550,39 @@ fn decay_score(mem: &Memory) -> f64 {
 }
 
 /// 智能选择记忆（参照deepseek-pp-main的selectMemories）
-pub fn select_memories(prompt: &str, all_memories: &[Memory], budget: Option<usize>) -> Vec<Memory> {
+pub fn select_memories(
+    prompt: &str,
+    all_memories: &[Memory],
+    budget: Option<usize>,
+) -> Vec<Memory> {
     if all_memories.is_empty() {
         return Vec::new();
     }
 
     let budget = budget.unwrap_or(MEMORY_TOKEN_BUDGET);
 
-    let candidates: Vec<&Memory> = all_memories.iter()
-        .filter(|m| !m.archived)
-        .collect();
+    let candidates: Vec<&Memory> = all_memories.iter().filter(|m| !m.archived).collect();
 
     if candidates.is_empty() {
         return Vec::new();
     }
 
-    let prompt_words: Vec<String> = prompt.to_lowercase()
+    let prompt_words: Vec<String> = prompt
+        .to_lowercase()
         .split(|c: char| c.is_whitespace() || ",.!?;:、-_".contains(c))
         .filter(|w| w.len() > 1)
         .map(|s| s.to_string())
         .collect();
 
-    let mut scored: Vec<(&Memory, f64)> = candidates.iter().map(|m| {
-        let score = if m.pinned { 1000.0 } else { 0.0 }
-            + keyword_score(&prompt_words, m)
-            + decay_score(m);
-        (*m, score)
-    }).collect();
+    let mut scored: Vec<(&Memory, f64)> = candidates
+        .iter()
+        .map(|m| {
+            let score = if m.pinned { 1000.0 } else { 0.0 }
+                + keyword_score(&prompt_words, m)
+                + decay_score(m);
+            (*m, score)
+        })
+        .collect();
 
     scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
@@ -686,10 +738,18 @@ pub async fn update_skill(
     skill.name = req.name;
     skill.description = req.description.unwrap_or_default();
     skill.prompt_template = req.prompt_template.unwrap_or(skill.prompt_template);
-    if let Some(vars) = req.variables { skill.variables = vars; }
-    if let Some(enabled) = req.enabled { skill.enabled = enabled; }
-    if let Some(cat) = req.category { skill.category = cat; }
-    if let Some(source) = req.source { skill.source = source; }
+    if let Some(vars) = req.variables {
+        skill.variables = vars;
+    }
+    if let Some(enabled) = req.enabled {
+        skill.enabled = enabled;
+    }
+    if let Some(cat) = req.category {
+        skill.category = cat;
+    }
+    if let Some(source) = req.source {
+        skill.source = source;
+    }
     match write_json_file(&path, &skill).await {
         Ok(()) => Json(ApiResponse::ok(skill)),
         Err(e) => Json(ApiResponse::err(&format!("保存失败: {}", e))),
@@ -720,7 +780,9 @@ pub struct SavedItem {
     pub updated_at: i64,
 }
 
-fn default_kind() -> String { "snippet".to_string() }
+fn default_kind() -> String {
+    "snippet".to_string()
+}
 
 #[derive(Debug, Deserialize)]
 pub struct SavedItemReq {
@@ -771,9 +833,15 @@ pub async fn update_saved_item(
     };
     item.title = req.title;
     item.content = req.content;
-    if let Some(kind) = req.kind { item.kind = kind; }
-    if let Some(tags) = req.tags { item.tags = tags; }
-    if let Some(url) = req.source_url { item.source_url = url; }
+    if let Some(kind) = req.kind {
+        item.kind = kind;
+    }
+    if let Some(tags) = req.tags {
+        item.tags = tags;
+    }
+    if let Some(url) = req.source_url {
+        item.source_url = url;
+    }
     item.updated_at = now_ms();
     match write_json_file(&path, &item).await {
         Ok(()) => Json(ApiResponse::ok(item)),
@@ -874,8 +942,12 @@ pub async fn update_project(
     proj.name = req.name;
     proj.description = req.description.unwrap_or_default();
     proj.instructions = req.instructions.unwrap_or_default();
-    if let Some(enabled) = req.enabled { proj.enabled = enabled; }
-    if let Some(auto_inject) = req.auto_inject { proj.auto_inject = auto_inject; }
+    if let Some(enabled) = req.enabled {
+        proj.enabled = enabled;
+    }
+    if let Some(auto_inject) = req.auto_inject {
+        proj.auto_inject = auto_inject;
+    }
     proj.updated_at = now_ms();
     match write_json_file(&path, &proj).await {
         Ok(()) => Json(ApiResponse::ok(proj)),
@@ -995,15 +1067,33 @@ pub async fn update_mcp_server(
         None => return Json(ApiResponse::err("MCP服务器不存在")),
     };
     server.name = req.name;
-    if let Some(t) = req.transport { server.transport = t; }
-    if let Some(c) = req.command { server.command = c; }
-    if let Some(a) = req.args { server.args = a; }
-    if let Some(e) = req.env { server.env = e; }
-    if let Some(u) = req.url { server.url = u; }
-    if let Some(enabled) = req.enabled { server.enabled = enabled; }
-    if let Some(auto) = req.auto_connect { server.auto_connect = auto; }
-    if let Some(at) = req.allowed_tools { server.allowed_tools = at; }
-    if let Some(ct) = req.cached_tools { server.cached_tools = ct; }
+    if let Some(t) = req.transport {
+        server.transport = t;
+    }
+    if let Some(c) = req.command {
+        server.command = c;
+    }
+    if let Some(a) = req.args {
+        server.args = a;
+    }
+    if let Some(e) = req.env {
+        server.env = e;
+    }
+    if let Some(u) = req.url {
+        server.url = u;
+    }
+    if let Some(enabled) = req.enabled {
+        server.enabled = enabled;
+    }
+    if let Some(auto) = req.auto_connect {
+        server.auto_connect = auto;
+    }
+    if let Some(at) = req.allowed_tools {
+        server.allowed_tools = at;
+    }
+    if let Some(ct) = req.cached_tools {
+        server.cached_tools = ct;
+    }
     match write_json_file(&path, &server).await {
         Ok(()) => Json(ApiResponse::ok(server)),
         Err(e) => Json(ApiResponse::err(&format!("保存失败: {}", e))),
@@ -1024,7 +1114,9 @@ pub struct ScreenshotAnalyzeReq {
     pub prompt: Option<String>,
 }
 
-pub async fn screenshot_analyze(Json(req): Json<ScreenshotAnalyzeReq>) -> Json<ApiResponse<String>> {
+pub async fn screenshot_analyze(
+    Json(req): Json<ScreenshotAnalyzeReq>,
+) -> Json<ApiResponse<String>> {
     use crate::utils::adb;
 
     let providers = crate::api::ai::get_enabled_providers();
@@ -1040,7 +1132,9 @@ pub async fn screenshot_analyze(Json(req): Json<ScreenshotAnalyzeReq>) -> Json<A
     };
 
     // 调用支持图像的AI
-    let prompt = req.prompt.unwrap_or_else(|| "请描述这个屏幕截图的内容，并给出操作建议。".to_string());
+    let prompt = req
+        .prompt
+        .unwrap_or_else(|| "请描述这个屏幕截图的内容，并给出操作建议。".to_string());
     match crate::api::ai::call_ai_image_analyze(&provider, &prompt, &img_base64).await {
         Ok(result) => Json(ApiResponse::ok(result)),
         Err(e) => Json(ApiResponse::err(&format!("AI分析失败: {}", e))),
@@ -1067,12 +1161,20 @@ pub async fn export_session(Json(req): Json<ExportReq>) -> Json<ApiResponse<Stri
         _ => {
             // Markdown 格式
             let mut md = format!("# {}\n\n", session.title);
-            md.push_str(&format!("模型: {} | 时间: {}\n\n---\n\n", session.model, {
-                let dt = chrono::DateTime::from_timestamp_millis(session.created_at);
-                dt.map(|d| d.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default()
-            }));
+            md.push_str(&format!(
+                "模型: {} | 时间: {}\n\n---\n\n",
+                session.model,
+                {
+                    let dt = chrono::DateTime::from_timestamp_millis(session.created_at);
+                    dt.map(|d| d.format("%Y-%m-%d %H:%M").to_string())
+                        .unwrap_or_default()
+                }
+            ));
             for msg in &session.messages {
-                let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("unknown");
+                let role = msg
+                    .get("role")
+                    .and_then(|r| r.as_str())
+                    .unwrap_or("unknown");
                 let content = msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
                 match role {
                     "user" => md.push_str(&format!("**You:** {}\n\n", content)),
@@ -1105,8 +1207,12 @@ pub struct PromptSettings {
     pub active_preset_id: String,
 }
 
-fn default_true() -> bool { true }
-fn default_cadence() -> String { "default".to_string() }
+fn default_true() -> bool {
+    true
+}
+fn default_cadence() -> String {
+    "default".to_string()
+}
 
 impl Default for PromptSettings {
     fn default() -> Self {
@@ -1130,11 +1236,15 @@ pub fn get_prompt_settings_sync() -> PromptSettings {
 }
 
 pub async fn get_prompt_settings() -> Json<ApiResponse<PromptSettings>> {
-    let settings: PromptSettings = read_json_file(PROMPT_SETTINGS_FILE).await.unwrap_or_default();
+    let settings: PromptSettings = read_json_file(PROMPT_SETTINGS_FILE)
+        .await
+        .unwrap_or_default();
     Json(ApiResponse::ok(settings))
 }
 
-pub async fn update_prompt_settings(Json(req): Json<PromptSettings>) -> Json<ApiResponse<PromptSettings>> {
+pub async fn update_prompt_settings(
+    Json(req): Json<PromptSettings>,
+) -> Json<ApiResponse<PromptSettings>> {
     match write_json_file(PROMPT_SETTINGS_FILE, &req).await {
         Ok(()) => Json(ApiResponse::ok(req)),
         Err(e) => Json(ApiResponse::err(&format!("保存失败: {}", e))),
@@ -1159,29 +1269,39 @@ const SCENARIOS_FILE: &str = "/sdcard/TaskMod/scenarios.json";
 fn default_scenarios() -> Vec<Scenario> {
     vec![
         Scenario {
-            id: "summarize".into(), label: "总结".into(),
+            id: "summarize".into(),
+            label: "总结".into(),
             template: "请用简洁的语言总结以下内容：\n\n{text}".into(),
-            enabled: true, built_in: true,
+            enabled: true,
+            built_in: true,
         },
         Scenario {
-            id: "explain".into(), label: "解释".into(),
+            id: "explain".into(),
+            label: "解释".into(),
             template: "请解释以下内容：\n\n{text}".into(),
-            enabled: true, built_in: true,
+            enabled: true,
+            built_in: true,
         },
         Scenario {
-            id: "translate_zh".into(), label: "翻译成中文".into(),
+            id: "translate_zh".into(),
+            label: "翻译成中文".into(),
             template: "请将以下内容翻译成中文：\n\n{text}".into(),
-            enabled: true, built_in: true,
+            enabled: true,
+            built_in: true,
         },
         Scenario {
-            id: "translate_en".into(), label: "翻译成英文".into(),
+            id: "translate_en".into(),
+            label: "翻译成英文".into(),
             template: "Please translate the following into English:\n\n{text}".into(),
-            enabled: true, built_in: true,
+            enabled: true,
+            built_in: true,
         },
         Scenario {
-            id: "debug".into(), label: "调试分析".into(),
+            id: "debug".into(),
+            label: "调试分析".into(),
             template: "请分析以下错误/日志并给出修复建议：\n\n{text}".into(),
-            enabled: true, built_in: true,
+            enabled: true,
+            built_in: true,
         },
     ]
 }
@@ -1195,7 +1315,10 @@ fn load_scenarios_sync() -> Vec<Scenario> {
 
 #[allow(dead_code)]
 pub fn get_enabled_scenarios_sync() -> Vec<Scenario> {
-    load_scenarios_sync().into_iter().filter(|s| s.enabled).collect()
+    load_scenarios_sync()
+        .into_iter()
+        .filter(|s| s.enabled)
+        .collect()
 }
 
 pub async fn list_scenarios() -> Json<ApiResponse<Vec<Scenario>>> {
@@ -1226,12 +1349,17 @@ pub async fn create_scenario(Json(req): Json<ScenarioReq>) -> Json<ApiResponse<S
     }
 }
 
-pub async fn update_scenario(Path(id): Path<String>, Json(req): Json<ScenarioReq>) -> Json<ApiResponse<Scenario>> {
+pub async fn update_scenario(
+    Path(id): Path<String>,
+    Json(req): Json<ScenarioReq>,
+) -> Json<ApiResponse<Scenario>> {
     let mut scenarios = load_scenarios_sync();
     if let Some(s) = scenarios.iter_mut().find(|s| s.id == id) {
         s.label = req.label;
         s.template = req.template;
-        if let Some(enabled) = req.enabled { s.enabled = enabled; }
+        if let Some(enabled) = req.enabled {
+            s.enabled = enabled;
+        }
         let updated = s.clone();
         match write_json_file(SCENARIOS_FILE, &scenarios).await {
             Ok(()) => return Json(ApiResponse::ok(updated)),
@@ -1245,7 +1373,9 @@ pub async fn delete_scenario(Path(id): Path<String>) -> Json<ApiResponse<String>
     let mut scenarios = load_scenarios_sync();
     let before = scenarios.len();
     scenarios.retain(|s| s.id != id || s.built_in);
-    if scenarios.len() == before { return Json(ApiResponse::err("场景不存在或为内置场景")); }
+    if scenarios.len() == before {
+        return Json(ApiResponse::err("场景不存在或为内置场景"));
+    }
     match write_json_file(SCENARIOS_FILE, &scenarios).await {
         Ok(()) => Json(ApiResponse::ok("已删除".to_string())),
         Err(e) => Json(ApiResponse::err(&format!("删除失败: {}", e))),
@@ -1256,22 +1386,27 @@ pub async fn delete_scenario(Path(id): Path<String>) -> Json<ApiResponse<String>
 
 pub fn select_memories_for_prompt(user_message: &str, project_id: Option<&str>) -> Vec<Memory> {
     let settings = get_prompt_settings_sync();
-    if !settings.memory_enabled { return Vec::new(); }
+    if !settings.memory_enabled {
+        return Vec::new();
+    }
 
     let all = get_all_memories_sync();
 
     // 作用域过滤
-    let filtered: Vec<Memory> = all.into_iter().filter(|m| {
-        if m.scope == "project" {
-            if let Some(pid) = project_id {
-                m.project_id == pid
+    let filtered: Vec<Memory> = all
+        .into_iter()
+        .filter(|m| {
+            if m.scope == "project" {
+                if let Some(pid) = project_id {
+                    m.project_id == pid
+                } else {
+                    false
+                }
             } else {
-                false
+                true
             }
-        } else {
-            true
-        }
-    }).collect();
+        })
+        .collect();
 
     // 使用智能选择算法
     let prompt_tokens = estimate_tokens(user_message);
@@ -1280,7 +1415,9 @@ pub fn select_memories_for_prompt(user_message: &str, project_id: Option<&str>) 
 }
 
 pub fn build_memory_context(memories: &[Memory]) -> String {
-    if memories.is_empty() { return String::new(); }
+    if memories.is_empty() {
+        return String::new();
+    }
     format!("## 相关记忆\n\n{}", format_memories_block(memories))
 }
 
@@ -1307,7 +1444,9 @@ pub async fn upload_image(Json(req): Json<UploadImageReq>) -> Json<serde_json::V
     match base64::engine::general_purpose::STANDARD.decode(&req.image_base64) {
         Ok(bytes) => {
             if fs::write(&path, &bytes).await.is_ok() {
-                Json(json!({"ok": true, "id": id, "path": path, "url": format!("/api/ai/images/{}", id)}))
+                Json(
+                    json!({"ok": true, "id": id, "path": path, "url": format!("/api/ai/images/{}", id)}),
+                )
             } else {
                 Json(json!({"ok": false, "error": "写入失败"}))
             }
@@ -1335,7 +1474,8 @@ pub async fn get_image(Path(id): Path<String>) -> impl axum::response::IntoRespo
                     (axum::http::header::CACHE_CONTROL, "public, max-age=86400"),
                 ],
                 bytes,
-            ).into_response();
+            )
+                .into_response();
         }
     }
     (axum::http::StatusCode::NOT_FOUND, "图片未找到").into_response()
@@ -1352,7 +1492,8 @@ pub struct SkillImportReq {
 
 pub async fn import_skill_from_github(Json(req): Json<SkillImportReq>) -> Json<serde_json::Value> {
     // 将 GitHub URL 转换为 raw URL
-    let raw_url = req.github_url
+    let raw_url = req
+        .github_url
         .replace("github.com", "raw.githubusercontent.com")
         .replace("/blob/", "/")
         .replace("/tree/", "/");
@@ -1388,7 +1529,12 @@ pub async fn import_skill_from_github(Json(req): Json<SkillImportReq>) -> Json<s
                 // 作为纯文本 prompt_template 处理
                 let id = gen_id();
                 let name = req.name.clone().unwrap_or_else(|| {
-                    raw_url.split('/').next_back().unwrap_or("imported_skill").replace(".json", "").replace(".md", "")
+                    raw_url
+                        .split('/')
+                        .next_back()
+                        .unwrap_or("imported_skill")
+                        .replace(".json", "")
+                        .replace(".md", "")
                 });
                 let skill = Skill {
                     id: id.clone(),
@@ -1430,8 +1576,13 @@ fn mcp_history_path(id: &str) -> String {
     format!("{}/{}.json", MCP_HISTORY_DIR, id)
 }
 
-pub async fn list_mcp_history(Query(params): Query<HashMap<String, String>>) -> Json<serde_json::Value> {
-    let limit = params.get("limit").and_then(|v| v.parse::<usize>().ok()).unwrap_or(50);
+pub async fn list_mcp_history(
+    Query(params): Query<HashMap<String, String>>,
+) -> Json<serde_json::Value> {
+    let limit = params
+        .get("limit")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(50);
     let server_id = params.get("server_id");
 
     if let Ok(mut entries) = fs::read_dir(MCP_HISTORY_DIR).await {
@@ -1557,16 +1708,31 @@ fn chrono_date() -> String {
 
 pub fn generate_title_from_message(message: &str) -> String {
     let clean = message.trim();
-    if clean.is_empty() { return "空对话".to_string(); }
+    if clean.is_empty() {
+        return "空对话".to_string();
+    }
     // 取前30个字符
     let title: String = clean.chars().take(30).collect();
-    if clean.chars().count() > 30 { format!("{}...", title) } else { title }
+    if clean.chars().count() > 30 {
+        format!("{}...", title)
+    } else {
+        title
+    }
 }
 
 // ==================== 统一初始化 ====================
 
 pub async fn init_dirs() {
-    for dir in &[SKILLS_DIR, MCP_DIR, MEMORY_DIR, PROJECTS_DIR, CHAT_HISTORY_DIR, SAVED_ITEMS_DIR, MCP_HISTORY_DIR, UPLOAD_DIR] {
+    for dir in &[
+        SKILLS_DIR,
+        MCP_DIR,
+        MEMORY_DIR,
+        PROJECTS_DIR,
+        CHAT_HISTORY_DIR,
+        SAVED_ITEMS_DIR,
+        MCP_HISTORY_DIR,
+        UPLOAD_DIR,
+    ] {
         let _ = fs::create_dir_all(dir).await;
     }
     // 初始化预设文件

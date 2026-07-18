@@ -39,7 +39,10 @@ impl VideoCodec {
                 {
                     let encoders = String::from_utf8_lossy(&output.stdout);
                     // 优先级: NVENC HEVC > AMF HEVC > QSV HEVC > H.264
-                    if encoders.contains("hevc_nvenc") || encoders.contains("hevc_amf") || encoders.contains("hevc_qsv") {
+                    if encoders.contains("hevc_nvenc")
+                        || encoders.contains("hevc_amf")
+                        || encoders.contains("hevc_qsv")
+                    {
                         return VideoCodec::H265;
                     }
                 }
@@ -58,7 +61,7 @@ pub struct NaluParser {
     residual: Vec<u8>,
     frame_seq: u64,
     frame_timestamp: u64,
-    start_time: u64,  // 流开始时的 epoch ms，用于计算相对时间戳
+    start_time: u64, // 流开始时的 epoch ms，用于计算相对时间戳
 }
 
 impl NaluParser {
@@ -109,7 +112,10 @@ impl NaluParser {
 
                 if search_from < search_end {
                     // 用 windows(3) 批量搜索 [0,0,1]，底层由编译器向量化优化
-                    for (i, w) in self.residual[search_from..search_end].windows(3).enumerate() {
+                    for (i, w) in self.residual[search_from..search_end]
+                        .windows(3)
+                        .enumerate()
+                    {
                         let abs_idx = search_from + i;
                         if w[0] == 0 && w[1] == 0 && w[2] == 1 {
                             // 检查是否为 4 字节起始码 [0,0,0,1]
@@ -131,7 +137,12 @@ impl NaluParser {
                             self.frame_seq += 1;
                             self.frame_timestamp = now_millis();
                             let rel_ts = (self.frame_timestamp - self.start_time) as u32;
-                            nalus.push((nalu_type, nalu_data.to_vec(), self.frame_seq as u32, rel_ts));
+                            nalus.push((
+                                nalu_type,
+                                nalu_data.to_vec(),
+                                self.frame_seq as u32,
+                                rel_ts,
+                            ));
                         }
                         processed = pos + code_len;
                         continue;
@@ -197,15 +208,24 @@ pub async fn encode_pcm_to_opus(pcm: &[u8], config: &OpusConfig) -> Result<Vec<u
 
     let mut child = tokio::process::Command::new("ffmpeg")
         .args([
-            "-f", "s16le",
-            "-ar", &config.sample_rate.to_string(),
-            "-ac", &config.channels.to_string(),
-            "-i", "pipe:0",
-            "-c:a", "libopus",
-            "-b:a", &format!("{}k", config.bitrate / 1000),
-            "-frame_duration", &config.frame_size_ms.to_string(),
-            "-vbr", "off",
-            "-f", "opus",
+            "-f",
+            "s16le",
+            "-ar",
+            &config.sample_rate.to_string(),
+            "-ac",
+            &config.channels.to_string(),
+            "-i",
+            "pipe:0",
+            "-c:a",
+            "libopus",
+            "-b:a",
+            &format!("{}k", config.bitrate / 1000),
+            "-frame_duration",
+            &config.frame_size_ms.to_string(),
+            "-vbr",
+            "off",
+            "-f",
+            "opus",
             "pipe:1",
         ])
         .stdin(std::process::Stdio::piped())

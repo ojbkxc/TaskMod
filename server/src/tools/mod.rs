@@ -53,15 +53,14 @@ impl ToolRegistry {
 }
 
 pub fn parse_arg<T: serde::de::DeserializeOwned>(args: &str, name: &str) -> Result<T, String> {
-    let args_json: Value = serde_json::from_str(args)
-        .map_err(|_| "参数解析失败".to_string())?;
-    
-    let value = args_json.get(name)
+    let args_json: Value = serde_json::from_str(args).map_err(|_| "参数解析失败".to_string())?;
+
+    let value = args_json
+        .get(name)
         .ok_or_else(|| format!("缺少参数: {}", name))?
         .clone();
-    
-    serde_json::from_value(value)
-        .map_err(|_| format!("参数类型错误: {}", name))
+
+    serde_json::from_value(value).map_err(|_| format!("参数类型错误: {}", name))
 }
 
 #[allow(dead_code)]

@@ -26,7 +26,12 @@ pub trait ScreenCapture: Send {
     /// 请求关键帧
     async fn request_keyframe(&self) -> Result<(), String>;
     /// 更新编码参数（ABR 动态调整时调用）
-    async fn update_params(&self, bitrate: u32, fps: u32, resolution_scale: u32) -> Result<(), String>;
+    async fn update_params(
+        &self,
+        bitrate: u32,
+        fps: u32,
+        resolution_scale: u32,
+    ) -> Result<(), String>;
 }
 
 // ==================== Android 实现 ====================
@@ -100,7 +105,11 @@ impl ScreenCapture for AndroidScreenCapture {
                 match reader.read(&mut buf).await {
                     Ok(0) => break, // EOF
                     Ok(n) => {
-                        if tx.send(CapturedFrame::EncodedNalu(buf[..n].to_vec())).await.is_err() {
+                        if tx
+                            .send(CapturedFrame::EncodedNalu(buf[..n].to_vec()))
+                            .await
+                            .is_err()
+                        {
                             break; // 接收端已关闭
                         }
                     }
@@ -131,7 +140,12 @@ impl ScreenCapture for AndroidScreenCapture {
         Ok(())
     }
 
-    async fn update_params(&self, _bitrate: u32, _fps: u32, _resolution_scale: u32) -> Result<(), String> {
+    async fn update_params(
+        &self,
+        _bitrate: u32,
+        _fps: u32,
+        _resolution_scale: u32,
+    ) -> Result<(), String> {
         // Android screenrecord 不支持运行时修改参数
         // 需要重启采集器（由 ABR 控制器触发 need_restart）
         Ok(())
@@ -221,21 +235,41 @@ impl ScreenCapture for DesktopScreenCapture {
         let fps_str = format!("{}", self.fps);
         let stop = self.stop_flag.clone();
 
-        tracing::info!("[DesktopScreenCapture] 使用编码器: {}，输入: {}，码率: {}，帧率: {}", encoder, input_source, bitrate_str, fps_str);
+        tracing::info!(
+            "[DesktopScreenCapture] 使用编码器: {}，输入: {}，码率: {}，帧率: {}",
+            encoder,
+            input_source,
+            bitrate_str,
+            fps_str
+        );
 
         let handle = tokio::spawn(async move {
             let mut child = match tokio::process::Command::new("ffmpeg")
                 .args([
-                    "-f", input_source,
-                    "-i", input_device,
-                    "-r", &fps_str,
-                    "-c:v", &encoder,
-                    "-b:v", &bitrate_str,
-                    "-preset", "ultrafast",
-                    "-tune", "zerolatency",
-                    "-g", "30",  // GOP size = 30 帧（每30帧一个关键帧）
-                    "-bf", "0",  // 无 B 帧（降低延迟）
-                    "-f", if encoder.starts_with("hevc") || encoder == "libx265" { "hevc" } else { "h264" },
+                    "-f",
+                    input_source,
+                    "-i",
+                    input_device,
+                    "-r",
+                    &fps_str,
+                    "-c:v",
+                    &encoder,
+                    "-b:v",
+                    &bitrate_str,
+                    "-preset",
+                    "ultrafast",
+                    "-tune",
+                    "zerolatency",
+                    "-g",
+                    "30", // GOP size = 30 帧（每30帧一个关键帧）
+                    "-bf",
+                    "0", // 无 B 帧（降低延迟）
+                    "-f",
+                    if encoder.starts_with("hevc") || encoder == "libx265" {
+                        "hevc"
+                    } else {
+                        "h264"
+                    },
                     "pipe:1",
                 ])
                 .stdout(std::process::Stdio::piped())
@@ -262,7 +296,11 @@ impl ScreenCapture for DesktopScreenCapture {
                 match reader.read(&mut buf).await {
                     Ok(0) => break,
                     Ok(n) => {
-                        if tx.send(CapturedFrame::EncodedNalu(buf[..n].to_vec())).await.is_err() {
+                        if tx
+                            .send(CapturedFrame::EncodedNalu(buf[..n].to_vec()))
+                            .await
+                            .is_err()
+                        {
                             break;
                         }
                     }
@@ -278,7 +316,8 @@ impl ScreenCapture for DesktopScreenCapture {
     }
 
     async fn stop(&mut self) -> Result<(), String> {
-        self.stop_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.stop_flag
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         if let Some(handle) = self.running.take() {
             handle.abort();
         }
@@ -291,7 +330,12 @@ impl ScreenCapture for DesktopScreenCapture {
         Ok(())
     }
 
-    async fn update_params(&self, _bitrate: u32, _fps: u32, _resolution_scale: u32) -> Result<(), String> {
+    async fn update_params(
+        &self,
+        _bitrate: u32,
+        _fps: u32,
+        _resolution_scale: u32,
+    ) -> Result<(), String> {
         // 需要重启编码器才能修改参数
         Ok(())
     }

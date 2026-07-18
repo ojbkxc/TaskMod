@@ -1,4 +1,8 @@
-use axum::{extract::{Multipart, Query}, response::IntoResponse, Json};
+use axum::{
+    extract::{Multipart, Query},
+    response::IntoResponse,
+    Json,
+};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -267,7 +271,14 @@ pub async fn copy_file(Json(req): Json<FileCopyReq>) -> Json<ApiResponse<String>
     if p.is_dir() {
         // 用 cp -r
         let result = tokio::process::Command::new("/system/bin/sh")
-            .args(["-c", &format!("cp -r '{}' '{}'", from.replace('\'', "'\\''"), to.replace('\'', "'\\''"))])
+            .args([
+                "-c",
+                &format!(
+                    "cp -r '{}' '{}'",
+                    from.replace('\'', "'\\''"),
+                    to.replace('\'', "'\\''")
+                ),
+            ])
             .status()
             .await;
         match result {
@@ -356,10 +367,7 @@ pub async fn upload_file(mut multipart: Multipart) -> Json<ApiResponse<String>> 
                 dest_dir = normalize_path(&val);
             }
         } else if name == "file" {
-            file_name = field
-                .file_name()
-                .unwrap_or("upload.bin")
-                .to_string();
+            file_name = field.file_name().unwrap_or("upload.bin").to_string();
             match field.bytes().await {
                 Ok(data) => file_data = Some(data),
                 Err(e) => return Json(ApiResponse::err(&format!("读取上传数据失败: {}", e))),
@@ -413,7 +421,13 @@ pub async fn download_file(Query(q): Query<FilePath>) -> impl axum::response::In
 
     let data = match fs::read(p) {
         Ok(d) => d,
-        Err(e) => return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("读取失败: {}", e)).into_response(),
+        Err(e) => {
+            return (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                format!("读取失败: {}", e),
+            )
+                .into_response()
+        }
     };
 
     let file_name = p
@@ -431,10 +445,7 @@ pub async fn download_file(Query(q): Query<FilePath>) -> impl axum::response::In
                 axum::http::header::CONTENT_DISPOSITION,
                 format!("attachment; filename=\"{}\"", file_name),
             ),
-            (
-                axum::http::header::CONTENT_LENGTH,
-                data.len().to_string(),
-            ),
+            (axum::http::header::CONTENT_LENGTH, data.len().to_string()),
         ],
         data,
     )
@@ -455,7 +466,10 @@ pub async fn chmod_file(Json(req): Json<ChmodReq>) -> Json<ApiResponse<String>> 
         .await;
 
     match result {
-        Ok(s) if s.success() => Json(ApiResponse::ok_msg("ok".to_string(), &format!("权限已修改为 {}", req.mode))),
+        Ok(s) if s.success() => Json(ApiResponse::ok_msg(
+            "ok".to_string(),
+            &format!("权限已修改为 {}", req.mode),
+        )),
         Ok(s) => Json(ApiResponse::err(&format!("chmod 失败，退出码: {}", s))),
         Err(e) => Json(ApiResponse::err(&format!("chmod 失败: {}", e))),
     }
@@ -603,7 +617,18 @@ fn calc_dir_size_rust(path: &str) -> u64 {
 /// 清理文件名中的危险字符
 fn sanitize_filename(name: &str) -> String {
     name.chars()
-        .filter(|c| !c.is_control() && *c != '/' && *c != '\\' && *c != ':' && *c != '*' && *c != '?' && *c != '"' && *c != '<' && *c != '>' && *c != '|')
+        .filter(|c| {
+            !c.is_control()
+                && *c != '/'
+                && *c != '\\'
+                && *c != ':'
+                && *c != '*'
+                && *c != '?'
+                && *c != '"'
+                && *c != '<'
+                && *c != '>'
+                && *c != '|'
+        })
         .collect::<String>()
         .trim()
         .to_string()
@@ -671,7 +696,9 @@ fn normalize_path(path: &str) -> String {
     for c in &components {
         match *c {
             "" | "." => {}
-            ".." => { stack.pop(); }
+            ".." => {
+                stack.pop();
+            }
             _ => stack.push(c),
         }
     }
@@ -680,5 +707,9 @@ fn normalize_path(path: &str) -> String {
     } else {
         stack.join("/")
     };
-    if normalized.is_empty() { "/".to_string() } else { normalized }
+    if normalized.is_empty() {
+        "/".to_string()
+    } else {
+        normalized
+    }
 }

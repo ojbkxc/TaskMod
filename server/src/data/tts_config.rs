@@ -85,12 +85,10 @@ impl TtsConfig {
             return Self::default();
         }
         match fs::read_to_string(CONFIG_PATH).await {
-            Ok(content) => {
-                serde_json::from_str(&content).unwrap_or_else(|e| {
-                    eprintln!("[TTS Config] 解析配置文件失败: {}, 使用默认配置", e);
-                    Self::default()
-                })
-            }
+            Ok(content) => serde_json::from_str(&content).unwrap_or_else(|e| {
+                eprintln!("[TTS Config] 解析配置文件失败: {}, 使用默认配置", e);
+                Self::default()
+            }),
             Err(e) => {
                 eprintln!("[TTS Config] 读取配置文件失败: {}, 使用默认配置", e);
                 Self::default()
@@ -108,8 +106,8 @@ impl TtsConfig {
                     .map_err(|e| format!("创建目录失败: {}", e))?;
             }
         }
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| format!("序列化配置失败: {}", e))?;
+        let json =
+            serde_json::to_string_pretty(self).map_err(|e| format!("序列化配置失败: {}", e))?;
         fs::write(CONFIG_PATH, json)
             .await
             .map_err(|e| format!("写入配置文件失败: {}", e))?;
@@ -131,13 +129,16 @@ impl TtsConfig {
             return text.to_string();
         }
         let mut result = text.to_string();
-        let mut rules: Vec<&ReplaceRule> = self.replace_rules.iter().filter(|r| r.enabled).collect();
+        let mut rules: Vec<&ReplaceRule> =
+            self.replace_rules.iter().filter(|r| r.enabled).collect();
         rules.sort_by_key(|r| r.order);
         for rule in rules {
             if rule.is_regex {
                 match regex::Regex::new(&rule.pattern) {
                     Ok(re) => {
-                        result = re.replace_all(&result, rule.replacement.as_str()).to_string();
+                        result = re
+                            .replace_all(&result, rule.replacement.as_str())
+                            .to_string();
                     }
                     Err(e) => {
                         eprintln!("[TTS Replace] 正则表达式错误 '{}': {}", rule.pattern, e);

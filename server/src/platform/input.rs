@@ -6,7 +6,14 @@ pub trait InputController: Send {
     /// 点击屏幕指定位置
     async fn tap(&self, x: i32, y: i32) -> Result<(), String>;
     /// 滑动操作
-    async fn swipe(&self, x1: i32, y1: i32, x2: i32, y2: i32, duration_ms: u64) -> Result<(), String>;
+    async fn swipe(
+        &self,
+        x1: i32,
+        y1: i32,
+        x2: i32,
+        y2: i32,
+        duration_ms: u64,
+    ) -> Result<(), String>;
     /// 按键事件
     async fn key_event(&self, keycode: i32) -> Result<(), String>;
     /// 输入文本
@@ -36,13 +43,26 @@ impl InputController for AndroidInput {
         run_cmd("input", &["tap", &x.to_string(), &y.to_string()]).await
     }
 
-    async fn swipe(&self, x1: i32, y1: i32, x2: i32, y2: i32, duration_ms: u64) -> Result<(), String> {
-        run_cmd("input", &[
-            "swipe",
-            &x1.to_string(), &y1.to_string(),
-            &x2.to_string(), &y2.to_string(),
-            &duration_ms.to_string(),
-        ]).await
+    async fn swipe(
+        &self,
+        x1: i32,
+        y1: i32,
+        x2: i32,
+        y2: i32,
+        duration_ms: u64,
+    ) -> Result<(), String> {
+        run_cmd(
+            "input",
+            &[
+                "swipe",
+                &x1.to_string(),
+                &y1.to_string(),
+                &x2.to_string(),
+                &y2.to_string(),
+                &duration_ms.to_string(),
+            ],
+        )
+        .await
     }
 
     async fn key_event(&self, keycode: i32) -> Result<(), String> {
@@ -128,7 +148,14 @@ public class MouseInput {{
         run_powershell(&script).await
     }
 
-    async fn swipe(&self, x1: i32, y1: i32, x2: i32, y2: i32, duration_ms: u64) -> Result<(), String> {
+    async fn swipe(
+        &self,
+        x1: i32,
+        y1: i32,
+        x2: i32,
+        y2: i32,
+        duration_ms: u64,
+    ) -> Result<(), String> {
         let steps = (duration_ms / 16).max(1); // ~60fps
         let dx = (x2 - x1) as f64 / steps as f64;
         let dy = (y2 - y1) as f64 / steps as f64;
@@ -193,10 +220,15 @@ public class KeyInput {{
 
     async fn input_text(&self, text: &str) -> Result<(), String> {
         // 使用 PowerShell SendKeys
-        let escaped = text.replace('{', "{{").replace('}', "}}")
-            .replace('+', "{+}").replace('^', "{^}")
-            .replace('%', "{%}").replace('~', "{~}")
-            .replace('(', "{(}").replace(')', "{)}");
+        let escaped = text
+            .replace('{', "{{")
+            .replace('}', "}}")
+            .replace('+', "{+}")
+            .replace('^', "{^}")
+            .replace('%', "{%}")
+            .replace('~', "{~}")
+            .replace('(', "{(}")
+            .replace(')', "{)}");
         let script = format!(
             r#"Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait("{}")"#,
             escaped.replace('"', "`\"")
@@ -244,7 +276,14 @@ impl InputController for LinuxInput {
         run_cmd("xdotool", &["click", "1"]).await
     }
 
-    async fn swipe(&self, x1: i32, y1: i32, x2: i32, y2: i32, duration_ms: u64) -> Result<(), String> {
+    async fn swipe(
+        &self,
+        x1: i32,
+        y1: i32,
+        x2: i32,
+        y2: i32,
+        duration_ms: u64,
+    ) -> Result<(), String> {
         run_cmd("xdotool", &["mousemove", &x1.to_string(), &y1.to_string()]).await?;
         run_cmd("xdotool", &["mousedown", "1"]).await?;
         // 使用 xdotool 的 mousemove --delay 实现滑动
@@ -291,7 +330,10 @@ impl InputController for LinuxInput {
 
         if let Some(mut stdin) = child.stdin.take() {
             use tokio::io::AsyncWriteExt;
-            stdin.write_all(text.as_bytes()).await.map_err(|e| e.to_string())?;
+            stdin
+                .write_all(text.as_bytes())
+                .await
+                .map_err(|e| e.to_string())?;
         }
 
         child.wait().await.map_err(|e| e.to_string())?;
@@ -308,21 +350,33 @@ pub fn create_input_controller() -> Box<dyn InputController> {
     match platform {
         crate::platform::Platform::Android => {
             #[cfg(any(target_os = "android", target_os = "linux"))]
-            { Box::new(AndroidInput::new()) }
+            {
+                Box::new(AndroidInput::new())
+            }
             #[cfg(not(any(target_os = "android", target_os = "linux")))]
-            { Box::new(NullInput) }
+            {
+                Box::new(NullInput)
+            }
         }
         crate::platform::Platform::Windows => {
             #[cfg(target_os = "windows")]
-            { Box::new(WindowsInput::new()) }
+            {
+                Box::new(WindowsInput::new())
+            }
             #[cfg(not(target_os = "windows"))]
-            { Box::new(NullInput) }
+            {
+                Box::new(NullInput)
+            }
         }
         crate::platform::Platform::Linux => {
             #[cfg(target_os = "linux")]
-            { Box::new(LinuxInput::new()) }
+            {
+                Box::new(LinuxInput::new())
+            }
             #[cfg(not(target_os = "linux"))]
-            { Box::new(NullInput) }
+            {
+                Box::new(NullInput)
+            }
         }
         _ => Box::new(NullInput),
     }
@@ -333,12 +387,24 @@ struct NullInput;
 
 #[async_trait]
 impl InputController for NullInput {
-    async fn tap(&self, _: i32, _: i32) -> Result<(), String> { Err("平台不支持".to_string()) }
-    async fn swipe(&self, _: i32, _: i32, _: i32, _: i32, _: u64) -> Result<(), String> { Err("平台不支持".to_string()) }
-    async fn key_event(&self, _: i32) -> Result<(), String> { Err("平台不支持".to_string()) }
-    async fn input_text(&self, _: &str) -> Result<(), String> { Err("平台不支持".to_string()) }
-    async fn get_clipboard(&self) -> Result<String, String> { Err("平台不支持".to_string()) }
-    async fn set_clipboard(&self, _: &str) -> Result<(), String> { Err("平台不支持".to_string()) }
+    async fn tap(&self, _: i32, _: i32) -> Result<(), String> {
+        Err("平台不支持".to_string())
+    }
+    async fn swipe(&self, _: i32, _: i32, _: i32, _: i32, _: u64) -> Result<(), String> {
+        Err("平台不支持".to_string())
+    }
+    async fn key_event(&self, _: i32) -> Result<(), String> {
+        Err("平台不支持".to_string())
+    }
+    async fn input_text(&self, _: &str) -> Result<(), String> {
+        Err("平台不支持".to_string())
+    }
+    async fn get_clipboard(&self) -> Result<String, String> {
+        Err("平台不支持".to_string())
+    }
+    async fn set_clipboard(&self, _: &str) -> Result<(), String> {
+        Err("平台不支持".to_string())
+    }
 }
 
 // ==================== 工具函数 ====================
@@ -379,21 +445,21 @@ async fn run_powershell(script: &str) -> Result<(), String> {
 #[cfg(target_os = "windows")]
 fn android_keycode_to_windows_vk(keycode: i32) -> u8 {
     match keycode {
-        3 => 0x5B,     // HOME -> VK_LWIN
-        4 => 0xA4,     // BACK -> VK_LMENU (Alt)
-        24 => 0xAF,    // VOLUME_UP -> VK_VOLUME_UP
-        25 => 0xAE,    // VOLUME_DOWN -> VK_VOLUME_DOWN
-        26 => 0x73,    // POWER -> VK_F4 (关机)
-        66 => 0x0D,    // ENTER -> VK_RETURN
-        67 => 0x08,    // DEL -> VK_BACK
-        111 => 0x1B,   // ESCAPE -> VK_ESCAPE
-        112 => 0x2E,   // FORWARD_DEL -> VK_DELETE
-        187 => 0x5B,   // APP_SWITCH -> VK_LWIN
-        19 => 0x26,    // DPAD_UP -> VK_UP
-        20 => 0x28,    // DPAD_DOWN -> VK_DOWN
-        21 => 0x25,    // DPAD_LEFT -> VK_LEFT
-        22 => 0x27,    // DPAD_RIGHT -> VK_RIGHT
-        23 => 0x0D,    // DPAD_CENTER -> VK_RETURN
+        3 => 0x5B,   // HOME -> VK_LWIN
+        4 => 0xA4,   // BACK -> VK_LMENU (Alt)
+        24 => 0xAF,  // VOLUME_UP -> VK_VOLUME_UP
+        25 => 0xAE,  // VOLUME_DOWN -> VK_VOLUME_DOWN
+        26 => 0x73,  // POWER -> VK_F4 (关机)
+        66 => 0x0D,  // ENTER -> VK_RETURN
+        67 => 0x08,  // DEL -> VK_BACK
+        111 => 0x1B, // ESCAPE -> VK_ESCAPE
+        112 => 0x2E, // FORWARD_DEL -> VK_DELETE
+        187 => 0x5B, // APP_SWITCH -> VK_LWIN
+        19 => 0x26,  // DPAD_UP -> VK_UP
+        20 => 0x28,  // DPAD_DOWN -> VK_DOWN
+        21 => 0x25,  // DPAD_LEFT -> VK_LEFT
+        22 => 0x27,  // DPAD_RIGHT -> VK_RIGHT
+        23 => 0x0D,  // DPAD_CENTER -> VK_RETURN
         _ => keycode as u8,
     }
 }
@@ -402,21 +468,21 @@ fn android_keycode_to_windows_vk(keycode: i32) -> u8 {
 #[cfg(target_os = "linux")]
 fn android_keycode_to_linux_xk(keycode: i32) -> &'static str {
     match keycode {
-        3 => "Super_L",     // HOME
-        4 => "Escape",      // BACK
+        3 => "Super_L",               // HOME
+        4 => "Escape",                // BACK
         24 => "XF86AudioRaiseVolume", // VOLUME_UP
         25 => "XF86AudioLowerVolume", // VOLUME_DOWN
-        26 => "XF86Power",  // POWER
-        66 => "Return",     // ENTER
-        67 => "BackSpace",  // DEL
-        111 => "Escape",    // ESCAPE
-        112 => "Delete",    // FORWARD_DEL
-        187 => "Super_L",   // APP_SWITCH
-        19 => "Up",         // DPAD_UP
-        20 => "Down",       // DPAD_DOWN
-        21 => "Left",       // DPAD_LEFT
-        22 => "Right",      // DPAD_RIGHT
-        23 => "Return",     // DPAD_CENTER
+        26 => "XF86Power",            // POWER
+        66 => "Return",               // ENTER
+        67 => "BackSpace",            // DEL
+        111 => "Escape",              // ESCAPE
+        112 => "Delete",              // FORWARD_DEL
+        187 => "Super_L",             // APP_SWITCH
+        19 => "Up",                   // DPAD_UP
+        20 => "Down",                 // DPAD_DOWN
+        21 => "Left",                 // DPAD_LEFT
+        22 => "Right",                // DPAD_RIGHT
+        23 => "Return",               // DPAD_CENTER
         _ => "Return",
     }
 }

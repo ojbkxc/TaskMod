@@ -108,8 +108,13 @@ async fn list_engines_pm() -> Vec<String> {
     {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let tts_keywords = [
-            "tts", "speech", "pico", "svox",
-            "iflytek", "baidu.tts", "huawei.tts",
+            "tts",
+            "speech",
+            "pico",
+            "svox",
+            "iflytek",
+            "baidu.tts",
+            "huawei.tts",
         ];
         for line in stdout.lines() {
             let lower = line.to_lowercase();
@@ -153,28 +158,44 @@ async fn discover_engines() -> Vec<TtsEngineInfo> {
 
     for pkg in list_engines_cmd().await {
         if seen.insert(pkg.clone()) {
-            engines.push(TtsEngineInfo { label: label_for_engine(&pkg), package_name: pkg });
+            engines.push(TtsEngineInfo {
+                label: label_for_engine(&pkg),
+                package_name: pkg,
+            });
         }
     }
     for pkg in list_engines_pm().await {
         if seen.insert(pkg.clone()) {
-            engines.push(TtsEngineInfo { label: label_for_engine(&pkg), package_name: pkg });
+            engines.push(TtsEngineInfo {
+                label: label_for_engine(&pkg),
+                package_name: pkg,
+            });
         }
     }
     for pkg in list_engines_dumpsys().await {
         if seen.insert(pkg.clone()) {
-            engines.push(TtsEngineInfo { label: label_for_engine(&pkg), package_name: pkg });
+            engines.push(TtsEngineInfo {
+                label: label_for_engine(&pkg),
+                package_name: pkg,
+            });
         }
     }
 
     if engines.is_empty() {
         let defaults = [
-            "com.google.android.tts", "com.android.tts", "com.svox.pico",
-            "com.miui.tts", "com.iflytek.tts", "com.baidu.tts",
+            "com.google.android.tts",
+            "com.android.tts",
+            "com.svox.pico",
+            "com.miui.tts",
+            "com.iflytek.tts",
+            "com.baidu.tts",
         ];
         for pkg in defaults {
             if seen.insert(pkg.to_string()) {
-                engines.push(TtsEngineInfo { label: label_for_engine(pkg), package_name: pkg.to_string() });
+                engines.push(TtsEngineInfo {
+                    label: label_for_engine(pkg),
+                    package_name: pkg.to_string(),
+                });
             }
         }
     }
@@ -198,17 +219,30 @@ async fn apply_tts_params(rate: f32, pitch: f32, volume: f32) {
     if rate != 1.0 {
         let _ = Command::new("/system/bin/settings")
             .args(["put", "system", "tts_default_rate", &format!("{:.1}", rate)])
-            .output().await;
+            .output()
+            .await;
     }
     if pitch != 1.0 {
         let _ = Command::new("/system/bin/settings")
-            .args(["put", "system", "tts_default_pitch", &format!("{:.1}", pitch)])
-            .output().await;
+            .args([
+                "put",
+                "system",
+                "tts_default_pitch",
+                &format!("{:.1}", pitch),
+            ])
+            .output()
+            .await;
     }
     if volume != 1.0 {
         let _ = Command::new("/system/bin/settings")
-            .args(["put", "system", "tts_default_volume", &format!("{:.1}", volume)])
-            .output().await;
+            .args([
+                "put",
+                "system",
+                "tts_default_volume",
+                &format!("{:.1}", volume),
+            ])
+            .output()
+            .await;
     }
 }
 
@@ -264,19 +298,27 @@ async fn exec_speak(text: &str, engine: Option<&str>, language: Option<&str>) ->
             ],
         ),
     ] {
-        match Command::new(bin).args(&args)
+        match Command::new(bin)
+            .args(&args)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .output().await
+            .output()
+            .await
         {
             Ok(output) => {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 let stdout = String::from_utf8_lossy(&output.stdout);
-                if output.status.success() && !stderr.contains("Error") && !stderr.contains("error") {
+                if output.status.success() && !stderr.contains("Error") && !stderr.contains("error")
+                {
                     return true;
                 }
-                eprintln!("[TTS] {} 返回失败: status={:?}, stdout={}, stderr={}",
-                    bin, output.status.code(), stdout.trim(), stderr.trim());
+                eprintln!(
+                    "[TTS] {} 返回失败: status={:?}, stdout={}, stderr={}",
+                    bin,
+                    output.status.code(),
+                    stdout.trim(),
+                    stderr.trim()
+                );
             }
             Err(e) => {
                 eprintln!("[TTS] {} 执行错误: {}", bin, e);
@@ -297,10 +339,12 @@ async fn exec_speak(text: &str, engine: Option<&str>, language: Option<&str>) ->
     cmd_args.push(text.to_string());
 
     for bin in &["/system/bin/cmd", "cmd"] {
-        match Command::new(bin).args(&cmd_args)
+        match Command::new(bin)
+            .args(&cmd_args)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .output().await
+            .output()
+            .await
         {
             Ok(output) => {
                 let stderr = String::from_utf8_lossy(&output.stderr);
@@ -308,8 +352,13 @@ async fn exec_speak(text: &str, engine: Option<&str>, language: Option<&str>) ->
                 if output.status.success() && !stderr.contains("Can't find service") {
                     return true;
                 }
-                eprintln!("[TTS] {} 返回失败: status={:?}, stdout={}, stderr={}",
-                    bin, output.status.code(), stdout.trim(), stderr.trim());
+                eprintln!(
+                    "[TTS] {} 返回失败: status={:?}, stdout={}, stderr={}",
+                    bin,
+                    output.status.code(),
+                    stdout.trim(),
+                    stderr.trim()
+                );
             }
             Err(e) => {
                 eprintln!("[TTS] {} 执行错误: {}", bin, e);
@@ -322,10 +371,13 @@ async fn exec_speak(text: &str, engine: Option<&str>, language: Option<&str>) ->
         "am start -a android.speech.action.TTS_TEXT --es text '{}' --ei streamType 3",
         escaped
     );
-    match Command::new("/system/bin/sh").arg("-c").arg(&intent_cmd)
+    match Command::new("/system/bin/sh")
+        .arg("-c")
+        .arg(&intent_cmd)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
-        .output().await
+        .output()
+        .await
     {
         Ok(output) => {
             if output.status.success() {
@@ -376,7 +428,11 @@ pub async fn speak(Json(req): Json<TtsRequest>) -> Json<ApiResponse<String>> {
     let (cfg_rate, cfg_pitch, cfg_volume) = if !engine.is_empty() {
         config.get_engine_params(engine)
     } else {
-        (config.global_rate, config.global_pitch, config.global_volume)
+        (
+            config.global_rate,
+            config.global_pitch,
+            config.global_volume,
+        )
     };
     let rate = req.rate.unwrap_or(cfg_rate);
     let pitch = req.pitch.unwrap_or(cfg_pitch);
@@ -417,8 +473,16 @@ pub async fn speak(Json(req): Json<TtsRequest>) -> Json<ApiResponse<String>> {
 pub async fn stop_tts() -> Json<ApiResponse<String>> {
     // 方法1: am broadcast 停止 TTS
     let result = Command::new("/system/bin/am")
-        .args(["broadcast", "-a", "android.speech.tts.TTS_SERVICE", "--ez", "stop", "true"])
-        .output().await;
+        .args([
+            "broadcast",
+            "-a",
+            "android.speech.tts.TTS_SERVICE",
+            "--ez",
+            "stop",
+            "true",
+        ])
+        .output()
+        .await;
     if let Ok(output) = result {
         if output.status.success() {
             return Json(ApiResponse::ok("语音播放已停止".to_string()));
@@ -426,9 +490,7 @@ pub async fn stop_tts() -> Json<ApiResponse<String>> {
     }
     // 方法2: cmd tts stop（部分设备支持）
     for bin in &["/system/bin/cmd", "cmd"] {
-        let result = Command::new(bin)
-            .args(["tts", "stop"])
-            .output().await;
+        let result = Command::new(bin).args(["tts", "stop"]).output().await;
         if let Ok(output) = result {
             if output.status.success() {
                 return Json(ApiResponse::ok("语音播放已停止".to_string()));
@@ -441,12 +503,17 @@ pub async fn stop_tts() -> Json<ApiResponse<String>> {
 /// 获取 TTS 设置（合并系统设置 + 本地配置）
 pub async fn get_tts_settings() -> Json<ApiResponse<TtsSettings>> {
     let config = TtsConfig::load().await;
-    let default_engine = get_default_engine().await
+    let default_engine = get_default_engine()
+        .await
         .unwrap_or_else(|| config.default_engine.clone());
     let engines = discover_engines().await;
 
     Json(ApiResponse::ok(TtsSettings {
-        default_engine: if default_engine.is_empty() { None } else { Some(default_engine) },
+        default_engine: if default_engine.is_empty() {
+            None
+        } else {
+            Some(default_engine)
+        },
         default_rate: config.global_rate,
         default_pitch: config.global_pitch,
         default_volume: config.global_volume,
@@ -474,19 +541,32 @@ pub async fn update_tts_settings(Json(req): Json<TtsSettingsRequest>) -> Json<Ap
         config.global_rate = rate;
         let _ = Command::new("/system/bin/settings")
             .args(["put", "system", "tts_default_rate", &format!("{:.1}", rate)])
-            .output().await;
+            .output()
+            .await;
     }
     if let Some(pitch) = req.pitch {
         config.global_pitch = pitch;
         let _ = Command::new("/system/bin/settings")
-            .args(["put", "system", "tts_default_pitch", &format!("{:.1}", pitch)])
-            .output().await;
+            .args([
+                "put",
+                "system",
+                "tts_default_pitch",
+                &format!("{:.1}", pitch),
+            ])
+            .output()
+            .await;
     }
     if let Some(volume) = req.volume {
         config.global_volume = volume;
         let _ = Command::new("/system/bin/settings")
-            .args(["put", "system", "tts_default_volume", &format!("{:.1}", volume)])
-            .output().await;
+            .args([
+                "put",
+                "system",
+                "tts_default_volume",
+                &format!("{:.1}", volume),
+            ])
+            .output()
+            .await;
     }
     if let Some(enabled) = req.replace_enabled {
         config.replace_enabled = enabled;
@@ -507,18 +587,24 @@ pub struct SetDefaultEngineRequest {
     pub engine: String,
 }
 
-pub async fn set_default_engine(Json(req): Json<SetDefaultEngineRequest>) -> Json<ApiResponse<String>> {
+pub async fn set_default_engine(
+    Json(req): Json<SetDefaultEngineRequest>,
+) -> Json<ApiResponse<String>> {
     if req.engine.is_empty() {
         return Json(ApiResponse::err("引擎包名不能为空"));
     }
     let _ = Command::new("/system/bin/settings")
         .args(["put", "secure", "tts_default_synth", &req.engine])
-        .output().await;
+        .output()
+        .await;
     // 同步到本地配置
     let mut config = TtsConfig::load().await;
     config.default_engine = req.engine.clone();
     let _ = config.save().await;
-    Json(ApiResponse::ok(format!("已设置默认TTS引擎为: {}", req.engine)))
+    Json(ApiResponse::ok(format!(
+        "已设置默认TTS引擎为: {}",
+        req.engine
+    )))
 }
 
 /// 测试/试听 TTS
@@ -529,7 +615,9 @@ pub struct TtsTestRequest {
 }
 
 pub async fn test_tts(Json(req): Json<TtsTestRequest>) -> Json<ApiResponse<String>> {
-    let text = req.text.unwrap_or_else(|| "这是一段测试语音，TaskMod TTS功能正常。".to_string());
+    let text = req
+        .text
+        .unwrap_or_else(|| "这是一段测试语音，TaskMod TTS功能正常。".to_string());
     let tts_req = TtsRequest {
         text,
         engine: req.engine,
@@ -552,7 +640,11 @@ pub async fn get_engine_params() -> Json<ApiResponse<Vec<EngineParams>>> {
 /// 添加/更新引擎参数
 pub async fn upsert_engine_params(Json(req): Json<EngineParams>) -> Json<ApiResponse<String>> {
     let mut config = TtsConfig::load().await;
-    if let Some(existing) = config.engine_params.iter_mut().find(|p| p.engine == req.engine) {
+    if let Some(existing) = config
+        .engine_params
+        .iter_mut()
+        .find(|p| p.engine == req.engine)
+    {
         existing.rate = req.rate;
         existing.pitch = req.pitch;
         existing.volume = req.volume;
@@ -566,7 +658,9 @@ pub async fn upsert_engine_params(Json(req): Json<EngineParams>) -> Json<ApiResp
 }
 
 /// 删除引擎参数
-pub async fn delete_engine_params(axum::extract::Path(engine): axum::extract::Path<String>) -> Json<ApiResponse<String>> {
+pub async fn delete_engine_params(
+    axum::extract::Path(engine): axum::extract::Path<String>,
+) -> Json<ApiResponse<String>> {
     let mut config = TtsConfig::load().await;
     config.engine_params.retain(|p| p.engine != engine);
     match config.save().await {
@@ -611,7 +705,9 @@ pub async fn update_replace_rule(
 }
 
 /// 删除替换规则
-pub async fn delete_replace_rule(axum::extract::Path(id): axum::extract::Path<String>) -> Json<ApiResponse<String>> {
+pub async fn delete_replace_rule(
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Json<ApiResponse<String>> {
     let mut config = TtsConfig::load().await;
     config.replace_rules.retain(|r| r.id != id);
     match config.save().await {

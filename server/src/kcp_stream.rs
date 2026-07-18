@@ -189,12 +189,17 @@ impl KcpServer {
                                         if data_arc.len() <= 65000 {
                                             session.fec_buffer.push(data_arc.clone());
                                             if session.fec_buffer.len() >= FEC_GROUP_SIZE {
-                                                let fec_data = generate_kcp_fec_xor(&session.fec_buffer);
-                                                let fec_msg = build_kcp_fec_message(session.fec_group_id, &fec_data);
+                                                let fec_data =
+                                                    generate_kcp_fec_xor(&session.fec_buffer);
+                                                let fec_msg = build_kcp_fec_message(
+                                                    session.fec_group_id,
+                                                    &fec_data,
+                                                );
                                                 let _ = session.kcp.send(&fec_msg);
                                                 let _ = session.kcp.flush();
                                                 session.fec_buffer.clear();
-                                                session.fec_group_id = session.fec_group_id.wrapping_add(1);
+                                                session.fec_group_id =
+                                                    session.fec_group_id.wrapping_add(1);
                                             }
                                         }
                                     }
@@ -226,7 +231,8 @@ impl KcpServer {
         // KCP 更新任务：同样使用读锁 + per-session 锁
         let update_sessions = sessions.clone();
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_millis(KCP_UPDATE_INTERVAL_MS));
+            let mut interval =
+                tokio::time::interval(std::time::Duration::from_millis(KCP_UPDATE_INTERVAL_MS));
             let start = std::time::Instant::now();
             loop {
                 interval.tick().await;

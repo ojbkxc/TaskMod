@@ -36,7 +36,10 @@ pub struct AndroidAudioCapture {
 #[cfg(any(target_os = "android", target_os = "linux"))]
 impl AndroidAudioCapture {
     pub fn new(codec: AudioCodec) -> Self {
-        Self { codec, running: None }
+        Self {
+            codec,
+            running: None,
+        }
     }
 }
 
@@ -47,7 +50,17 @@ impl AudioCapture for AndroidAudioCapture {
         let handle = tokio::spawn(async move {
             // 使用 tinycap 采集音频（Android 内置工具）
             let mut child = match tokio::process::Command::new("tinycap")
-                .args(["/dev/stdout", "-d", "0", "-c", "1", "-b", "16", "-r", "48000"])
+                .args([
+                    "/dev/stdout",
+                    "-d",
+                    "0",
+                    "-c",
+                    "1",
+                    "-b",
+                    "16",
+                    "-r",
+                    "48000",
+                ])
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::null())
                 .spawn()
@@ -126,7 +139,10 @@ pub struct DesktopAudioCapture {
 #[cfg(not(target_os = "android"))]
 impl DesktopAudioCapture {
     pub fn new(codec: AudioCodec) -> Self {
-        Self { codec, running: None }
+        Self {
+            codec,
+            running: None,
+        }
     }
 }
 
@@ -145,11 +161,7 @@ impl AudioCapture for DesktopAudioCapture {
 
             let mut child = match tokio::process::Command::new("ffmpeg")
                 .args([
-                    "-f", input_fmt,
-                    "-i", input_dev,
-                    "-ar", "48000",
-                    "-ac", "1",
-                    "-f", "s16le",
+                    "-f", input_fmt, "-i", input_dev, "-ar", "48000", "-ac", "1", "-f", "s16le",
                     "pipe:1",
                 ])
                 .stdout(std::process::Stdio::piped())
@@ -255,7 +267,9 @@ fn find_wav_data_offset(data: &[u8]) -> Option<usize> {
     let mut pos = 12;
     while pos + 8 <= data.len() {
         let chunk_id = &data[pos..pos + 4];
-        let chunk_size = u32::from_le_bytes([data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]]) as usize;
+        let chunk_size =
+            u32::from_le_bytes([data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]])
+                as usize;
         if chunk_id == b"data" {
             return Some(pos);
         }

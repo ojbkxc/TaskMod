@@ -87,7 +87,10 @@ pub async fn execute_command(cmd_parts: &[String]) -> Result<std::process::Outpu
         command.arg(part);
     }
 
-    command.output().await.map_err(|e| format!("命令执行失败: {}", e))
+    command
+        .output()
+        .await
+        .map_err(|e| format!("命令执行失败: {}", e))
 }
 
 pub async fn get_screen_size() -> String {
@@ -117,7 +120,10 @@ pub async fn get_wifi_info() -> String {
             let output = String::from_utf8_lossy(&o.stdout);
             let ssid = output.lines().find(|l| l.contains("SSID:")).unwrap_or("");
             let bssid = output.lines().find(|l| l.contains("BSSID:")).unwrap_or("");
-            let ip = output.lines().find(|l| l.contains("IP address:")).unwrap_or("");
+            let ip = output
+                .lines()
+                .find(|l| l.contains("IP address:"))
+                .unwrap_or("");
             format!("WiFi信息:\n{}\n{}\n{}", ssid, bssid, ip)
         }
         Err(e) => format!("获取WiFi信息失败: {}", e),
@@ -128,7 +134,8 @@ pub async fn get_battery_info() -> String {
     match Command::new(DUMPSYS).arg("battery").output().await {
         Ok(o) => {
             let output = String::from_utf8_lossy(&o.stdout);
-            let lines: Vec<&str> = output.lines()
+            let lines: Vec<&str> = output
+                .lines()
                 .filter(|l| l.contains(": "))
                 .take(10)
                 .collect();
@@ -142,15 +149,28 @@ pub async fn get_device_info() -> String {
     let mut info = String::new();
 
     if let Ok(o) = Command::new(GETPROP).arg("ro.product.model").output().await {
-        info.push_str(&format!("设备型号: {}\n", String::from_utf8_lossy(&o.stdout).trim()));
+        info.push_str(&format!(
+            "设备型号: {}\n",
+            String::from_utf8_lossy(&o.stdout).trim()
+        ));
     }
 
-    if let Ok(o) = Command::new(GETPROP).arg("ro.build.version.release").output().await {
-        info.push_str(&format!("Android版本: {}\n", String::from_utf8_lossy(&o.stdout).trim()));
+    if let Ok(o) = Command::new(GETPROP)
+        .arg("ro.build.version.release")
+        .output()
+        .await
+    {
+        info.push_str(&format!(
+            "Android版本: {}\n",
+            String::from_utf8_lossy(&o.stdout).trim()
+        ));
     }
 
     if let Ok(o) = Command::new(DF).arg("-h").output().await {
-        info.push_str(&format!("存储信息:\n{}\n", String::from_utf8_lossy(&o.stdout)));
+        info.push_str(&format!(
+            "存储信息:\n{}\n",
+            String::from_utf8_lossy(&o.stdout)
+        ));
     }
 
     if info.is_empty() {
@@ -164,7 +184,8 @@ pub async fn get_running_apps() -> String {
     match Command::new(PS).arg("-A").output().await {
         Ok(o) => {
             let output = String::from_utf8_lossy(&o.stdout);
-            let apps: Vec<&str> = output.lines()
+            let apps: Vec<&str> = output
+                .lines()
                 .filter(|l| l.contains("com."))
                 .filter(|l| !l.contains("system_server"))
                 .take(20)
@@ -179,7 +200,10 @@ pub async fn start_app(package_name: &str) -> String {
     // 先用 cmd package resolve-activity 解析出主Activity名
     if let Ok(o) = Command::new(SH)
         .arg("-c")
-        .arg(format!("{} package resolve-activity --brief {} | tail -1", CMD, package_name))
+        .arg(format!(
+            "{} package resolve-activity --brief {} | tail -1",
+            CMD, package_name
+        ))
         .output()
         .await
     {
@@ -256,7 +280,11 @@ pub async fn clear_app_data(package_name: &str) -> String {
             if o.status.success() {
                 format!("数据清除成功: {}", stdout.trim())
             } else {
-                format!("数据清除失败: {} (可能需要root权限)\nstderr: {}", package_name, stderr.trim())
+                format!(
+                    "数据清除失败: {} (可能需要root权限)\nstderr: {}",
+                    package_name,
+                    stderr.trim()
+                )
             }
         }
         Err(e) => format!("清除数据失败: {}", e),
@@ -314,7 +342,10 @@ pub async fn swipe(x1: i32, y1: i32, x2: i32, y2: i32) -> String {
                 } else {
                     format!("退出码: {}", o.status.code().unwrap_or(-1))
                 };
-                warn!("[adb] swipe 失败: ({}, {})->({},{}) - {}", x1, y1, x2, y2, err);
+                warn!(
+                    "[adb] swipe 失败: ({}, {})->({},{}) - {}",
+                    x1, y1, x2, y2, err
+                );
                 format!("滑动失败: {}", err)
             }
         }
@@ -384,12 +415,7 @@ pub async fn input_text(text: &str) -> String {
         .replace("\"", "\\\"")
         .replace(" ", "%s");
 
-    match Command::new(INPUT)
-        .arg("text")
-        .arg(&escaped)
-        .output()
-        .await
-    {
+    match Command::new(INPUT).arg("text").arg(&escaped).output().await {
         Ok(o) => {
             let stderr = String::from_utf8_lossy(&o.stderr);
             if o.status.success() {
@@ -493,7 +519,7 @@ pub async fn tts(text: &str) -> String {
             return format!("TTS语音播放成功: {}", text);
         }
     }
-    
+
     // 方法2: 使用 cmd speech 命令触发 TTS（部分设备支持）
     if let Ok(o) = Command::new(CMD)
         .arg("speech")
@@ -507,7 +533,7 @@ pub async fn tts(text: &str) -> String {
             return format!("TTS语音播放成功: {}", text);
         }
     }
-    
+
     // 方法3: 使用 content provider 触发 TTS（兼容更多设备）
     if let Ok(o) = Command::new(SH)
         .arg("-c")
@@ -524,13 +550,13 @@ pub async fn tts(text: &str) -> String {
             return format!("TTS语音播放成功: {}", text);
         }
     }
-    
+
     "TTS语音播放失败: 设备不支持TTS命令，请安装TTS引擎".to_string()
 }
 
 pub async fn tts_speak(text: &str, engine: Option<String>) -> String {
     let escaped_text = text.replace("'", "\\'").replace("\"", "\\\"");
-    
+
     let mut cmd = Command::new(AM);
     cmd.arg("broadcast")
         .arg("-a")
@@ -538,13 +564,11 @@ pub async fn tts_speak(text: &str, engine: Option<String>) -> String {
         .arg("--es")
         .arg("text")
         .arg(&escaped_text);
-    
+
     if let Some(ref engine_name) = engine {
-        cmd.arg("--es")
-            .arg("engine")
-            .arg(engine_name);
+        cmd.arg("--es").arg("engine").arg(engine_name);
     }
-    
+
     match cmd.output().await {
         Ok(o) => {
             if o.status.success() {
@@ -557,5 +581,3 @@ pub async fn tts_speak(text: &str, engine: Option<String>) -> String {
         Err(e) => format!("TTS语音播放失败: {}", e),
     }
 }
-
-

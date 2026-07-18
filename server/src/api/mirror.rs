@@ -1,16 +1,18 @@
-use axum::{Json, extract::State, extract::ws::WebSocketUpgrade, response::IntoResponse};
+use axum::{extract::ws::WebSocketUpgrade, extract::State, response::IntoResponse, Json};
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::time::Duration;
 
 use crate::data::response::ApiResponse;
-use crate::platform::encoder::{self, VideoCodec, NaluParser, HEVC_NAL_VPS, HEVC_NAL_SPS, HEVC_NAL_PPS,
-    HEVC_NAL_IDR_W_RADL, HEVC_NAL_IDR_N_LP, HEVC_NAL_CRA, HEVC_NAL_TRAIL_R, HEVC_NAL_TRAIL_N};
-use crate::platform::input;
+use crate::platform::encoder::{
+    self, NaluParser, VideoCodec, HEVC_NAL_CRA, HEVC_NAL_IDR_N_LP, HEVC_NAL_IDR_W_RADL,
+    HEVC_NAL_PPS, HEVC_NAL_SPS, HEVC_NAL_TRAIL_N, HEVC_NAL_TRAIL_R, HEVC_NAL_VPS,
+};
 use crate::platform::info;
+use crate::platform::input;
 use crate::state::SharedMirrorState;
 
 /// 视频广播通道容量（借鉴 RustDesk 多连接缓冲策略，增大以减少 Lagged 断帧）
@@ -115,10 +117,17 @@ pub async fn start_mirror(
 
     tokio::spawn(async move {
         // 创建采集 channel
-        let (capture_tx, mut capture_rx) = tokio::sync::mpsc::channel::<crate::platform::capture::CapturedFrame>(64);
+        let (capture_tx, mut capture_rx) =
+            tokio::sync::mpsc::channel::<crate::platform::capture::CapturedFrame>(64);
 
         // 启动采集器
-        let mut capture = match crate::platform::capture::create_capture(codec, bit_rate as u32, fps as u32).await {
+        let mut capture = match crate::platform::capture::create_capture(
+            codec,
+            bit_rate as u32,
+            fps as u32,
+        )
+        .await
+        {
             Ok(c) => c,
             Err(e) => {
                 tracing::error!("[mirror] 采集器创建失败: {}", e);
@@ -147,7 +156,13 @@ pub async fn start_mirror(
 
             // ABR 调整
             if abr_clone.take_need_restart() {
-                let _ = capture.update_params(abr_clone.get_bitrate(), abr_clone.get_fps(), abr_clone.get_resolution_scale()).await;
+                let _ = capture
+                    .update_params(
+                        abr_clone.get_bitrate(),
+                        abr_clone.get_fps(),
+                        abr_clone.get_resolution_scale(),
+                    )
+                    .await;
             }
 
             // 关键帧请求
@@ -163,24 +178,31 @@ pub async fn start_mirror(
                         match nalu_type {
                             // SPS
                             7 | HEVC_NAL_SPS => {
-                                let _ = video_tx_for_capture.send(encoder::build_nalu_message(b"sps", &nalu_data));
+                                let _ = video_tx_for_capture
+                                    .send(encoder::build_nalu_message(b"sps", &nalu_data));
                             }
                             // PPS
                             8 | HEVC_NAL_PPS => {
-                                let _ = video_tx_for_capture.send(encoder::build_nalu_message(b"pps", &nalu_data));
+                                let _ = video_tx_for_capture
+                                    .send(encoder::build_nalu_message(b"pps", &nalu_data));
                             }
                             // VPS (H.265)
                             HEVC_NAL_VPS => {
-                                let _ = video_tx_for_capture.send(encoder::build_nalu_message(b"vps", &nalu_data));
+                                let _ = video_tx_for_capture
+                                    .send(encoder::build_nalu_message(b"vps", &nalu_data));
                             }
                             // IDR 关键帧
                             5 | HEVC_NAL_IDR_W_RADL | HEVC_NAL_IDR_N_LP | HEVC_NAL_CRA => {
-                                let _ = video_tx_for_capture.send(encoder::build_frame_message(b"key", &nalu_data, frame_seq, frame_ts));
+                                let _ = video_tx_for_capture.send(encoder::build_frame_message(
+                                    b"key", &nalu_data, frame_seq, frame_ts,
+                                ));
                                 if nalu_data.len() <= 65000 {
                                     fec_group.push(nalu_data);
                                     if fec_group.len() >= FEC_GROUP_SIZE {
                                         let fec_data = encoder::generate_fec_xor(&fec_group);
-                                        let _ = video_tx_for_capture.send(encoder::build_fec_message(fec_group_id, &fec_data));
+                                        let _ = video_tx_for_capture.send(
+                                            encoder::build_fec_message(fec_group_id, &fec_data),
+                                        );
                                         fec_group.clear();
                                         fec_group_id = fec_group_id.wrapping_add(1);
                                     }
@@ -201,12 +223,16 @@ pub async fn start_mirror(
                                     consecutive_static_frames = 0;
                                     frame_skip_counter = 0;
                                 }
-                                let _ = video_tx_for_capture.send(encoder::build_frame_message(b"frm", &nalu_data, frame_seq, frame_ts));
+                                let _ = video_tx_for_capture.send(encoder::build_frame_message(
+                                    b"frm", &nalu_data, frame_seq, frame_ts,
+                                ));
                                 if nalu_data.len() <= 65000 {
                                     fec_group.push(nalu_data);
                                     if fec_group.len() >= FEC_GROUP_SIZE {
                                         let fec_data = encoder::generate_fec_xor(&fec_group);
-                                        let _ = video_tx_for_capture.send(encoder::build_fec_message(fec_group_id, &fec_data));
+                                        let _ = video_tx_for_capture.send(
+                                            encoder::build_fec_message(fec_group_id, &fec_data),
+                                        );
                                         fec_group.clear();
                                         fec_group_id = fec_group_id.wrapping_add(1);
                                     }
@@ -276,7 +302,11 @@ pub async fn start_mirror(
     let port = crate::config::get_listen_port();
     Json(ApiResponse::ok_msg(
         "投屏已启动".to_string(),
-        &format!("WebSocket: ws://localhost:{}/ws/mirror | KCP: udp://localhost:{}", port, port + 1),
+        &format!(
+            "WebSocket: ws://localhost:{}/ws/mirror | KCP: udp://localhost:{}",
+            port,
+            port + 1
+        ),
     ))
 }
 
@@ -331,12 +361,18 @@ pub async fn send_control(
     let controller = input::create_input_controller();
 
     // 输入活动加速（借鉴 Sunshine 的 Input Activity Boost）
-    if matches!(req.action.as_str(), "touch" | "touch_down" | "touch_move" | "swipe" | "scroll") {
+    if matches!(
+        req.action.as_str(),
+        "touch" | "touch_down" | "touch_move" | "swipe" | "scroll"
+    ) {
         let boost_until = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
-            .as_millis() as u64 + INPUT_BOOST_DURATION_MS;
-        state.input_boost_until.store(boost_until, std::sync::atomic::Ordering::Relaxed);
+            .as_millis() as u64
+            + INPUT_BOOST_DURATION_MS;
+        state
+            .input_boost_until
+            .store(boost_until, std::sync::atomic::Ordering::Relaxed);
     }
 
     let result = match req.action.as_str() {
@@ -404,12 +440,10 @@ pub async fn send_control(
             let text = req.text.unwrap_or_default();
             controller.set_clipboard(&text).await
         }
-        "get_clipboard" => {
-            match controller.get_clipboard().await {
-                Ok(text) => return Json(ApiResponse::ok(text)),
-                Err(e) => return Json(ApiResponse::err(&format!("获取失败: {}", e))),
-            }
-        }
+        "get_clipboard" => match controller.get_clipboard().await {
+            Ok(text) => return Json(ApiResponse::ok(text)),
+            Err(e) => return Json(ApiResponse::err(&format!("获取失败: {}", e))),
+        },
         "open_notification" | "open_settings" | "collapse_panels" => {
             // 这些是 Android 特有功能，跨平台时静默跳过
             Ok(())
@@ -562,13 +596,25 @@ pub async fn report_quality(
     let pipeline_latency = report.pipeline_latency.unwrap_or(0);
 
     // 更新 ABR 控制器的客户端反馈数据
-    state.abr.client_queue_depth.store(queue_depth, std::sync::atomic::Ordering::Relaxed);
-    state.abr.client_render_fps.store(render_fps, std::sync::atomic::Ordering::Relaxed);
+    state
+        .abr
+        .client_queue_depth
+        .store(queue_depth, std::sync::atomic::Ordering::Relaxed);
+    state
+        .abr
+        .client_render_fps
+        .store(render_fps, std::sync::atomic::Ordering::Relaxed);
     // 累加丢帧数（ABR 在 adjust 中消费后重置）
     if frames_lost > 0 {
-        state.abr.client_frames_lost.fetch_add(frames_lost, std::sync::atomic::Ordering::Relaxed);
+        state
+            .abr
+            .client_frames_lost
+            .fetch_add(frames_lost, std::sync::atomic::Ordering::Relaxed);
     }
-    state.abr.client_pipeline_latency.store(pipeline_latency, std::sync::atomic::Ordering::Relaxed);
+    state
+        .abr
+        .client_pipeline_latency
+        .store(pipeline_latency, std::sync::atomic::Ordering::Relaxed);
 
     // 触发双层 ABR 调整算法
     state.abr.adjust(queue_depth, render_fps);
@@ -590,7 +636,19 @@ pub async fn screencap_jpeg() -> Json<ApiResponse<String>> {
         _ => {
             // 桌面平台：使用 ffmpeg 截取单帧
             tokio::process::Command::new("ffmpeg")
-                .args(["-f", "gdigrab", "-i", "desktop", "-frames:v", "1", "-f", "image2", "-c:v", "mjpeg", "pipe:1"])
+                .args([
+                    "-f",
+                    "gdigrab",
+                    "-i",
+                    "desktop",
+                    "-frames:v",
+                    "1",
+                    "-f",
+                    "image2",
+                    "-c:v",
+                    "mjpeg",
+                    "pipe:1",
+                ])
                 .output()
                 .await
         }
@@ -624,8 +682,12 @@ pub async fn upload_file_to_device(Json(req): Json<FileUploadReq>) -> Json<ApiRe
     use base64::Engine;
 
     // 校验文件名，防止路径穿越和命令注入
-    if req.filename.contains("..") || req.filename.contains('/') || req.filename.contains('\\')
-        || req.filename.contains('\'') || req.filename.contains('"') || req.filename.contains(';')
+    if req.filename.contains("..")
+        || req.filename.contains('/')
+        || req.filename.contains('\\')
+        || req.filename.contains('\'')
+        || req.filename.contains('"')
+        || req.filename.contains(';')
     {
         return Json(ApiResponse::err("无效的文件名"));
     }
@@ -633,11 +695,9 @@ pub async fn upload_file_to_device(Json(req): Json<FileUploadReq>) -> Json<ApiRe
     // 跨平台默认下载目录
     let default_dir = match crate::platform::detect_platform() {
         crate::platform::Platform::Android => "/sdcard/Download".to_string(),
-        _ => {
-            dirs_next::download_dir()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| ".".to_string())
-        }
+        _ => dirs_next::download_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| ".".to_string()),
     };
     let dest_dir = req.dest_dir.unwrap_or(default_dir);
     let dest_path = format!("{}/{}", dest_dir, req.filename);

@@ -1,7 +1,7 @@
-use futures::future::BoxFuture;
-use crate::config::SCRIPTS_DIR;
 use crate::config::LOG_FILE;
-use crate::tools::{AiTool, parse_arg};
+use crate::config::SCRIPTS_DIR;
+use crate::tools::{parse_arg, AiTool};
+use futures::future::BoxFuture;
 use serde_json::json;
 use std::fs;
 use tokio::process::Command;
@@ -14,8 +14,12 @@ pub struct RunScriptTool;
 pub struct ViewLogsTool;
 
 impl AiTool for ListScriptsTool {
-    fn name(&self) -> &str { "list_scripts" }
-    fn description(&self) -> &str { "列出scripts目录下所有脚本文件" }
+    fn name(&self) -> &str {
+        "list_scripts"
+    }
+    fn description(&self) -> &str {
+        "列出scripts目录下所有脚本文件"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -44,8 +48,12 @@ impl AiTool for ListScriptsTool {
 }
 
 impl AiTool for ReadScriptTool {
-    fn name(&self) -> &str { "read_script" }
-    fn description(&self) -> &str { "读取指定脚本文件的内容" }
+    fn name(&self) -> &str {
+        "read_script"
+    }
+    fn description(&self) -> &str {
+        "读取指定脚本文件的内容"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -60,7 +68,8 @@ impl AiTool for ReadScriptTool {
         Box::pin(async move {
             match parse_arg::<String>(&args, "filename") {
                 Ok(filename) => {
-                    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+                    if filename.contains("..") || filename.contains('/') || filename.contains('\\')
+                    {
                         "无效的脚本名称".to_string()
                     } else {
                         let script_path = format!("{}/{}", SCRIPTS_DIR, filename);
@@ -77,8 +86,12 @@ impl AiTool for ReadScriptTool {
 }
 
 impl AiTool for WriteScriptTool {
-    fn name(&self) -> &str { "write_script" }
-    fn description(&self) -> &str { "创建或覆盖脚本文件" }
+    fn name(&self) -> &str {
+        "write_script"
+    }
+    fn description(&self) -> &str {
+        "创建或覆盖脚本文件"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -92,9 +105,13 @@ impl AiTool for WriteScriptTool {
     fn execute(&self, args: &str) -> BoxFuture<'_, String> {
         let args = args.to_string();
         Box::pin(async move {
-            match (parse_arg::<String>(&args, "filename"), parse_arg::<String>(&args, "content")) {
+            match (
+                parse_arg::<String>(&args, "filename"),
+                parse_arg::<String>(&args, "content"),
+            ) {
                 (Ok(filename), Ok(content)) => {
-                    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+                    if filename.contains("..") || filename.contains('/') || filename.contains('\\')
+                    {
                         "无效的脚本名称".to_string()
                     } else {
                         let script_path = format!("{}/{}", SCRIPTS_DIR, filename);
@@ -118,8 +135,12 @@ impl AiTool for WriteScriptTool {
 }
 
 impl AiTool for DeleteScriptTool {
-    fn name(&self) -> &str { "delete_script" }
-    fn description(&self) -> &str { "删除指定脚本文件" }
+    fn name(&self) -> &str {
+        "delete_script"
+    }
+    fn description(&self) -> &str {
+        "删除指定脚本文件"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -134,7 +155,8 @@ impl AiTool for DeleteScriptTool {
         Box::pin(async move {
             match parse_arg::<String>(&args, "filename") {
                 Ok(filename) => {
-                    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+                    if filename.contains("..") || filename.contains('/') || filename.contains('\\')
+                    {
                         "无效的脚本名称".to_string()
                     } else {
                         let script_path = format!("{}/{}", SCRIPTS_DIR, filename);
@@ -151,8 +173,12 @@ impl AiTool for DeleteScriptTool {
 }
 
 impl AiTool for RunScriptTool {
-    fn name(&self) -> &str { "run_script" }
-    fn description(&self) -> &str { "执行指定脚本文件" }
+    fn name(&self) -> &str {
+        "run_script"
+    }
+    fn description(&self) -> &str {
+        "执行指定脚本文件"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -167,7 +193,8 @@ impl AiTool for RunScriptTool {
         Box::pin(async move {
             match parse_arg::<String>(&args, "filename") {
                 Ok(filename) => {
-                    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+                    if filename.contains("..") || filename.contains('/') || filename.contains('\\')
+                    {
                         "无效的脚本名称".to_string()
                     } else {
                         let script_path = format!("{}/{}", SCRIPTS_DIR, filename);
@@ -192,8 +219,12 @@ impl AiTool for RunScriptTool {
 }
 
 impl AiTool for ViewLogsTool {
-    fn name(&self) -> &str { "view_logs" }
-    fn description(&self) -> &str { "查看TaskMod运行日志" }
+    fn name(&self) -> &str {
+        "view_logs"
+    }
+    fn description(&self) -> &str {
+        "查看TaskMod运行日志"
+    }
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",

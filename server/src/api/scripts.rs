@@ -12,7 +12,12 @@ pub async fn list_scripts() -> Json<ApiResponse<Vec<String>>> {
         Ok(mut dir) => {
             let mut files: Vec<String> = Vec::new();
             while let Ok(Some(entry)) = dir.next_entry().await {
-                if entry.path().extension().map(|ext| ext == "sh").unwrap_or(false) {
+                if entry
+                    .path()
+                    .extension()
+                    .map(|ext| ext == "sh")
+                    .unwrap_or(false)
+                {
                     if let Ok(name) = entry.file_name().into_string() {
                         files.push(name);
                     }

@@ -152,7 +152,12 @@ pub struct MqttConfigRequest {
     pub client_id: String,
 }
 
-fn default_broker() -> String { "tcp://localhost:1883".to_string() }
-fn default_topic_prefix() -> String { "taskmod".to_string() }
-fn default_client_id() -> String { "taskmod-device".to_string() }
-
+fn default_broker() -> String {
+    "tcp://localhost:1883".to_string()
+}
+fn default_topic_prefix() -> String {
+    "taskmod".to_string()
+}
+fn default_client_id() -> String {
+    "taskmod-device".to_string()
+}

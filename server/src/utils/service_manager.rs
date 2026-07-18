@@ -45,14 +45,27 @@ lazy_static::lazy_static! {
 }
 
 #[allow(dead_code)]
-pub fn register_service(id: &str, load_fn: Box<dyn Fn() -> Result<(), String> + Send + Sync + 'static>, unload_fn: Box<dyn Fn() -> Result<(), String> + Send + Sync + 'static>) {
+pub fn register_service(
+    id: &str,
+    load_fn: Box<dyn Fn() -> Result<(), String> + Send + Sync + 'static>,
+    unload_fn: Box<dyn Fn() -> Result<(), String> + Send + Sync + 'static>,
+) {
     let mut inner = SERVICE_MANAGER.lock().unwrap_or_else(|e| e.into_inner());
-    inner.services.insert(id.to_string(), ServiceDefinition { load_fn: Arc::new(load_fn), unload_fn: Arc::new(unload_fn) });
-    inner.service_info.insert(id.to_string(), ServiceInfo {
-        status: ServiceStatus::Unloaded,
-        ref_count: 0,
-        last_used: std::time::Instant::now(),
-    });
+    inner.services.insert(
+        id.to_string(),
+        ServiceDefinition {
+            load_fn: Arc::new(load_fn),
+            unload_fn: Arc::new(unload_fn),
+        },
+    );
+    inner.service_info.insert(
+        id.to_string(),
+        ServiceInfo {
+            status: ServiceStatus::Unloaded,
+            ref_count: 0,
+            last_used: std::time::Instant::now(),
+        },
+    );
 }
 
 #[allow(dead_code)]

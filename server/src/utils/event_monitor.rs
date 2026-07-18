@@ -48,7 +48,10 @@ pub fn register_event_handler<F>(handler: F)
 where
     F: Fn(SystemEvent) + Send + Sync + 'static,
 {
-    EVENT_HANDLERS.lock().unwrap_or_else(|e| e.into_inner()).push(Box::new(handler));
+    EVENT_HANDLERS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push(Box::new(handler));
 }
 
 fn notify_event(event: SystemEvent) {
@@ -64,18 +67,20 @@ fn notify_event(event: SystemEvent) {
 
 #[allow(dead_code)]
 pub async fn get_wifi_state() -> WifiState {
-    let output = match Command::new("dumpsys")
-        .arg("wifi")
-        .output()
-        .await
-    {
+    let output = match Command::new("dumpsys").arg("wifi").output().await {
         Ok(o) => o,
-        Err(_) => return WifiState { ssid: "unknown".to_string(), connected: false, signal_level: 0 },
+        Err(_) => {
+            return WifiState {
+                ssid: "unknown".to_string(),
+                connected: false,
+                signal_level: 0,
+            }
+        }
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.lines().collect();
-    
+
     let mut ssid = "unknown".to_string();
     let mut connected = false;
     let mut signal_level = 0;
@@ -85,7 +90,12 @@ pub async fn get_wifi_state() -> WifiState {
             let parts: Vec<&str> = line.split(',').collect();
             for part in parts {
                 if part.contains("SSID:") {
-                    let ssid_str = part.split(':').nth(1).unwrap_or("unknown").trim().replace('"', "");
+                    let ssid_str = part
+                        .split(':')
+                        .nth(1)
+                        .unwrap_or("unknown")
+                        .trim()
+                        .replace('"', "");
                     if !ssid_str.is_empty() && ssid_str != "<unknown ssid>" {
                         ssid = ssid_str;
                     }
@@ -105,23 +115,29 @@ pub async fn get_wifi_state() -> WifiState {
         connected = false;
     }
 
-    WifiState { ssid, connected, signal_level }
+    WifiState {
+        ssid,
+        connected,
+        signal_level,
+    }
 }
 
 #[allow(dead_code)]
 pub async fn get_battery_state() -> BatteryState {
-    let output = match Command::new("dumpsys")
-        .arg("battery")
-        .output()
-        .await
-    {
+    let output = match Command::new("dumpsys").arg("battery").output().await {
         Ok(o) => o,
-        Err(_) => return BatteryState { capacity: 0, status: "unknown".to_string(), temperature: 0.0 },
+        Err(_) => {
+            return BatteryState {
+                capacity: 0,
+                status: "unknown".to_string(),
+                temperature: 0.0,
+            }
+        }
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.lines().collect();
-    
+
     let mut capacity = 0;
     let mut status = "unknown".to_string();
     let mut temperature = 0.0;
@@ -132,7 +148,13 @@ pub async fn get_battery_state() -> BatteryState {
                 capacity = level;
             }
         } else if line.starts_with("status:") {
-            let status_code = line.split(':').nth(1).unwrap_or("0").trim().parse::<i32>().unwrap_or(0);
+            let status_code = line
+                .split(':')
+                .nth(1)
+                .unwrap_or("0")
+                .trim()
+                .parse::<i32>()
+                .unwrap_or(0);
             status = match status_code {
                 1 => "unknown".to_string(),
                 2 => "charging".to_string(),
@@ -148,23 +170,28 @@ pub async fn get_battery_state() -> BatteryState {
         }
     }
 
-    BatteryState { capacity, status, temperature }
+    BatteryState {
+        capacity,
+        status,
+        temperature,
+    }
 }
 
 #[allow(dead_code)]
 pub async fn get_screen_state() -> ScreenState {
-    let output = match Command::new("dumpsys")
-        .arg("power")
-        .output()
-        .await
-    {
+    let output = match Command::new("dumpsys").arg("power").output().await {
         Ok(o) => o,
-        Err(_) => return ScreenState { on: false, brightness: 0 },
+        Err(_) => {
+            return ScreenState {
+                on: false,
+                brightness: 0,
+            }
+        }
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.lines().collect();
-    
+
     let mut on = false;
     let mut brightness = 0;
 
@@ -197,7 +224,12 @@ async fn check_wifi_state() {
                         let parts: Vec<&str> = line.split(',').collect();
                         for part in parts {
                             if part.contains("SSID:") {
-                                let ssid_str = part.split(':').nth(1).unwrap_or("unknown").trim().replace('"', "");
+                                let ssid_str = part
+                                    .split(':')
+                                    .nth(1)
+                                    .unwrap_or("unknown")
+                                    .trim()
+                                    .replace('"', "");
                                 if !ssid_str.is_empty() && ssid_str != "<unknown ssid>" {
                                     ssid = ssid_str;
                                 }
@@ -205,46 +237,75 @@ async fn check_wifi_state() {
                                 let state = part.split(':').nth(1).unwrap_or("").trim();
                                 connected = state == "COMPLETED" || state == "ASSOCIATED";
                             } else if part.contains("rssi:") {
-                                if let Ok(rssi) = part.split(':').nth(1).unwrap_or("0").trim().parse::<i32>() {
+                                if let Ok(rssi) =
+                                    part.split(':').nth(1).unwrap_or("0").trim().parse::<i32>()
+                                {
                                     signal_level = rssi;
                                 }
                             }
                         }
                     }
                 }
-                if ssid == "unknown" { connected = false; }
-                WifiState { ssid, connected, signal_level }
+                if ssid == "unknown" {
+                    connected = false;
+                }
+                WifiState {
+                    ssid,
+                    connected,
+                    signal_level,
+                }
             }
-            Err(_) => WifiState { ssid: "unknown".to_string(), connected: false, signal_level: 0 },
+            Err(_) => WifiState {
+                ssid: "unknown".to_string(),
+                connected: false,
+                signal_level: 0,
+            },
         }
-    }).await.unwrap_or(WifiState { ssid: "unknown".to_string(), connected: false, signal_level: 0 });
+    })
+    .await
+    .unwrap_or(WifiState {
+        ssid: "unknown".to_string(),
+        connected: false,
+        signal_level: 0,
+    });
 
     let mut last = LAST_WIFI_STATE.lock().unwrap_or_else(|e| e.into_inner());
-    
+
     match last.as_ref() {
         Some(last_state) => {
             if current.connected && !last_state.connected {
-                notify_event(SystemEvent::WifiConnected { ssid: current.ssid.clone(), signal_level: current.signal_level });
+                notify_event(SystemEvent::WifiConnected {
+                    ssid: current.ssid.clone(),
+                    signal_level: current.signal_level,
+                });
             } else if !current.connected && last_state.connected {
                 notify_event(SystemEvent::WifiDisconnected);
             } else if current.connected && last_state.connected && current.ssid != last_state.ssid {
                 notify_event(SystemEvent::WifiDisconnected);
-                notify_event(SystemEvent::WifiConnected { ssid: current.ssid.clone(), signal_level: current.signal_level });
+                notify_event(SystemEvent::WifiConnected {
+                    ssid: current.ssid.clone(),
+                    signal_level: current.signal_level,
+                });
             }
         }
         None => {
             if current.connected {
-                notify_event(SystemEvent::WifiConnected { ssid: current.ssid.clone(), signal_level: current.signal_level });
+                notify_event(SystemEvent::WifiConnected {
+                    ssid: current.ssid.clone(),
+                    signal_level: current.signal_level,
+                });
             }
         }
     }
-    
+
     *last = Some(current);
 }
 
 async fn check_battery_state() {
     let current = tokio::task::spawn_blocking(|| {
-        let output = StdCommand::new("/system/bin/dumpsys").arg("battery").output();
+        let output = StdCommand::new("/system/bin/dumpsys")
+            .arg("battery")
+            .output();
         match output {
             Ok(o) => {
                 let stdout = String::from_utf8_lossy(&o.stdout);
@@ -254,11 +315,19 @@ async fn check_battery_state() {
                 let mut temperature = 0.0;
                 for line in lines {
                     if line.starts_with("level:") {
-                        if let Ok(level) = line.split(':').nth(1).unwrap_or("0").trim().parse::<i32>() {
+                        if let Ok(level) =
+                            line.split(':').nth(1).unwrap_or("0").trim().parse::<i32>()
+                        {
                             capacity = level;
                         }
                     } else if line.starts_with("status:") {
-                        let status_code = line.split(':').nth(1).unwrap_or("0").trim().parse::<i32>().unwrap_or(0);
+                        let status_code = line
+                            .split(':')
+                            .nth(1)
+                            .unwrap_or("0")
+                            .trim()
+                            .parse::<i32>()
+                            .unwrap_or(0);
                         status = match status_code {
                             2 => "charging".to_string(),
                             3 => "discharging".to_string(),
@@ -267,46 +336,70 @@ async fn check_battery_state() {
                             _ => "unknown".to_string(),
                         };
                     } else if line.starts_with("temperature:") {
-                        if let Ok(temp) = line.split(':').nth(1).unwrap_or("0").trim().parse::<i32>() {
+                        if let Ok(temp) =
+                            line.split(':').nth(1).unwrap_or("0").trim().parse::<i32>()
+                        {
                             temperature = temp as f32 / 10.0;
                         }
                     }
                 }
-                BatteryState { capacity, status, temperature }
+                BatteryState {
+                    capacity,
+                    status,
+                    temperature,
+                }
             }
-            Err(_) => BatteryState { capacity: 0, status: "unknown".to_string(), temperature: 0.0 },
+            Err(_) => BatteryState {
+                capacity: 0,
+                status: "unknown".to_string(),
+                temperature: 0.0,
+            },
         }
-    }).await.unwrap_or(BatteryState { capacity: 0, status: "unknown".to_string(), temperature: 0.0 });
+    })
+    .await
+    .unwrap_or(BatteryState {
+        capacity: 0,
+        status: "unknown".to_string(),
+        temperature: 0.0,
+    });
 
     let mut last = LAST_BATTERY_STATE.lock().unwrap_or_else(|e| e.into_inner());
-    
+
     match last.as_ref() {
         Some(last_state) => {
             if current.capacity < 20 && last_state.capacity >= 20 {
-                notify_event(SystemEvent::BatteryLow { capacity: current.capacity });
+                notify_event(SystemEvent::BatteryLow {
+                    capacity: current.capacity,
+                });
             }
-            
+
             if current.status == "charging" && last_state.status != "charging" {
-                notify_event(SystemEvent::BatteryCharging { capacity: current.capacity });
+                notify_event(SystemEvent::BatteryCharging {
+                    capacity: current.capacity,
+                });
             }
-            
+
             if current.status == "full" && last_state.status != "full" {
                 notify_event(SystemEvent::BatteryFull);
             }
         }
         None => {
             if current.capacity < 20 {
-                notify_event(SystemEvent::BatteryLow { capacity: current.capacity });
+                notify_event(SystemEvent::BatteryLow {
+                    capacity: current.capacity,
+                });
             }
             if current.status == "charging" {
-                notify_event(SystemEvent::BatteryCharging { capacity: current.capacity });
+                notify_event(SystemEvent::BatteryCharging {
+                    capacity: current.capacity,
+                });
             }
             if current.status == "full" {
                 notify_event(SystemEvent::BatteryFull);
             }
         }
     }
-    
+
     *last = Some(current);
 }
 
@@ -331,12 +424,20 @@ async fn check_screen_state() {
                 }
                 ScreenState { on, brightness }
             }
-            Err(_) => ScreenState { on: false, brightness: 0 },
+            Err(_) => ScreenState {
+                on: false,
+                brightness: 0,
+            },
         }
-    }).await.unwrap_or(ScreenState { on: false, brightness: 0 });
+    })
+    .await
+    .unwrap_or(ScreenState {
+        on: false,
+        brightness: 0,
+    });
 
     let mut last = LAST_SCREEN_STATE.lock().unwrap_or_else(|e| e.into_inner());
-    
+
     match last.as_ref() {
         Some(last_state) => {
             if current.on && !last_state.on {
@@ -351,7 +452,7 @@ async fn check_screen_state() {
             }
         }
     }
-    
+
     *last = Some(current);
 }
 
@@ -360,9 +461,9 @@ async fn monitor_loop(interval_ms: u64) {
         check_wifi_state().await;
         check_battery_state().await;
         check_screen_state().await;
-        
+
         tokio::time::sleep(tokio::time::Duration::from_millis(interval_ms)).await;
-        
+
         let running = IS_RUNNING.lock().unwrap_or_else(|e| e.into_inner());
         if !*running {
             break;
@@ -377,7 +478,7 @@ pub fn start_monitor(interval_ms: u64) {
     }
     *running = true;
     drop(running);
-    
+
     tokio::spawn(async move {
         monitor_loop(interval_ms).await;
     });
@@ -397,29 +498,50 @@ pub fn is_monitor_running() -> bool {
 #[allow(dead_code)]
 pub fn get_current_states() -> HashMap<String, serde_json::Value> {
     let mut states = HashMap::new();
-    
-    if let Some(wifi) = LAST_WIFI_STATE.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
-        states.insert("wifi".to_string(), serde_json::json!({
-            "ssid": wifi.ssid,
-            "connected": wifi.connected,
-            "signal_level": wifi.signal_level
-        }));
+
+    if let Some(wifi) = LAST_WIFI_STATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+    {
+        states.insert(
+            "wifi".to_string(),
+            serde_json::json!({
+                "ssid": wifi.ssid,
+                "connected": wifi.connected,
+                "signal_level": wifi.signal_level
+            }),
+        );
     }
-    
-    if let Some(battery) = LAST_BATTERY_STATE.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
-        states.insert("battery".to_string(), serde_json::json!({
-            "capacity": battery.capacity,
-            "status": battery.status,
-            "temperature": battery.temperature
-        }));
+
+    if let Some(battery) = LAST_BATTERY_STATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+    {
+        states.insert(
+            "battery".to_string(),
+            serde_json::json!({
+                "capacity": battery.capacity,
+                "status": battery.status,
+                "temperature": battery.temperature
+            }),
+        );
     }
-    
-    if let Some(screen) = LAST_SCREEN_STATE.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
-        states.insert("screen".to_string(), serde_json::json!({
-            "on": screen.on,
-            "brightness": screen.brightness
-        }));
+
+    if let Some(screen) = LAST_SCREEN_STATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+    {
+        states.insert(
+            "screen".to_string(),
+            serde_json::json!({
+                "on": screen.on,
+                "brightness": screen.brightness
+            }),
+        );
     }
-    
+
     states
 }

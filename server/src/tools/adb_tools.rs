@@ -1,6 +1,6 @@
-use futures::future::BoxFuture;
-use crate::tools::{AiTool, parse_arg};
+use crate::tools::{parse_arg, AiTool};
 use crate::utils::adb;
+use futures::future::BoxFuture;
 use serde_json::json;
 
 pub struct AdbTapTool;
@@ -21,7 +21,9 @@ pub struct AdbClearAppDataTool;
 pub struct AdbTtsTool;
 
 impl AiTool for AdbTapTool {
-    fn name(&self) -> &str { "adb_tap" }
+    fn name(&self) -> &str {
+        "adb_tap"
+    }
     fn description(&self) -> &str {
         "模拟点击屏幕指定坐标位置。使用前请先用get_device_info获取屏幕分辨率，确保坐标在有效范围内。\
          坐标系: 左上角(0,0)，X轴向右增大，Y轴向下增大。\
@@ -49,7 +51,9 @@ impl AiTool for AdbTapTool {
 }
 
 impl AiTool for AdbSwipeTool {
-    fn name(&self) -> &str { "adb_swipe" }
+    fn name(&self) -> &str {
+        "adb_swipe"
+    }
     fn description(&self) -> &str {
         "模拟屏幕滑动操作，从起始坐标滑动到结束坐标。\
          用于: 下拉通知栏(y1小->y2大)、上滑返回(y1大->y2小)、左右翻页等。\
@@ -70,8 +74,12 @@ impl AiTool for AdbSwipeTool {
     fn execute(&self, args: &str) -> BoxFuture<'_, String> {
         let args = args.to_string();
         Box::pin(async move {
-            match (parse_arg::<i32>(&args, "x1"), parse_arg::<i32>(&args, "y1"),
-                   parse_arg::<i32>(&args, "x2"), parse_arg::<i32>(&args, "y2")) {
+            match (
+                parse_arg::<i32>(&args, "x1"),
+                parse_arg::<i32>(&args, "y1"),
+                parse_arg::<i32>(&args, "x2"),
+                parse_arg::<i32>(&args, "y2"),
+            ) {
                 (Ok(x1), Ok(y1), Ok(x2), Ok(y2)) => adb::swipe(x1, y1, x2, y2).await,
                 _ => "参数解析失败".to_string(),
             }
@@ -80,7 +88,9 @@ impl AiTool for AdbSwipeTool {
 }
 
 impl AiTool for AdbKeyeventTool {
-    fn name(&self) -> &str { "adb_keyevent" }
+    fn name(&self) -> &str {
+        "adb_keyevent"
+    }
     fn description(&self) -> &str {
         "模拟物理按键事件。\
          常用按键: back(返回)、home(主屏幕)、power(电源键/唤醒屏幕)、\
@@ -114,7 +124,9 @@ impl AiTool for AdbKeyeventTool {
 }
 
 impl AiTool for AdbInputTextTool {
-    fn name(&self) -> &str { "adb_input_text" }
+    fn name(&self) -> &str {
+        "adb_input_text"
+    }
     fn description(&self) -> &str {
         "向当前聚焦的输入框输入文本。注意: 调用前需确保输入框已获得焦点（可先用adb_tap点击输入框）。\
          只支持ASCII字符和中文，不支持直接输入换行符。如果输入失败，可以尝试用adb_command执行 'input text \"文本\"'。"
@@ -140,7 +152,9 @@ impl AiTool for AdbInputTextTool {
 }
 
 impl AiTool for AdbScreencapTool {
-    fn name(&self) -> &str { "adb_screencap" }
+    fn name(&self) -> &str {
+        "adb_screencap"
+    }
     fn description(&self) -> &str {
         "截取当前屏幕画面并保存为PNG文件。文件保存在 /sdcard/TaskMod/screenshots/ 目录下。"
     }
@@ -165,7 +179,9 @@ impl AiTool for AdbScreencapTool {
 }
 
 impl AiTool for AdbCommandTool {
-    fn name(&self) -> &str { "adb_command" }
+    fn name(&self) -> &str {
+        "adb_command"
+    }
     fn description(&self) -> &str {
         "执行任意shell命令（通过 /system/bin/sh -c），支持管道、重定向等复杂语法。\
          当专用工具不够用时可用此工具。例如: 'ls /sdcard/', 'pm list packages', 'dumpsys activity tops'。\
@@ -192,7 +208,9 @@ impl AiTool for AdbCommandTool {
 }
 
 impl AiTool for AdbStartAppTool {
-    fn name(&self) -> &str { "adb_start_app" }
+    fn name(&self) -> &str {
+        "adb_start_app"
+    }
     fn description(&self) -> &str {
         "启动指定应用。需传入应用包名(package name)，如 com.android.settings(设置)、\
          com.tencent.mm(微信)、com.android.chrome(浏览器)。\
@@ -219,7 +237,9 @@ impl AiTool for AdbStartAppTool {
 }
 
 impl AiTool for AdbStopAppTool {
-    fn name(&self) -> &str { "adb_stop_app" }
+    fn name(&self) -> &str {
+        "adb_stop_app"
+    }
     fn description(&self) -> &str {
         "强制停止指定应用（am force-stop），等同于从任务管理器中结束应用。"
     }
@@ -244,7 +264,9 @@ impl AiTool for AdbStopAppTool {
 }
 
 impl AiTool for GetWifiInfoTool {
-    fn name(&self) -> &str { "get_wifi_info" }
+    fn name(&self) -> &str {
+        "get_wifi_info"
+    }
     fn description(&self) -> &str {
         "获取当前WiFi连接信息，包括SSID(网络名称)、BSSID(路由器MAC)、IP地址。"
     }
@@ -255,14 +277,14 @@ impl AiTool for GetWifiInfoTool {
         })
     }
     fn execute(&self, _args: &str) -> BoxFuture<'_, String> {
-        Box::pin(async move {
-            adb::get_wifi_info().await
-        })
+        Box::pin(async move { adb::get_wifi_info().await })
     }
 }
 
 impl AiTool for GetDeviceInfoTool {
-    fn name(&self) -> &str { "get_device_info" }
+    fn name(&self) -> &str {
+        "get_device_info"
+    }
     fn description(&self) -> &str {
         "获取设备系统信息，包括设备型号、Android版本、存储空间。建议在执行屏幕操作前先调用此工具获取屏幕分辨率。"
     }
@@ -273,14 +295,14 @@ impl AiTool for GetDeviceInfoTool {
         })
     }
     fn execute(&self, _args: &str) -> BoxFuture<'_, String> {
-        Box::pin(async move {
-            adb::get_device_info().await
-        })
+        Box::pin(async move { adb::get_device_info().await })
     }
 }
 
 impl AiTool for GetBatteryInfoTool {
-    fn name(&self) -> &str { "get_battery_info" }
+    fn name(&self) -> &str {
+        "get_battery_info"
+    }
     fn description(&self) -> &str {
         "获取电池详细信息，包括电量百分比、充电状态、温度、健康状态等。"
     }
@@ -291,14 +313,14 @@ impl AiTool for GetBatteryInfoTool {
         })
     }
     fn execute(&self, _args: &str) -> BoxFuture<'_, String> {
-        Box::pin(async move {
-            adb::get_battery_info().await
-        })
+        Box::pin(async move { adb::get_battery_info().await })
     }
 }
 
 impl AiTool for GetRunningAppsTool {
-    fn name(&self) -> &str { "get_running_apps" }
+    fn name(&self) -> &str {
+        "get_running_apps"
+    }
     fn description(&self) -> &str {
         "获取当前正在运行的应用列表（最多显示20个第三方应用）。可用于确认某个应用是否在运行。"
     }
@@ -309,14 +331,14 @@ impl AiTool for GetRunningAppsTool {
         })
     }
     fn execute(&self, _args: &str) -> BoxFuture<'_, String> {
-        Box::pin(async move {
-            adb::get_running_apps().await
-        })
+        Box::pin(async move { adb::get_running_apps().await })
     }
 }
 
 impl AiTool for AdbRebootTool {
-    fn name(&self) -> &str { "adb_reboot" }
+    fn name(&self) -> &str {
+        "adb_reboot"
+    }
     fn description(&self) -> &str {
         "重启设备。这是一个危险操作，执行前务必确认用户意图！"
     }
@@ -327,14 +349,14 @@ impl AiTool for AdbRebootTool {
         })
     }
     fn execute(&self, _args: &str) -> BoxFuture<'_, String> {
-        Box::pin(async move {
-            adb::reboot().await
-        })
+        Box::pin(async move { adb::reboot().await })
     }
 }
 
 impl AiTool for AdbShutdownTool {
-    fn name(&self) -> &str { "adb_shutdown" }
+    fn name(&self) -> &str {
+        "adb_shutdown"
+    }
     fn description(&self) -> &str {
         "关闭设备（需要root权限）。这是一个危险操作，执行前务必确认用户意图！"
     }
@@ -345,14 +367,14 @@ impl AiTool for AdbShutdownTool {
         })
     }
     fn execute(&self, _args: &str) -> BoxFuture<'_, String> {
-        Box::pin(async move {
-            adb::shutdown().await
-        })
+        Box::pin(async move { adb::shutdown().await })
     }
 }
 
 impl AiTool for AdbClearAppDataTool {
-    fn name(&self) -> &str { "adb_clear_app_data" }
+    fn name(&self) -> &str {
+        "adb_clear_app_data"
+    }
     fn description(&self) -> &str {
         "清除指定应用的所有数据（缓存、用户数据、数据库等），等同于在设置中「清除数据」。需要root权限。此操作不可逆，执行前务必确认用户意图！"
     }
@@ -377,7 +399,9 @@ impl AiTool for AdbClearAppDataTool {
 }
 
 impl AiTool for AdbTtsTool {
-    fn name(&self) -> &str { "adb_tts" }
+    fn name(&self) -> &str {
+        "adb_tts"
+    }
     fn description(&self) -> &str {
         "使用系统TTS语音引擎播放文本语音。会依次尝试广播、cmd speech、am startservice三种方式。\
          如果播放失败可能是因为设备未安装TTS引擎。"
@@ -405,7 +429,9 @@ impl AiTool for AdbTtsTool {
 pub struct AdbUnlockTool;
 
 impl AiTool for AdbUnlockTool {
-    fn name(&self) -> &str { "adb_unlock_screen" }
+    fn name(&self) -> &str {
+        "adb_unlock_screen"
+    }
     fn description(&self) -> &str {
         "唤醒屏幕并上滑解锁。会自动获取屏幕分辨率计算滑动坐标。\
          仅适用于无密码/图案锁屏的设备（滑动锁屏）。如果有密码锁屏，此操作只能唤醒屏幕并上滑，但无法解锁。"
@@ -425,13 +451,16 @@ impl AiTool for AdbUnlockTool {
             let size_str = adb::get_screen_size().await;
             let parts: Vec<&str> = size_str.split('x').collect();
             let (w, h) = if parts.len() == 2 {
-                (parts[0].parse::<i32>().unwrap_or(1080), parts[1].parse::<i32>().unwrap_or(1920))
+                (
+                    parts[0].parse::<i32>().unwrap_or(1080),
+                    parts[1].parse::<i32>().unwrap_or(1920),
+                )
             } else {
                 (1080, 1920)
             };
             let x = w / 2;
-            let y_start = h * 80 / 100;  // 底部 80%
-            let y_end = h * 30 / 100;    // 滑到 30%
+            let y_start = h * 80 / 100; // 底部 80%
+            let y_end = h * 30 / 100; // 滑到 30%
             adb::swipe(x, y_start, x, y_end).await
         })
     }

@@ -68,7 +68,7 @@ impl std::fmt::Display for EmailError {
 
 pub fn parse_email_conf() -> EmailConfig {
     let mut config = EmailConfig::default();
-    
+
     if let Ok(content) = fs::read_to_string(EMAIL_CONF) {
         for line in content.lines() {
             let line = line.trim();
@@ -96,7 +96,7 @@ pub fn parse_email_conf() -> EmailConfig {
             }
         }
     }
-    
+
     config
 }
 
@@ -137,7 +137,9 @@ async fn send_email_inner(
         EmailError::FormatError(e.to_string())
     })?;
 
-    let to_addrs: Vec<Mailbox> = config.to.split(',')
+    let to_addrs: Vec<Mailbox> = config
+        .to
+        .split(',')
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
         .map(|s| s.parse::<Mailbox>())
@@ -155,36 +157,51 @@ async fn send_email_inner(
 
     let email = match attachments {
         Some(attachments) if !attachments.is_empty() => {
-            log("Email", &format!("创建带附件的邮件，共 {} 个附件", attachments.len()));
+            log(
+                "Email",
+                &format!("创建带附件的邮件，共 {} 个附件", attachments.len()),
+            );
             let mut multipart = MultiPart::mixed().singlepart(SinglePart::plain(body.to_string()));
-            
+
             for (filename, content) in attachments {
-                log("Email", &format!("添加附件: {} ({} bytes)", filename, content.len()));
+                log(
+                    "Email",
+                    &format!("添加附件: {} ({} bytes)", filename, content.len()),
+                );
                 multipart = multipart.singlepart(
                     SinglePart::builder()
-                        .header(lettre::message::header::ContentType::parse("application/octet-stream").unwrap())
-                        .header(lettre::message::header::ContentDisposition::attachment(filename))
-                        .body(content.clone())
+                        .header(
+                            lettre::message::header::ContentType::parse("application/octet-stream")
+                                .unwrap(),
+                        )
+                        .header(lettre::message::header::ContentDisposition::attachment(
+                            filename,
+                        ))
+                        .body(content.clone()),
                 );
             }
-            
+
             builder.multipart(multipart).map_err(|e| {
                 log("Email", &format!("创建多部分邮件失败: {}", e));
                 EmailError::Other(e.to_string())
             })?
         }
-        _ => {
-            builder.body(body.to_string()).map_err(|e| {
-                log("Email", &format!("邮件构建失败: {}", e));
-                EmailError::Other(e.to_string())
-            })?
-        }
+        _ => builder.body(body.to_string()).map_err(|e| {
+            log("Email", &format!("邮件构建失败: {}", e));
+            EmailError::Other(e.to_string())
+        })?,
     };
 
     let creds = Credentials::new(config.username.clone(), config.password.clone());
-    
-    log("Email", &format!("连接SMTP服务器: {}:{}", config.smtp_server, config.smtp_port));
-    
+
+    log(
+        "Email",
+        &format!(
+            "连接SMTP服务器: {}:{}",
+            config.smtp_server, config.smtp_port
+        ),
+    );
+
     let mailer = AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&config.smtp_server)
         .port(config.smtp_port)
         .credentials(creds)
@@ -199,7 +216,7 @@ async fn send_email_inner(
         Err(e) => {
             let error_str = e.to_string();
             log("Email", &format!("邮件发送失败: {}", error_str));
-            
+
             if error_str.contains("authentication") {
                 Err(EmailError::AuthError(error_str))
             } else if error_str.contains("timeout") {
@@ -226,10 +243,10 @@ where
 {
     let mut last_error: Option<EmailError> = None;
     let mut backoff = retry_interval.max(1);
-    
+
     for attempt in 0..=max_retries {
         log("Email", &format!("第 {} 次尝试发送邮件", attempt + 1));
-        
+
         match send_fn().await {
             Ok(result) => {
                 log("Email", "邮件发送成功");
@@ -237,12 +254,14 @@ where
             }
             Err(e) => {
                 log("Email", &format!("第 {} 次尝试失败: {}", attempt + 1, e));
-                
+
                 let is_retryable = matches!(
                     &e,
-                    EmailError::NetworkError(_) | EmailError::TimeoutError(_) | EmailError::ConnectionRefusedError(_)
+                    EmailError::NetworkError(_)
+                        | EmailError::TimeoutError(_)
+                        | EmailError::ConnectionRefusedError(_)
                 );
-                
+
                 if is_retryable {
                     last_error = Some(e);
                     if attempt < max_retries {
@@ -257,7 +276,7 @@ where
             }
         }
     }
-    
+
     log("Email", &format!("所有 {} 次尝试都失败", max_retries + 1));
     Err(last_error.unwrap_or_else(|| EmailError::Other("邮件发送失败".to_string())))
 }
@@ -279,14 +298,11 @@ pub async fn send_email(
 
     let subject = subject.unwrap_or(&config.subject);
     let body = body.unwrap_or(&config.body);
-    
-    retry_email_sending(
-        config.max_retries,
-        config.retry_interval,
-        || async {
-            send_email_inner(config, subject, body, attachments.as_ref()).await
-        },
-    ).await
+
+    retry_email_sending(config.max_retries, config.retry_interval, || async {
+        send_email_inner(config, subject, body, attachments.as_ref()).await
+    })
+    .await
 }
 
 fn log(module: &str, msg: &str) {

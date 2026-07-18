@@ -1,5 +1,7 @@
-use axum::{extract::Path as AxumPath, extract::ws::WebSocketUpgrade, Json, response::IntoResponse};
-use futures_util::{StreamExt, SinkExt};
+use axum::{
+    extract::ws::WebSocketUpgrade, extract::Path as AxumPath, response::IntoResponse, Json,
+};
+use futures_util::{SinkExt, StreamExt};
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
@@ -8,7 +10,7 @@ use std::fs;
 use std::sync::atomic::Ordering;
 
 use crate::config::{AI_CONF, SCRIPTS_DIR};
-use crate::data::models::{AiProvider, AiProviderRequest, AiChatRequest};
+use crate::data::models::{AiChatRequest, AiProvider, AiProviderRequest};
 use crate::data::response::ApiResponse;
 use crate::tools::{adb_tools, script_tools, task_tools, ToolRegistry};
 use crate::utils::adb;
@@ -120,10 +122,12 @@ pub async fn add_ai_provider(Json(req): Json<AiProviderRequest>) -> Json<ApiResp
     let mut providers = load_ai_providers();
     let id = format!(
         "{}",
-        providers.iter()
+        providers
+            .iter()
             .filter_map(|p| p.id.parse::<usize>().ok())
             .max()
-            .unwrap_or(0) + 1
+            .unwrap_or(0)
+            + 1
     );
     providers.push(AiProvider {
         id,
@@ -191,7 +195,9 @@ fn build_api_url(base_url: &str, path: &str) -> String {
     }
 }
 
-pub async fn test_ai_connection(Json(req): Json<TestConnectionRequest>) -> Json<ApiResponse<serde_json::Value>> {
+pub async fn test_ai_connection(
+    Json(req): Json<TestConnectionRequest>,
+) -> Json<ApiResponse<serde_json::Value>> {
     let model = req.model.unwrap_or_else(|| "gpt-3.5-turbo".to_string());
     let api_url = build_api_url(&req.base_url, "/chat/completions");
 
@@ -203,7 +209,8 @@ pub async fn test_ai_connection(Json(req): Json<TestConnectionRequest>) -> Json<
     });
 
     let start = std::time::Instant::now();
-    match HTTP_CLIENT.post(&api_url)
+    match HTTP_CLIENT
+        .post(&api_url)
         .header("Authorization", format!("Bearer {}", req.api_key))
         .header("Content-Type", "application/json")
         .timeout(std::time::Duration::from_secs(15))
@@ -222,7 +229,11 @@ pub async fn test_ai_connection(Json(req): Json<TestConnectionRequest>) -> Json<
                 })))
             } else {
                 let err_body = resp.text().await.unwrap_or_default();
-                Json(ApiResponse::err(&format!("HTTP {}: {}", status, &err_body[..err_body.len().min(200)])))
+                Json(ApiResponse::err(&format!(
+                    "HTTP {}: {}",
+                    status,
+                    &err_body[..err_body.len().min(200)]
+                )))
             }
         }
         Err(e) => Json(ApiResponse::err(&format!("连接失败: {}", e))),
@@ -710,7 +721,9 @@ pub async fn ai_chat_ws(ws: WebSocketUpgrade) -> axum::response::Response {
 
 pub fn load_ai_providers() -> Vec<AiProvider> {
     // 检查文件修改时间，只在文件变化时重新读取磁盘
-    let mtime = std::fs::metadata(AI_CONF).ok().and_then(|m| m.modified().ok());
+    let mtime = std::fs::metadata(AI_CONF)
+        .ok()
+        .and_then(|m| m.modified().ok());
     if let Ok(cache) = PROVIDER_CACHE.lock() {
         if cache.0 == mtime && !cache.1.is_empty() {
             return cache.1.clone();
@@ -734,12 +747,18 @@ pub fn get_ai_providers() -> Vec<AiProvider> {
 
 /// 获取所有已启用的Provider列表
 pub fn get_enabled_providers() -> Vec<AiProvider> {
-    load_ai_providers().into_iter().filter(|p| p.enabled).collect()
+    load_ai_providers()
+        .into_iter()
+        .filter(|p| p.enabled)
+        .collect()
 }
 
 /// 带回退的AI调用：按provider_ids顺序尝试，直到成功
 /// 如果provider_ids为空，则尝试所有已启用的Provider
-pub async fn call_ai_with_fallback(prompt: &str, provider_ids: Option<&[String]>) -> Result<String, String> {
+pub async fn call_ai_with_fallback(
+    prompt: &str,
+    provider_ids: Option<&[String]>,
+) -> Result<String, String> {
     let providers = if let Some(ids) = provider_ids {
         let all = load_ai_providers();
         ids.iter()
@@ -758,7 +777,12 @@ pub async fn call_ai_with_fallback(prompt: &str, provider_ids: Option<&[String]>
         match call_ai(provider, prompt).await {
             Ok(result) => return Ok(result),
             Err(e) => {
-                tracing::warn!("[AI回退] Provider '{}' ({}) 失败: {}", provider.name, provider.model, e);
+                tracing::warn!(
+                    "[AI回退] Provider '{}' ({}) 失败: {}",
+                    provider.name,
+                    provider.model,
+                    e
+                );
                 last_error = format!("{}: {}", provider.name, e);
             }
         }
@@ -769,7 +793,11 @@ pub async fn call_ai_with_fallback(prompt: &str, provider_ids: Option<&[String]>
 
 /// 带回退的图像生成
 #[allow(dead_code)]
-pub async fn call_ai_image_with_fallback(prompt: &str, size: &str, provider_ids: Option<&[String]>) -> Result<String, String> {
+pub async fn call_ai_image_with_fallback(
+    prompt: &str,
+    size: &str,
+    provider_ids: Option<&[String]>,
+) -> Result<String, String> {
     let providers = if let Some(ids) = provider_ids {
         let all = load_ai_providers();
         ids.iter()
@@ -799,7 +827,7 @@ pub async fn call_ai_image_with_fallback(prompt: &str, size: &str, provider_ids:
 
 pub async fn call_ai(provider: &AiProvider, prompt: &str) -> Result<String, String> {
     let api_url = build_api_url(&provider.base_url, "/chat/completions");
-    
+
     let body = json!({
         "model": provider.model,
         "messages": [{
@@ -808,21 +836,25 @@ pub async fn call_ai(provider: &AiProvider, prompt: &str) -> Result<String, Stri
         }],
         "stream": false
     });
-    
-    let response = HTTP_CLIENT.post(&api_url)
+
+    let response = HTTP_CLIENT
+        .post(&api_url)
         .header("Authorization", format!("Bearer {}", provider.api_key))
         .header("Content-Type", "application/json")
         .json(&body)
         .send()
         .await
         .map_err(|e| format!("API请求失败: {}", e))?;
-    
+
     if !response.status().is_success() {
         return Err(format!("API返回错误: {}", response.status()));
     }
-    
-    let json_response: serde_json::Value = response.json().await.map_err(|e| format!("解析响应失败: {}", e))?;
-    
+
+    let json_response: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("解析响应失败: {}", e))?;
+
     let content = json_response
         .get("choices")
         .and_then(|c| c.as_array())
@@ -831,15 +863,19 @@ pub async fn call_ai(provider: &AiProvider, prompt: &str) -> Result<String, Stri
         .and_then(|m| m.get("content"))
         .and_then(|c| c.as_str())
         .ok_or("无法提取响应内容".to_string())?;
-    
+
     Ok(content.to_string())
 }
 
 /// 调用AI生成图像（兼容DALL-E API）
 #[allow(dead_code)]
-pub async fn call_ai_image(provider: &AiProvider, prompt: &str, size: &str) -> Result<String, String> {
+pub async fn call_ai_image(
+    provider: &AiProvider,
+    prompt: &str,
+    size: &str,
+) -> Result<String, String> {
     let api_url = build_api_url(&provider.base_url, "/images/generations");
-    
+
     let body = json!({
         "model": provider.model,
         "prompt": prompt,
@@ -847,23 +883,27 @@ pub async fn call_ai_image(provider: &AiProvider, prompt: &str, size: &str) -> R
         "size": size,
         "response_format": "url"
     });
-    
-    let response = HTTP_CLIENT.post(&api_url)
+
+    let response = HTTP_CLIENT
+        .post(&api_url)
         .header("Authorization", format!("Bearer {}", provider.api_key))
         .header("Content-Type", "application/json")
         .json(&body)
         .send()
         .await
         .map_err(|e| format!("API请求失败: {}", e))?;
-    
+
     if !response.status().is_success() {
         let status = response.status();
         let error_text = response.text().await.unwrap_or_default();
         return Err(format!("API返回错误: {} - {}", status, error_text));
     }
-    
-    let json_response: serde_json::Value = response.json().await.map_err(|e| format!("解析响应失败: {}", e))?;
-    
+
+    let json_response: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("解析响应失败: {}", e))?;
+
     let url = json_response
         .get("data")
         .and_then(|d| d.as_array())
@@ -871,7 +911,7 @@ pub async fn call_ai_image(provider: &AiProvider, prompt: &str, size: &str) -> R
         .and_then(|d| d.get("url"))
         .and_then(|u| u.as_str())
         .ok_or("无法提取图像URL".to_string())?;
-    
+
     Ok(url.to_string())
 }
 
@@ -879,26 +919,30 @@ pub async fn call_ai_image(provider: &AiProvider, prompt: &str, size: &str) -> R
 #[allow(dead_code)]
 pub async fn call_ai_embedding(provider: &AiProvider, input: &str) -> Result<Vec<f64>, String> {
     let api_url = build_api_url(&provider.base_url, "/embeddings");
-    
+
     let body = json!({
         "model": provider.model,
         "input": input
     });
-    
-    let response = HTTP_CLIENT.post(&api_url)
+
+    let response = HTTP_CLIENT
+        .post(&api_url)
         .header("Authorization", format!("Bearer {}", provider.api_key))
         .header("Content-Type", "application/json")
         .json(&body)
         .send()
         .await
         .map_err(|e| format!("API请求失败: {}", e))?;
-    
+
     if !response.status().is_success() {
         return Err(format!("API返回错误: {}", response.status()));
     }
-    
-    let json_response: serde_json::Value = response.json().await.map_err(|e| format!("解析响应失败: {}", e))?;
-    
+
+    let json_response: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("解析响应失败: {}", e))?;
+
     let embedding = json_response
         .get("data")
         .and_then(|d| d.as_array())
@@ -906,15 +950,13 @@ pub async fn call_ai_embedding(provider: &AiProvider, input: &str) -> Result<Vec
         .and_then(|d| d.get("embedding"))
         .and_then(|e| e.as_array())
         .ok_or("无法提取嵌入向量".to_string())?;
-    
-    let result: Vec<f64> = embedding.iter()
-        .filter_map(|v| v.as_f64())
-        .collect();
-    
+
+    let result: Vec<f64> = embedding.iter().filter_map(|v| v.as_f64()).collect();
+
     if result.is_empty() {
         return Err("嵌入向量为空".to_string());
     }
-    
+
     Ok(result)
 }
 
@@ -927,7 +969,11 @@ fn save_ai_providers(providers: &[AiProvider]) -> Result<(), std::io::Error> {
 }
 
 /// 调用支持视觉的AI分析截图
-pub async fn call_ai_image_analyze(provider: &AiProvider, prompt: &str, img_base64: &str) -> Result<String, String> {
+pub async fn call_ai_image_analyze(
+    provider: &AiProvider,
+    prompt: &str,
+    img_base64: &str,
+) -> Result<String, String> {
     let api_url = build_api_url(&provider.base_url, "/chat/completions");
     let body = json!({
         "model": provider.model,
@@ -941,7 +987,8 @@ pub async fn call_ai_image_analyze(provider: &AiProvider, prompt: &str, img_base
         "max_tokens": 2000
     });
 
-    let resp = HTTP_CLIENT.post(&api_url)
+    let resp = HTTP_CLIENT
+        .post(&api_url)
         .header("Authorization", format!("Bearer {}", provider.api_key))
         .header("Content-Type", "application/json")
         .json(&body)
@@ -953,8 +1000,12 @@ pub async fn call_ai_image_analyze(provider: &AiProvider, prompt: &str, img_base
         return Err(format!("API返回错误: {}", resp.status()));
     }
 
-    let json_resp: serde_json::Value = resp.json().await.map_err(|e| format!("解析响应失败: {}", e))?;
-    json_resp.get("choices")
+    let json_resp: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("解析响应失败: {}", e))?;
+    json_resp
+        .get("choices")
         .and_then(|c| c.as_array())
         .and_then(|a| a.first())
         .and_then(|c| c.get("message"))

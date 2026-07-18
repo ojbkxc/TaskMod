@@ -78,11 +78,7 @@ async fn get_android_info() -> DeviceInfo {
 
     let memory = run_cmd_output("cat", &["/proc/meminfo"])
         .await
-        .and_then(|s| {
-            s.lines()
-                .next()
-                .map(|l| l.to_string())
-        })
+        .and_then(|s| s.lines().next().map(|l| l.to_string()))
         .unwrap_or_else(|| "Unknown".to_string());
 
     DeviceInfo {
@@ -103,11 +99,27 @@ async fn get_android_info() -> DeviceInfo {
 
 async fn get_windows_info() -> DeviceInfo {
     let (model, os_version, ip, cpu, memory) = tokio::join!(
-        async { run_ps("(Get-CimInstance Win32_ComputerSystem).Model").await.unwrap_or_else(|| "Unknown".to_string()) },
-        async { run_ps("(Get-CimInstance Win32_OperatingSystem).Version").await.unwrap_or_else(|| "Unknown".to_string()) },
-        async { run_ps("(Get-NetIPAddress -AddressFamily IPv4 | Where-Object {$_.InterfaceAlias -notlike '*Loopback*'} | Select-Object -First 1).IPAddress").await.unwrap_or_else(|| "Unknown".to_string()) },
-        async { run_ps("(Get-CimInstance Win32_Processor).Name").await.unwrap_or_else(|| "Unknown".to_string()) },
-        async { run_ps("[math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB, 1).ToString() + ' GB'").await.unwrap_or_else(|| "Unknown".to_string()) },
+        async {
+            run_ps("(Get-CimInstance Win32_ComputerSystem).Model")
+                .await
+                .unwrap_or_else(|| "Unknown".to_string())
+        },
+        async {
+            run_ps("(Get-CimInstance Win32_OperatingSystem).Version")
+                .await
+                .unwrap_or_else(|| "Unknown".to_string())
+        },
+        async {
+            run_ps("(Get-NetIPAddress -AddressFamily IPv4 | Where-Object {$_.InterfaceAlias -notlike '*Loopback*'} | Select-Object -First 1).IPAddress").await.unwrap_or_else(|| "Unknown".to_string())
+        },
+        async {
+            run_ps("(Get-CimInstance Win32_Processor).Name")
+                .await
+                .unwrap_or_else(|| "Unknown".to_string())
+        },
+        async {
+            run_ps("[math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB, 1).ToString() + ' GB'").await.unwrap_or_else(|| "Unknown".to_string())
+        },
     );
 
     let screen_size = run_ps("(Get-CimInstance Win32_VideoController).VideoModeDescription")
@@ -146,25 +158,31 @@ async fn get_windows_info() -> DeviceInfo {
 async fn get_linux_info() -> DeviceInfo {
     let (model, os_version, ip, cpu, memory) = tokio::join!(
         async {
-            run_cmd_output("cat", &["/sys/devices/virtual/dmi/id/product_name"]).await
+            run_cmd_output("cat", &["/sys/devices/virtual/dmi/id/product_name"])
+                .await
                 .unwrap_or_else(|| "Unknown".to_string())
         },
         async {
-            run_cmd_output("cat", &["/etc/os-release"]).await
+            run_cmd_output("cat", &["/etc/os-release"])
+                .await
                 .and_then(|s| {
-                    s.lines()
-                        .find(|l| l.starts_with("PRETTY_NAME="))
-                        .map(|l| l.trim_start_matches("PRETTY_NAME=").trim_matches('"').to_string())
+                    s.lines().find(|l| l.starts_with("PRETTY_NAME=")).map(|l| {
+                        l.trim_start_matches("PRETTY_NAME=")
+                            .trim_matches('"')
+                            .to_string()
+                    })
                 })
                 .unwrap_or_else(|| "Unknown".to_string())
         },
         async {
-            run_cmd_output("hostname", &["-I"]).await
+            run_cmd_output("hostname", &["-I"])
+                .await
                 .and_then(|s| s.split_whitespace().next().map(|s| s.to_string()))
                 .unwrap_or_else(|| "Unknown".to_string())
         },
         async {
-            run_cmd_output("lscpu", &[]).await
+            run_cmd_output("lscpu", &[])
+                .await
                 .and_then(|s| {
                     s.lines()
                         .find(|l| l.contains("Model name"))
@@ -173,7 +191,8 @@ async fn get_linux_info() -> DeviceInfo {
                 .unwrap_or_else(|| "Unknown".to_string())
         },
         async {
-            run_cmd_output("free", &["-h"]).await
+            run_cmd_output("free", &["-h"])
+                .await
                 .and_then(|s| s.lines().nth(1).map(|l| l.to_string()))
                 .unwrap_or_else(|| "Unknown".to_string())
         },
@@ -214,7 +233,9 @@ async fn get_linux_info() -> DeviceInfo {
 // ==================== 工具函数 ====================
 
 async fn get_prop(key: &str) -> String {
-    run_cmd_output("getprop", &[key]).await.unwrap_or_else(|| "Unknown".to_string())
+    run_cmd_output("getprop", &[key])
+        .await
+        .unwrap_or_else(|| "Unknown".to_string())
 }
 
 async fn get_ip_address() -> String {
@@ -232,13 +253,16 @@ async fn get_wifi_ssid() -> String {
     run_cmd_output("dumpsys", &["wifi"])
         .await
         .and_then(|s| {
-            s.lines()
-                .find(|l| l.contains("mWifiInfo"))
-                .and_then(|l| {
-                    l.split("SSID:").nth(1).map(|s| {
-                        s.split(',').next().unwrap_or("").trim().trim_matches('"').to_string()
-                    })
+            s.lines().find(|l| l.contains("mWifiInfo")).and_then(|l| {
+                l.split("SSID:").nth(1).map(|s| {
+                    s.split(',')
+                        .next()
+                        .unwrap_or("")
+                        .trim()
+                        .trim_matches('"')
+                        .to_string()
                 })
+            })
         })
         .unwrap_or_else(|| "Unknown".to_string())
 }
@@ -267,7 +291,11 @@ async fn run_ps(script: &str) -> Option<String> {
 
     if output.status.success() {
         let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if result.is_empty() { None } else { Some(result) }
+        if result.is_empty() {
+            None
+        } else {
+            Some(result)
+        }
     } else {
         None
     }

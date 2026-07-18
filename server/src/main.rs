@@ -1,4 +1,7 @@
-use axum::{routing::{delete, get, post, put}, Router, Json};
+use axum::{
+    routing::{delete, get, post, put},
+    Json, Router,
+};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -38,7 +41,10 @@ fn start_watchdog(heartbeat: Arc<AtomicBool>, timeout_secs: u64) {
                 let email_conf = utils::email::get_email_config();
                 if email_conf.enable_notify {
                     let now = chrono::Local::now();
-                    let subject = format!("[WARNING] TaskMod 可能卡死 - {}", now.format("%Y-%m-%d %H:%M:%S"));
+                    let subject = format!(
+                        "[WARNING] TaskMod 可能卡死 - {}",
+                        now.format("%Y-%m-%d %H:%M:%S")
+                    );
                     let body = format!(
                         "TaskMod 主循环已超过 {} 秒未响应心跳。\n\n可能原因：\n- 主线程阻塞\n- 资源耗尽（内存/CPU）\n- 死锁\n\n请检查设备状态。",
                         timeout_secs
@@ -56,7 +62,10 @@ fn start_watchdog(heartbeat: Arc<AtomicBool>, timeout_secs: u64) {
                         ));
                     });
                     // 仅在邮件通知启用时才打印日志
-                    eprintln!("[看门狗] 警告: 主循环可能卡死，已超过 {} 秒未响应", timeout_secs);
+                    eprintln!(
+                        "[看门狗] 警告: 主循环可能卡死，已超过 {} 秒未响应",
+                        timeout_secs
+                    );
                 }
                 last_alive = false;
             }
@@ -65,7 +74,7 @@ fn start_watchdog(heartbeat: Arc<AtomicBool>, timeout_secs: u64) {
 }
 
 async fn ensure_dirs() {
-    use crate::config::{TASKMOD_DIR, SCRIPTS_DIR, SCREENSHOTS_DIR, WORKFLOWS_DIR};
+    use crate::config::{SCREENSHOTS_DIR, SCRIPTS_DIR, TASKMOD_DIR, WORKFLOWS_DIR};
     let _ = std::fs::create_dir_all(TASKMOD_DIR);
     let _ = std::fs::create_dir_all(SCRIPTS_DIR);
     let _ = std::fs::create_dir_all(SCREENSHOTS_DIR);
@@ -74,8 +83,8 @@ async fn ensure_dirs() {
 }
 
 async fn start_discovery_server(port: u16) {
-    use tokio::net::UdpSocket;
     use std::net::UdpSocket as StdUdpSocket;
+    use tokio::net::UdpSocket;
 
     let std_socket = match StdUdpSocket::bind(format!("0.0.0.0:{}", port)) {
         Ok(s) => s,
@@ -118,9 +127,9 @@ async fn start_discovery_server(port: u16) {
 
 fn handle_event(event: utils::event_monitor::SystemEvent) {
     use utils::event_monitor::SystemEvent;
-    
+
     let workflows = api::system::list_workflows();
-    
+
     let context = match &event {
         SystemEvent::WifiConnected { ssid, signal_level } => {
             serde_json::json!({
@@ -174,7 +183,8 @@ fn handle_event(event: utils::event_monitor::SystemEvent) {
 
         let trigger_matches = match (workflow.trigger_type.as_str(), &event) {
             ("wifi_connected", SystemEvent::WifiConnected { ssid, .. }) => {
-                workflow.trigger_config.wifi_ssid.is_empty() || workflow.trigger_config.wifi_ssid == *ssid
+                workflow.trigger_config.wifi_ssid.is_empty()
+                    || workflow.trigger_config.wifi_ssid == *ssid
             }
             ("wifi_disconnected", SystemEvent::WifiDisconnected) => true,
             ("battery_low", SystemEvent::BatteryLow { capacity }) => {
@@ -188,7 +198,10 @@ fn handle_event(event: utils::event_monitor::SystemEvent) {
         };
 
         if trigger_matches {
-            println!("[事件触发] 工作流: {} 被事件: {:?} 触发", workflow.name, event);
+            println!(
+                "[事件触发] 工作流: {} 被事件: {:?} 触发",
+                workflow.name, event
+            );
             let wf = workflow.clone();
             let ctx = context.clone();
             tokio::spawn(async move {
@@ -198,24 +211,34 @@ fn handle_event(event: utils::event_monitor::SystemEvent) {
     }
 }
 
-async fn save_mqtt_config_handler(Json(req): Json<crate::data::models::MqttConfigRequest>) -> Json<crate::data::response::ApiResponse<String>> {
-    let mqtt_config = utils::mqtt::MqttConfig { 
-        enabled: req.enabled, 
-        broker: req.broker, 
-        topic_prefix: req.topic_prefix, 
-        username: req.username, 
-        password: req.password, 
-        client_id: req.client_id 
+async fn save_mqtt_config_handler(
+    Json(req): Json<crate::data::models::MqttConfigRequest>,
+) -> Json<crate::data::response::ApiResponse<String>> {
+    let mqtt_config = utils::mqtt::MqttConfig {
+        enabled: req.enabled,
+        broker: req.broker,
+        topic_prefix: req.topic_prefix,
+        username: req.username,
+        password: req.password,
+        client_id: req.client_id,
     };
-    
+
     if let Err(e) = utils::mqtt::save_mqtt_config(&mqtt_config) {
-        return Json(crate::data::response::ApiResponse::err(&format!("保存失败: {}", e)));
+        return Json(crate::data::response::ApiResponse::err(&format!(
+            "保存失败: {}",
+            e
+        )));
     }
-    
+
     utils::mqtt::stop_mqtt().await;
-    tokio::spawn(async { utils::mqtt::start_mqtt().await; });
-    
-    Json(crate::data::response::ApiResponse::ok_msg("ok".to_string(), "MQTT配置已保存，服务已重启"))
+    tokio::spawn(async {
+        utils::mqtt::start_mqtt().await;
+    });
+
+    Json(crate::data::response::ApiResponse::ok_msg(
+        "ok".to_string(),
+        "MQTT配置已保存，服务已重启",
+    ))
 }
 
 #[tokio::main]
@@ -233,24 +256,34 @@ async fn main() -> anyhow::Result<()> {
         } else {
             "Unknown panic".to_string()
         };
-        let location = info.location()
+        let location = info
+            .location()
             .map(|l| format!("{}:{}", l.file(), l.line()))
             .unwrap_or_else(|| "Unknown location".to_string());
         let now = chrono::Local::now();
         eprintln!("[CRITICAL] TaskMod 崩溃: {} at {}", msg, location);
         let email_conf = utils::email::get_email_config();
         if email_conf.enable_notify {
-            let subject = format!("[CRITICAL] TaskMod 崩溃 - {}", now.format("%Y-%m-%d %H:%M:%S"));
-            let body = format!("位置: {}\n错误: {}\n\n请检查设备状态并重启服务。", location, msg);
+            let subject = format!(
+                "[CRITICAL] TaskMod 崩溃 - {}",
+                now.format("%Y-%m-%d %H:%M:%S")
+            );
+            let body = format!(
+                "位置: {}\n错误: {}\n\n请检查设备状态并重启服务。",
+                location, msg
+            );
             // 在独立线程中发送邮件，避免嵌套运行时 panic
             std::thread::spawn(move || {
                 let rt = match tokio::runtime::Runtime::new() {
                     Ok(rt) => rt,
                     Err(_) => return,
                 };
-                let _ = rt.block_on(
-                    utils::email::send_email(&email_conf, Some(&subject), Some(&body), None)
-                );
+                let _ = rt.block_on(utils::email::send_email(
+                    &email_conf,
+                    Some(&subject),
+                    Some(&body),
+                    None,
+                ));
             });
         }
         default_hook(info);
@@ -308,79 +341,204 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/docs", get(api::system::api_docs))
         .route("/static/style.css", get(api::system::static_css))
         .route("/static/app.js", get(api::system::static_js))
-        .route("/api/tasks", get(api::tasks::list_tasks).post(api::tasks::add_task))
+        .route(
+            "/api/tasks",
+            get(api::tasks::list_tasks).post(api::tasks::add_task),
+        )
         .route("/api/tasks/:id", delete(api::tasks::delete_task))
         .route("/api/logs", get(api::system::get_logs))
         .route("/api/logs/clear", post(api::system::clear_logs))
         .route("/api/screenshots", get(api::system::list_screenshots))
         .route("/api/screenshots/take", post(api::system::take_screenshot))
-        .route("/api/screenshots/:filename", get(api::system::get_screenshot).delete(api::system::delete_screenshot))
+        .route(
+            "/api/screenshots/:filename",
+            get(api::system::get_screenshot).delete(api::system::delete_screenshot),
+        )
         .route("/api/scripts", get(api::scripts::list_scripts))
-        .route("/api/scripts/:name", get(api::scripts::get_script).put(api::scripts::save_script).delete(api::scripts::delete_script))
+        .route(
+            "/api/scripts/:name",
+            get(api::scripts::get_script)
+                .put(api::scripts::save_script)
+                .delete(api::scripts::delete_script),
+        )
         .route("/api/trigger", post(api::tasks::trigger_script))
         .route("/api/command", post(api::system::exec_command))
-        .route("/api/config", get(api::system::get_config).put(api::system::update_config))
-        .route("/api/email/config", get(api::system::get_email_config).put(api::system::save_email_config))
+        .route(
+            "/api/config",
+            get(api::system::get_config).put(api::system::update_config),
+        )
+        .route(
+            "/api/email/config",
+            get(api::system::get_email_config).put(api::system::save_email_config),
+        )
         .route("/api/send-email", post(api::system::send_email))
-        .route("/api/mqtt/config", get(api::system::get_mqtt_config).put(save_mqtt_config_handler))
-        .route("/api/workflows", get(api::system::list_workflows_api).post(api::system::save_workflow_api))
-        .route("/api/workflows/:id", get(api::system::get_workflow).delete(api::system::delete_workflow_api))
+        .route(
+            "/api/mqtt/config",
+            get(api::system::get_mqtt_config).put(save_mqtt_config_handler),
+        )
+        .route(
+            "/api/workflows",
+            get(api::system::list_workflows_api).post(api::system::save_workflow_api),
+        )
+        .route(
+            "/api/workflows/:id",
+            get(api::system::get_workflow).delete(api::system::delete_workflow_api),
+        )
         .route("/api/workflows/run", post(api::system::run_workflow))
         .route("/api/status", get(api::system::system_status))
         .route("/api/app/status", get(api::system::app_status))
         .route("/api/tts/engines", get(api::tts::get_tts_engines))
         .route("/api/tts/speak", post(api::tts::speak))
         .route("/api/tts/stop", post(api::tts::stop_tts))
-        .route("/api/tts/settings", get(api::tts::get_tts_settings).put(api::tts::update_tts_settings))
-        .route("/api/tts/default-engine", post(api::tts::set_default_engine))
+        .route(
+            "/api/tts/settings",
+            get(api::tts::get_tts_settings).put(api::tts::update_tts_settings),
+        )
+        .route(
+            "/api/tts/default-engine",
+            post(api::tts::set_default_engine),
+        )
         .route("/api/tts/test", post(api::tts::test_tts))
-        .route("/api/tts/engine-params", get(api::tts::get_engine_params).post(api::tts::upsert_engine_params))
-        .route("/api/tts/engine-params/:engine", delete(api::tts::delete_engine_params))
-        .route("/api/tts/replace-rules", get(api::tts::get_replace_rules).post(api::tts::add_replace_rule))
-        .route("/api/tts/replace-rules/reorder", post(api::tts::reorder_replace_rules))
-        .route("/api/tts/replace-rules/:id", put(api::tts::update_replace_rule).delete(api::tts::delete_replace_rule))
-        .route("/api/ai/providers", get(api::ai::list_ai_providers).post(api::ai::add_ai_provider))
-        .route("/api/ai/providers/:id", get(api::ai::get_ai_provider_api).put(api::ai::update_ai_provider).delete(api::ai::delete_ai_provider))
+        .route(
+            "/api/tts/engine-params",
+            get(api::tts::get_engine_params).post(api::tts::upsert_engine_params),
+        )
+        .route(
+            "/api/tts/engine-params/:engine",
+            delete(api::tts::delete_engine_params),
+        )
+        .route(
+            "/api/tts/replace-rules",
+            get(api::tts::get_replace_rules).post(api::tts::add_replace_rule),
+        )
+        .route(
+            "/api/tts/replace-rules/reorder",
+            post(api::tts::reorder_replace_rules),
+        )
+        .route(
+            "/api/tts/replace-rules/:id",
+            put(api::tts::update_replace_rule).delete(api::tts::delete_replace_rule),
+        )
+        .route(
+            "/api/ai/providers",
+            get(api::ai::list_ai_providers).post(api::ai::add_ai_provider),
+        )
+        .route(
+            "/api/ai/providers/:id",
+            get(api::ai::get_ai_provider_api)
+                .put(api::ai::update_ai_provider)
+                .delete(api::ai::delete_ai_provider),
+        )
         .route("/api/ai/test-connection", post(api::ai::test_ai_connection))
         .route("/ws/ai-chat", get(api::ai::ai_chat_ws))
         // AI Hub: 对话历史
-        .route("/api/ai/sessions", get(api::ai_hub::list_sessions).post(api::ai_hub::create_session))
-        .route("/api/ai/sessions/:id", get(api::ai_hub::get_session).put(api::ai_hub::update_session).delete(api::ai_hub::delete_session))
+        .route(
+            "/api/ai/sessions",
+            get(api::ai_hub::list_sessions).post(api::ai_hub::create_session),
+        )
+        .route(
+            "/api/ai/sessions/:id",
+            get(api::ai_hub::get_session)
+                .put(api::ai_hub::update_session)
+                .delete(api::ai_hub::delete_session),
+        )
         // AI Hub: Prompt预设
-        .route("/api/ai/presets", get(api::ai_hub::list_presets).post(api::ai_hub::save_preset))
-        .route("/api/ai/presets/:id", put(api::ai_hub::update_preset).delete(api::ai_hub::delete_preset))
+        .route(
+            "/api/ai/presets",
+            get(api::ai_hub::list_presets).post(api::ai_hub::save_preset),
+        )
+        .route(
+            "/api/ai/presets/:id",
+            put(api::ai_hub::update_preset).delete(api::ai_hub::delete_preset),
+        )
         // AI Hub: 记忆系统
-        .route("/api/ai/memories", get(api::ai_hub::list_memories).post(api::ai_hub::create_memory))
-        .route("/api/ai/memories/:id", put(api::ai_hub::update_memory).delete(api::ai_hub::delete_memory))
+        .route(
+            "/api/ai/memories",
+            get(api::ai_hub::list_memories).post(api::ai_hub::create_memory),
+        )
+        .route(
+            "/api/ai/memories/:id",
+            put(api::ai_hub::update_memory).delete(api::ai_hub::delete_memory),
+        )
         // AI Hub: Skill系统
-        .route("/api/ai/skills", get(api::ai_hub::list_skills).post(api::ai_hub::create_skill))
-        .route("/api/ai/skills/:id", put(api::ai_hub::update_skill).delete(api::ai_hub::delete_skill))
+        .route(
+            "/api/ai/skills",
+            get(api::ai_hub::list_skills).post(api::ai_hub::create_skill),
+        )
+        .route(
+            "/api/ai/skills/:id",
+            put(api::ai_hub::update_skill).delete(api::ai_hub::delete_skill),
+        )
         // AI Hub: 保存项
-        .route("/api/ai/saved", get(api::ai_hub::list_saved_items).post(api::ai_hub::create_saved_item))
-        .route("/api/ai/saved/:id", put(api::ai_hub::update_saved_item).delete(api::ai_hub::delete_saved_item))
+        .route(
+            "/api/ai/saved",
+            get(api::ai_hub::list_saved_items).post(api::ai_hub::create_saved_item),
+        )
+        .route(
+            "/api/ai/saved/:id",
+            put(api::ai_hub::update_saved_item).delete(api::ai_hub::delete_saved_item),
+        )
         // AI Hub: 项目上下文
-        .route("/api/ai/projects", get(api::ai_hub::list_projects).post(api::ai_hub::create_project))
-        .route("/api/ai/projects/:id", put(api::ai_hub::update_project).delete(api::ai_hub::delete_project))
+        .route(
+            "/api/ai/projects",
+            get(api::ai_hub::list_projects).post(api::ai_hub::create_project),
+        )
+        .route(
+            "/api/ai/projects/:id",
+            put(api::ai_hub::update_project).delete(api::ai_hub::delete_project),
+        )
         // AI Hub: MCP服务器
-        .route("/api/ai/mcp", get(api::ai_hub::list_mcp_servers).post(api::ai_hub::create_mcp_server))
-        .route("/api/ai/mcp/:id", put(api::ai_hub::update_mcp_server).delete(api::ai_hub::delete_mcp_server))
+        .route(
+            "/api/ai/mcp",
+            get(api::ai_hub::list_mcp_servers).post(api::ai_hub::create_mcp_server),
+        )
+        .route(
+            "/api/ai/mcp/:id",
+            put(api::ai_hub::update_mcp_server).delete(api::ai_hub::delete_mcp_server),
+        )
         // AI Hub: 截图分析 & 对话导出
         .route("/api/ai/screenshot", post(api::ai_hub::screenshot_analyze))
         .route("/api/ai/export", post(api::ai_hub::export_session))
         // AI Hub: Prompt设置 & 场景模板
-        .route("/api/ai/prompt-settings", get(api::ai_hub::get_prompt_settings).put(api::ai_hub::update_prompt_settings))
-        .route("/api/ai/scenarios", get(api::ai_hub::list_scenarios).post(api::ai_hub::create_scenario))
-        .route("/api/ai/scenarios/:id", put(api::ai_hub::update_scenario).delete(api::ai_hub::delete_scenario))
+        .route(
+            "/api/ai/prompt-settings",
+            get(api::ai_hub::get_prompt_settings).put(api::ai_hub::update_prompt_settings),
+        )
+        .route(
+            "/api/ai/scenarios",
+            get(api::ai_hub::list_scenarios).post(api::ai_hub::create_scenario),
+        )
+        .route(
+            "/api/ai/scenarios/:id",
+            put(api::ai_hub::update_scenario).delete(api::ai_hub::delete_scenario),
+        )
         // AI Hub: 图片上传 & Skill GitHub导入
         .route("/api/ai/upload-image", post(api::ai_hub::upload_image))
         .route("/api/ai/images/:id", get(api::ai_hub::get_image))
-        .route("/api/ai/skills/import", post(api::ai_hub::import_skill_from_github))
+        .route(
+            "/api/ai/skills/import",
+            post(api::ai_hub::import_skill_from_github),
+        )
         // AI Hub: MCP工具历史 & 使用量统计
-        .route("/api/ai/mcp-history", get(api::ai_hub::list_mcp_history).post(api::ai_hub::record_mcp_tool_call).delete(api::ai_hub::clear_mcp_history))
-        .route("/api/ai/usage", get(api::ai_hub::get_usage_stats).post(api::ai_hub::record_usage))
+        .route(
+            "/api/ai/mcp-history",
+            get(api::ai_hub::list_mcp_history)
+                .post(api::ai_hub::record_mcp_tool_call)
+                .delete(api::ai_hub::clear_mcp_history),
+        )
+        .route(
+            "/api/ai/usage",
+            get(api::ai_hub::get_usage_stats).post(api::ai_hub::record_usage),
+        )
         // 设备文件上传 & 剪贴板同步 (借鉴QtScrcpy)
-        .route("/api/device/upload-file", post(api::mirror::upload_file_to_device))
-        .route("/api/device/clipboard", get(api::mirror::get_device_clipboard).put(api::mirror::set_device_clipboard))
+        .route(
+            "/api/device/upload-file",
+            post(api::mirror::upload_file_to_device),
+        )
+        .route(
+            "/api/device/clipboard",
+            get(api::mirror::get_device_clipboard).put(api::mirror::set_device_clipboard),
+        )
         .route("/api/device/info", get(api::mirror::get_device_info))
         // 文件管理器
         .route("/api/files", get(api::files::list_files))
@@ -413,7 +571,7 @@ async fn main() -> anyhow::Result<()> {
 
     // 启动带 TCP_NODELAY 的服务器
     let server = axum::Server::from_tcp(tcp_listener)?
-        .tcp_nodelay(true)  // 关键：禁用 Nagle 算法，小包立即发送
+        .tcp_nodelay(true) // 关键：禁用 Nagle 算法，小包立即发送
         .serve(app.into_make_service());
 
     let ctrl_c = tokio::signal::ctrl_c();

@@ -1,5 +1,5 @@
-use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, RwLock};
 use tokio::sync::broadcast;
 
 /// 自适应码率(ABR)控制器
@@ -81,19 +81,36 @@ impl AbrController {
             new_fps = (cur_fps.saturating_sub(10)).max(10);
             changed = true;
             self.stable_ticks.store(0, Ordering::Relaxed);
-            tracing::warn!("[ABR] 严重丢帧({})，码率 {} -> {} kbps，帧率 {} -> {}", frames_lost, cur_br/1000, new_br/1000, cur_fps, new_fps);
+            tracing::warn!(
+                "[ABR] 严重丢帧({})，码率 {} -> {} kbps，帧率 {} -> {}",
+                frames_lost,
+                cur_br / 1000,
+                new_br / 1000,
+                cur_fps,
+                new_fps
+            );
         } else if frames_lost > 10 {
             // 中度丢帧：温和降码率 15%
             new_br = (cur_br as f64 * 0.85) as u32;
             changed = true;
             self.stable_ticks.store(0, Ordering::Relaxed);
-            tracing::info!("[ABR] 丢帧({})，码率 {} -> {} kbps", frames_lost, cur_br/1000, new_br/1000);
+            tracing::info!(
+                "[ABR] 丢帧({})，码率 {} -> {} kbps",
+                frames_lost,
+                cur_br / 1000,
+                new_br / 1000
+            );
         } else if latency > 200 {
             // 管线延迟过高（>200ms）：降低码率减少编码负担
             new_br = (cur_br as f64 * 0.90) as u32;
             changed = true;
             self.stable_ticks.store(0, Ordering::Relaxed);
-            tracing::info!("[ABR] 延迟过高({}ms)，码率 {} -> {} kbps", latency, cur_br/1000, new_br/1000);
+            tracing::info!(
+                "[ABR] 延迟过高({}ms)，码率 {} -> {} kbps",
+                latency,
+                cur_br / 1000,
+                new_br / 1000
+            );
         }
         // === 第一层：队列深度 + 渲染 FPS 调整 ===
         else if queue_depth > 10 {
@@ -101,12 +118,22 @@ impl AbrController {
             new_br = (cur_br as f64 * 0.7) as u32;
             changed = true;
             self.stable_ticks.store(0, Ordering::Relaxed);
-            tracing::warn!("[ABR] 队列严重积压({})，码率 {} -> {} kbps", queue_depth, cur_br/1000, new_br/1000);
+            tracing::warn!(
+                "[ABR] 队列严重积压({})，码率 {} -> {} kbps",
+                queue_depth,
+                cur_br / 1000,
+                new_br / 1000
+            );
         } else if queue_depth > 6 {
             // 中度积压：降低码率 15%
             new_br = (cur_br as f64 * 0.85) as u32;
             changed = true;
-            tracing::info!("[ABR] 队列积压({})，码率 {} -> {} kbps", queue_depth, cur_br/1000, new_br/1000);
+            tracing::info!(
+                "[ABR] 队列积压({})，码率 {} -> {} kbps",
+                queue_depth,
+                cur_br / 1000,
+                new_br / 1000
+            );
         } else if queue_depth > 3 {
             // 轻度积压：降低码率 5%
             new_br = (cur_br as f64 * 0.95) as u32;
@@ -121,7 +148,12 @@ impl AbrController {
                 new_br = candidate.min(max_br);
                 if new_br != cur_br {
                     changed = true;
-                    tracing::info!("[ABR] 性能充裕(稳定{}tick)，码率 {} -> {} kbps", ticks, cur_br/1000, new_br/1000);
+                    tracing::info!(
+                        "[ABR] 性能充裕(稳定{}tick)，码率 {} -> {} kbps",
+                        ticks,
+                        cur_br / 1000,
+                        new_br / 1000
+                    );
                 }
             }
         } else {
@@ -135,11 +167,15 @@ impl AbrController {
             changed = true;
         } else if queue_depth > 4 {
             new_fps = (cur_fps.saturating_sub(2)).max(15);
-            if new_fps != cur_fps { changed = true; }
+            if new_fps != cur_fps {
+                changed = true;
+            }
         } else if queue_depth <= 1 && render_fps >= cur_fps.saturating_sub(3) && frames_lost == 0 {
             let max_fps = self.initial_fps.load(Ordering::Relaxed).max(30);
             new_fps = (cur_fps + 2).min(max_fps);
-            if new_fps != cur_fps { changed = true; }
+            if new_fps != cur_fps {
+                changed = true;
+            }
         }
 
         // === 码率范围限制（考虑 FEC 20% 开销，借鉴 Sunshine 的 FEC 补偿）===
@@ -273,29 +309,41 @@ impl MirrorState {
     }
 
     pub fn get_video_rx(&self) -> Option<broadcast::Receiver<Vec<u8>>> {
-        self.video_tx.read().unwrap_or_else(|e| {
-            tracing::warn!("video_tx 锁中毒，已恢复");
-            e.into_inner()
-        }).as_ref().map(|tx| tx.subscribe())
+        self.video_tx
+            .read()
+            .unwrap_or_else(|e| {
+                tracing::warn!("video_tx 锁中毒，已恢复");
+                e.into_inner()
+            })
+            .as_ref()
+            .map(|tx| tx.subscribe())
     }
 
     pub fn get_audio_rx(&self) -> Option<broadcast::Receiver<Vec<u8>>> {
-        self.audio_tx.read().unwrap_or_else(|e| {
-            tracing::warn!("audio_tx 锁中毒，已恢复");
-            e.into_inner()
-        }).as_ref().map(|tx| tx.subscribe())
+        self.audio_tx
+            .read()
+            .unwrap_or_else(|e| {
+                tracing::warn!("audio_tx 锁中毒，已恢复");
+                e.into_inner()
+            })
+            .as_ref()
+            .map(|tx| tx.subscribe())
     }
 
     #[allow(dead_code)]
     pub fn get_original_brightness(&self) -> Option<String> {
-        self.original_brightness.read().unwrap_or_else(|e| {
-            tracing::warn!("original_brightness 锁中毒，已恢复");
-            e.into_inner()
-        }).clone()
+        self.original_brightness
+            .read()
+            .unwrap_or_else(|e| {
+                tracing::warn!("original_brightness 锁中毒，已恢复");
+                e.into_inner()
+            })
+            .clone()
     }
 
     pub fn set_running(&self, running: bool) {
-        self.is_running.store(running, std::sync::atomic::Ordering::Relaxed);
+        self.is_running
+            .store(running, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn is_running(&self) -> bool {
@@ -317,12 +365,14 @@ impl MirrorState {
     }
 
     pub fn request_keyframe(&self) {
-        self.request_keyframe.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.request_keyframe
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     #[allow(dead_code)]
     pub fn take_keyframe_request(&self) -> bool {
-        self.request_keyframe.swap(false, std::sync::atomic::Ordering::Relaxed)
+        self.request_keyframe
+            .swap(false, std::sync::atomic::Ordering::Relaxed)
     }
 }
 

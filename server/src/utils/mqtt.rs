@@ -1,5 +1,5 @@
-use std::fs;
 use serde::Deserialize;
+use std::fs;
 
 use crate::config::{LOG_FILE, MQTT_CONF};
 
@@ -19,9 +19,15 @@ pub struct MqttConfig {
     pub client_id: String,
 }
 
-fn default_broker() -> String { "tcp://localhost:1883".to_string() }
-fn default_topic_prefix() -> String { "taskmod".to_string() }
-fn default_client_id() -> String { "taskmod-device".to_string() }
+fn default_broker() -> String {
+    "tcp://localhost:1883".to_string()
+}
+fn default_topic_prefix() -> String {
+    "taskmod".to_string()
+}
+fn default_client_id() -> String {
+    "taskmod-device".to_string()
+}
 
 impl Default for MqttConfig {
     fn default() -> Self {
@@ -111,22 +117,31 @@ mod mqtt_impl {
     use std::sync::{Arc, Mutex};
     use tokio::process::Command;
 
-    use super::{parse_mqtt_conf, log_to_file};
+    use super::{log_to_file, parse_mqtt_conf};
 
     async fn get_device_status() -> serde_json::Value {
         let mut status = json!({});
 
-        if let Ok(o) = Command::new("getprop").arg("ro.product.model").output().await {
+        if let Ok(o) = Command::new("getprop")
+            .arg("ro.product.model")
+            .output()
+            .await
+        {
             status["device_model"] = json!(String::from_utf8_lossy(&o.stdout).trim());
         }
 
-        if let Ok(o) = Command::new("getprop").arg("ro.build.version.release").output().await {
+        if let Ok(o) = Command::new("getprop")
+            .arg("ro.build.version.release")
+            .output()
+            .await
+        {
             status["android_version"] = json!(String::from_utf8_lossy(&o.stdout).trim());
         }
 
         if let Ok(content) = fs::read_to_string("/sys/class/power_supply/battery/capacity") {
             status["battery_capacity"] = json!(content.trim());
-        } else if let Ok(content) = fs::read_to_string("/sys/class/power_supply/battery0/capacity") {
+        } else if let Ok(content) = fs::read_to_string("/sys/class/power_supply/battery0/capacity")
+        {
             status["battery_capacity"] = json!(content.trim());
         }
 
@@ -185,7 +200,10 @@ mod mqtt_impl {
 
         log_to_file(&format!("MQTT启动: {}", config.broker));
 
-        let addr = config.broker.trim_start_matches("tcp://").trim_start_matches("ssl://");
+        let addr = config
+            .broker
+            .trim_start_matches("tcp://")
+            .trim_start_matches("ssl://");
         let (host, port) = if let Some((h, p)) = addr.split_once(':') {
             (h, p.parse::<u16>().unwrap_or(1883))
         } else {
@@ -211,7 +229,9 @@ mod mqtt_impl {
         let status_topic = format!("{}/status", config.topic_prefix);
         let cmd_topic = format!("{}/cmd", config.topic_prefix);
 
-        let _ = client.publish(&status_topic, QoS::AtLeastOnce, true, "online").await;
+        let _ = client
+            .publish(&status_topic, QoS::AtLeastOnce, true, "online")
+            .await;
         let _ = client.subscribe(&cmd_topic, QoS::AtLeastOnce).await;
 
         let client_clone2 = client_clone.clone();
@@ -231,7 +251,9 @@ mod mqtt_impl {
                                 log_to_file(&format!("命令执行结果: {}", result));
 
                                 let reply_topic = format!("{}/result", prefix_clone);
-                                let _ = client_clone2.publish(&reply_topic, QoS::AtLeastOnce, false, result).await;
+                                let _ = client_clone2
+                                    .publish(&reply_topic, QoS::AtLeastOnce, false, result)
+                                    .await;
                             }
                         }
                     }
@@ -245,7 +267,9 @@ mod mqtt_impl {
             loop {
                 let status = get_device_status().await;
                 let payload = serde_json::to_string(&status).unwrap_or_default();
-                let _ = client_clone3.publish(&status_topic, QoS::AtLeastOnce, true, payload).await;
+                let _ = client_clone3
+                    .publish(&status_topic, QoS::AtLeastOnce, true, payload)
+                    .await;
                 tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
             }
         });
@@ -261,18 +285,26 @@ mod mqtt_impl {
                 Some(c) => format!("{}/status", c.topic_prefix),
                 None => "taskmod/status".to_string(),
             };
-            let _ = client.publish(&status_topic, QoS::AtLeastOnce, true, "offline").await;
+            let _ = client
+                .publish(&status_topic, QoS::AtLeastOnce, true, "offline")
+                .await;
             log_to_file("MQTT服务已停止");
         }
     }
 
     pub async fn publish(topic: &str, payload: String) -> Result<(), String> {
-        let client = match MQTT_CLIENT.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        let client = match MQTT_CLIENT
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
             Some(c) => c.clone(),
             None => return Err("MQTT客户端未连接".to_string()),
         };
 
-        let _ = client.publish(topic, QoS::AtLeastOnce, false, payload).await;
+        let _ = client
+            .publish(topic, QoS::AtLeastOnce, false, payload)
+            .await;
         Ok(())
     }
 }
@@ -291,4 +323,4 @@ mod mqtt_impl {
     }
 }
 
-pub use mqtt_impl::{start_mqtt, stop_mqtt, publish};
+pub use mqtt_impl::{publish, start_mqtt, stop_mqtt};
