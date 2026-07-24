@@ -509,47 +509,47 @@ async fn load_data(state: Signal<LibraryState>) {
     if let Ok(m) = memories_res {
         s.memories = m;
     } else if let Err(e) = memories_res {
-        eprintln!("加载记忆失败: {}", e);
+        web_sys::console::error_1(&format!("加载记忆失败: {}", e).into());
     }
     if let Ok(p) = presets_res {
         s.presets = p;
     } else if let Err(e) = presets_res {
-        eprintln!("加载预设失败: {}", e);
+        web_sys::console::error_1(&format!("加载预设失败: {}", e).into());
     }
     if let Ok(sl) = skills_res {
         s.skills = sl;
     } else if let Err(e) = skills_res {
-        eprintln!("加载技能失败: {}", e);
+        web_sys::console::error_1(&format!("加载技能失败: {}", e).into());
     }
     if let Ok(p) = projects_res {
         s.projects = p;
     } else if let Err(e) = projects_res {
-        eprintln!("加载项目失败: {}", e);
+        web_sys::console::error_1(&format!("加载项目失败: {}", e).into());
     }
     if let Ok(sc) = scenarios_res {
         s.scenarios = sc;
     } else if let Err(e) = scenarios_res {
-        eprintln!("加载场景失败: {}", e);
+        web_sys::console::error_1(&format!("加载场景失败: {}", e).into());
     }
     if let Ok(si) = saved_items_res {
         s.saved_items = si;
     } else if let Err(e) = saved_items_res {
-        eprintln!("加载保存项失败: {}", e);
+        web_sys::console::error_1(&format!("加载保存项失败: {}", e).into());
     }
     if let Ok(mcp) = mcp_servers_res {
         s.mcp_servers = mcp;
     } else if let Err(e) = mcp_servers_res {
-        eprintln!("加载MCP服务器失败: {}", e);
+        web_sys::console::error_1(&format!("加载MCP服务器失败: {}", e).into());
     }
     if let Ok(ss) = screenshots_res {
         s.screenshots = ss;
     } else if let Err(e) = screenshots_res {
-        eprintln!("加载截图失败: {}", e);
+        web_sys::console::error_1(&format!("加载截图失败: {}", e).into());
     }
     if let Ok(ps) = prompt_settings_res {
         s.prompt_settings = ps;
     } else if let Err(e) = prompt_settings_res {
-        eprintln!("加载Prompt设置失败: {}", e);
+        web_sys::console::error_1(&format!("加载Prompt设置失败: {}", e).into());
     }
 }
 
@@ -1298,7 +1298,7 @@ fn ScreenshotList(props: ScreenshotListProps) -> Element {
                                     button {
                                         class: "p-2 bg-white/90 rounded-full hover:bg-white transition-colors",
                                         onclick: move |_| {
-                                            let window = web_sys::window().unwrap();
+                                            let window = web_sys::window().expect("window should be available in browser context");
                                             let _ = window.open_with_url_and_target(&image_url, "_blank");
                                         },
                                         svg { class: "w-4 h-4 text-gray-700", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",

@@ -115,7 +115,7 @@ pub fn get_config() -> Config {
         if guard.is_none() {
             *guard = Some(Config::load());
         }
-        return guard.as_ref().unwrap().clone();
+        return guard.as_ref().expect("config should be initialized").clone();
     }
     // 极端情况：读写锁都失败，直接返回默认配置
     Config::default()

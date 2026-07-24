@@ -312,8 +312,8 @@ async fn exec_speak(text: &str, engine: Option<&str>, language: Option<&str>) ->
                 {
                     return true;
                 }
-                eprintln!(
-                    "[TTS] {} 返回失败: status={:?}, stdout={}, stderr={}",
+                tracing::warn!(
+                    "[TTS] am {} 返回失败: status={:?}, stdout={}, stderr={}",
                     bin,
                     output.status.code(),
                     stdout.trim(),
@@ -321,7 +321,7 @@ async fn exec_speak(text: &str, engine: Option<&str>, language: Option<&str>) ->
                 );
             }
             Err(e) => {
-                eprintln!("[TTS] {} 执行错误: {}", bin, e);
+                tracing::warn!("[TTS] am {} 执行错误: {}", bin, e);
             }
         }
     }
@@ -352,8 +352,8 @@ async fn exec_speak(text: &str, engine: Option<&str>, language: Option<&str>) ->
                 if output.status.success() && !stderr.contains("Can't find service") {
                     return true;
                 }
-                eprintln!(
-                    "[TTS] {} 返回失败: status={:?}, stdout={}, stderr={}",
+                tracing::warn!(
+                    "[TTS] cmd {} 返回失败: status={:?}, stdout={}, stderr={}",
                     bin,
                     output.status.code(),
                     stdout.trim(),
@@ -361,7 +361,7 @@ async fn exec_speak(text: &str, engine: Option<&str>, language: Option<&str>) ->
                 );
             }
             Err(e) => {
-                eprintln!("[TTS] {} 执行错误: {}", bin, e);
+                tracing::warn!("[TTS] cmd {} 执行错误: {}", bin, e);
             }
         }
     }
@@ -384,10 +384,10 @@ async fn exec_speak(text: &str, engine: Option<&str>, language: Option<&str>) ->
                 return true;
             }
             let stderr = String::from_utf8_lossy(&output.stderr);
-            eprintln!("[TTS] intent fallback 返回失败: stderr={}", stderr.trim());
+            tracing::warn!("[TTS] intent fallback 返回失败: stderr={}", stderr.trim());
         }
         Err(e) => {
-            eprintln!("[TTS] intent fallback 执行错误: {}", e);
+            tracing::warn!("[TTS] intent fallback 执行错误: {}", e);
         }
     }
 
@@ -400,7 +400,7 @@ fn exec_speak_background(text: String, engine: Option<String>, language: Option<
     tokio::spawn(async move {
         let ok = exec_speak(&text, engine.as_deref(), language.as_deref()).await;
         if !ok {
-            eprintln!("[TTS] 后台播放失败: {}", &text[..text.len().min(50)]);
+            tracing::warn!("[TTS] 后台播放失败: {}", &text[..text.len().min(50)]);
         }
     });
 }
@@ -453,7 +453,7 @@ pub async fn speak(Json(req): Json<TtsRequest>) -> Json<ApiResponse<String>> {
         for (i, sentence) in sentences.iter().enumerate() {
             let ok = exec_speak(sentence, engine_owned.as_deref(), language_owned.as_deref()).await;
             if !ok {
-                eprintln!("[TTS] 第 {}/{} 句朗读失败: {}", i + 1, total, sentence);
+                tracing::warn!("[TTS] 第 {}/{} 句朗读失败: {}", i + 1, total, sentence);
                 failed += 1;
             }
             // 多句之间暂停 200ms，避免叠音
@@ -463,7 +463,7 @@ pub async fn speak(Json(req): Json<TtsRequest>) -> Json<ApiResponse<String>> {
         }
 
         if failed > 0 {
-            eprintln!("[TTS] 部分朗读失败 ({}/{})", failed, total);
+            tracing::warn!("[TTS] 部分朗读失败 ({}/{})", failed, total);
         }
     });
 

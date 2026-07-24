@@ -9,58 +9,59 @@ pub struct SidebarProps {
     pub active_page: Signal<ActivePage>,
 }
 
+/// 所有页面（桌面端标签 / 手机端抽屉）
+const ALL_PAGES: &[ActivePage] = &[
+    ActivePage::Dashboard,
+    ActivePage::Chat,
+    ActivePage::Daemon,
+    ActivePage::Mirror,
+    ActivePage::Library,
+    ActivePage::Tasks,
+    ActivePage::Scripts,
+    ActivePage::Files,
+    ActivePage::Tts,
+    ActivePage::Config,
+    ActivePage::Logs,
+];
+
 #[component]
 pub fn Sidebar(props: SidebarProps) -> Element {
-    let pages = vec![
-        ActivePage::Dashboard,
-        ActivePage::Chat,
-        ActivePage::Daemon,
-        ActivePage::Mirror,
-        ActivePage::Library,
-        ActivePage::Tasks,
-        ActivePage::Scripts,
-        ActivePage::Files,
-        ActivePage::Tts,
-        ActivePage::Config,
-        ActivePage::Logs,
-    ];
+    let mut drawer_open = use_signal(|| false);
+    let close_drawer = move || drawer_open.set(false);
 
     rsx! {
         nav {
-            class: "flex items-end gap-1 min-h-[44px] px-2.5 overflow-x-auto border-b border-[var(--ds-border)] bg-[var(--ds-card)]",
+            class: "flex items-center min-h-[44px] px-2.5 border-b border-[var(--ds-border)] bg-[var(--ds-card)]",
             aria_label: "导航",
 
-            // 页面导航标签
-            for page in pages {
-                {
-                    let is_active = *props.active_page.read() == page;
-                    let active_class = if is_active {
-                        "text-[var(--ds-blue)]"
-                    } else {
-                        "text-[var(--ds-text-secondary)] hover:text-[var(--ds-text)] hover:bg-[color-mix(in_srgb,var(--ds-surface)_62%,transparent)]"
-                    };
-                    let indicator = if is_active {
-                        rsx! {
-                            span {
-                                class: "absolute right-2.5 bottom-[-1px] left-2.5 h-[2px] bg-[var(--ds-blue)]",
-                            }
-                        }
-                    } else {
-                        rsx! {}
-                    };
+            // ========== 桌面端：显示全部标签 ==========
+            div { class: "hidden md:flex items-end gap-1",
+                for page in ALL_PAGES.iter().copied() {
+                    { nav_tab(page, props.active_page) }
+                }
+            }
 
-                    rsx! {
-                        button {
-                            class: "relative flex items-center justify-center gap-1.5 min-w-[52px] h-[44px] px-2 bg-transparent cursor-pointer text-xs font-semibold whitespace-nowrap transition-colors duration-150 {active_class}",
-                            onclick: move |_| props.active_page.set(page),
-                            // 图标
-                            PageIcon { page: page },
-                            // 标签
-                            span { class: "hidden sm:inline", "{page.label()}" }
-                            // 活跃指示器
-                            {indicator}
+            // ========== 手机端：汉堡菜单 + 页面标题 ==========
+            div { class: "flex md:hidden items-center gap-1",
+                button {
+                    class: "flex items-center justify-center w-[44px] h-[44px] bg-transparent cursor-pointer text-[var(--ds-text-secondary)] hover:text-[var(--ds-text)] transition-colors",
+                    aria_label: "打开菜单",
+                    onclick: move |_| drawer_open.set(!*drawer_open.read()),
+                    svg {
+                        class: "w-5 h-5",
+                        fill: "none",
+                        view_box: "0 0 24 24",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        path {
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            d: "M4 6h16M4 12h16M4 18h16",
                         }
                     }
+                }
+                span { class: "text-sm font-semibold text-[var(--ds-text)] truncate",
+                    "{props.active_page.read().label()}"
                 }
             }
 
@@ -76,7 +77,6 @@ pub fn Sidebar(props: SidebarProps) -> Element {
                     let next = if current == "dark" { "light" } else { "dark" };
                     props.theme.set(next.to_string());
                 },
-                // 月亮/太阳图标
                 if *props.theme.read() == "dark" {
                     svg {
                         class: "w-4 h-4",
@@ -106,9 +106,9 @@ pub fn Sidebar(props: SidebarProps) -> Element {
                 }
             }
 
-            // GitHub 链接
+            // GitHub 链接（桌面端显示）
             a {
-                class: "flex items-center h-[44px] px-2 text-[var(--ds-text-secondary)] hover:text-[var(--ds-text)] transition-colors no-underline",
+                class: "hidden md:flex items-center h-[44px] px-2 text-[var(--ds-text-secondary)] hover:text-[var(--ds-text)] transition-colors no-underline",
                 href: "https://github.com/ojbkxc/TaskMod",
                 target: "_blank",
                 title: "GitHub",
@@ -120,6 +120,101 @@ pub fn Sidebar(props: SidebarProps) -> Element {
                         d: "M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z",
                     }
                 }
+            }
+        }
+
+        // ========== 手机端：侧滑抽屉 ==========
+        if *drawer_open.read() {
+            // 遮罩层
+            div {
+                class: "fixed inset-0 z-40 bg-black/50 md:hidden transition-opacity",
+                onclick: move |_| close_drawer(),
+            }
+            // 抽屉面板
+            div {
+                class: "fixed top-0 left-0 z-50 h-full w-64 bg-[var(--ds-card)] border-r border-[var(--ds-border)] shadow-xl md:hidden flex flex-col",
+                // 抽屉头部
+                div { class: "flex items-center justify-between px-4 h-[56px] border-b border-[var(--ds-border)]",
+                    span { class: "text-sm font-semibold text-[var(--ds-text)]", "TaskMod" }
+                    button {
+                        class: "flex items-center justify-center w-[36px] h-[36px] bg-transparent cursor-pointer text-[var(--ds-text-secondary)] hover:text-[var(--ds-text)] transition-colors rounded",
+                        aria_label: "关闭菜单",
+                        onclick: move |_| close_drawer(),
+                        svg {
+                            class: "w-5 h-5",
+                            fill: "none",
+                            view_box: "0 0 24 24",
+                            stroke: "currentColor",
+                            stroke_width: "2",
+                            path {
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                d: "M6 18L18 6M6 6l12 12",
+                            }
+                        }
+                    }
+                }
+                // 抽屉导航列表
+                div { class: "flex-1 overflow-y-auto py-2",
+                    for page in ALL_PAGES.iter().copied() {
+                        {
+                            let is_active = *props.active_page.read() == page;
+                            let close_drawer = close_drawer.clone();
+                            rsx! {
+                                button {
+                                    class: "flex items-center gap-3 w-full px-4 py-3 text-sm text-left transition-colors {if is_active { \"text-[var(--ds-blue)] bg-[var(--ds-blue-light)] font-semibold\" } else { \"text-[var(--ds-text-secondary)] hover:bg-[var(--ds-surface)] hover:text-[var(--ds-text)]\" }}",
+                                    onclick: move |_| {
+                                        props.active_page.set(page);
+                                        close_drawer();
+                                    },
+                                    div { class: "flex items-center justify-center w-8 h-8",
+                                        PageIcon { page: page }
+                                    }
+                                    span { "{page.label()}" }
+                                }
+                            }
+                        }
+                    }
+                }
+                // 抽屉底部 GitHub 链接
+                div { class: "px-4 py-3 border-t border-[var(--ds-border)]",
+                    a {
+                        class: "flex items-center gap-2 text-xs text-[var(--ds-text-secondary)] hover:text-[var(--ds-text)] transition-colors no-underline",
+                        href: "https://github.com/ojbkxc/TaskMod",
+                        target: "_blank",
+                        svg {
+                            class: "w-4 h-4",
+                            view_box: "0 0 16 16",
+                            fill: "currentColor",
+                            path {
+                                d: "M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z",
+                            }
+                        }
+                        span { "GitHub" }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 单个导航标签（桌面端）
+fn nav_tab(page: ActivePage, active_page: Signal<ActivePage>) -> Element {
+    let is_active = *active_page.read() == page;
+    let active_class = if is_active {
+        "text-[var(--ds-blue)]"
+    } else {
+        "text-[var(--ds-text-secondary)] hover:text-[var(--ds-text)] hover:bg-[color-mix(in_srgb,var(--ds-surface)_62%,transparent)]"
+    };
+
+    rsx! {
+        button {
+            class: "relative flex items-center justify-center gap-1.5 min-w-[44px] h-[44px] px-2 bg-transparent cursor-pointer text-xs font-semibold whitespace-nowrap transition-colors duration-150 {active_class}",
+            onclick: move |_| active_page.set(page),
+            PageIcon { page: page },
+            span { class: "hidden lg:inline", "{page.label()}" }
+            if is_active {
+                span { class: "absolute right-2.5 bottom-[-1px] left-2.5 h-[2px] bg-[var(--ds-blue)]" }
             }
         }
     }

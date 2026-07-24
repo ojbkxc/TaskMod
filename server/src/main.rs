@@ -61,8 +61,7 @@ fn start_watchdog(heartbeat: Arc<AtomicBool>, timeout_secs: u64) {
                             None,
                         ));
                     });
-                    // 仅在邮件通知启用时才打印日志
-                    eprintln!(
+                    tracing::warn!(
                         "[看门狗] 警告: 主循环可能卡死，已超过 {} 秒未响应",
                         timeout_secs
                     );
@@ -89,7 +88,7 @@ async fn start_discovery_server(port: u16) {
     let std_socket = match StdUdpSocket::bind(format!("0.0.0.0:{}", port)) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("[Discovery] 无法绑定UDP端口 {}: {}", port, e);
+            tracing::error!("[Discovery] 无法绑定UDP端口 {}: {}", port, e);
             return;
         }
     };
@@ -97,12 +96,12 @@ async fn start_discovery_server(port: u16) {
     let socket = match UdpSocket::from_std(std_socket) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("[Discovery] 转换为 tokio socket 失败: {}", e);
+            tracing::error!("[Discovery] 转换为 tokio socket 失败: {}", e);
             return;
         }
     };
 
-    println!("[Discovery] UDP服务发现已启动: 0.0.0.0:{}", port);
+    tracing::info!("[Discovery] UDP服务发现已启动: 0.0.0.0:{}", port);
 
     let mut buf = [0u8; 256];
     loop {
@@ -112,14 +111,14 @@ async fn start_discovery_server(port: u16) {
                 if msg.starts_with("TASKMOD_DISCOVERY") {
                     let response = "TASKMOD_SERVER";
                     if let Err(e) = socket.send_to(response.as_bytes(), addr).await {
-                        eprintln!("[Discovery] 发送响应失败: {}", e);
+                        tracing::error!("[Discovery] 发送响应失败: {}", e);
                     } else {
-                        println!("[Discovery] 响应服务发现请求: {}", addr.ip());
+                        tracing::info!("[Discovery] 响应服务发现请求: {}", addr.ip());
                     }
                 }
             }
             Err(e) => {
-                eprintln!("[Discovery] 接收失败: {}", e);
+                tracing::error!("[Discovery] 接收失败: {}", e);
             }
         }
     }
@@ -198,7 +197,7 @@ fn handle_event(event: utils::event_monitor::SystemEvent) {
         };
 
         if trigger_matches {
-            println!(
+            tracing::info!(
                 "[事件触发] 工作流: {} 被事件: {:?} 触发",
                 workflow.name, event
             );
@@ -261,7 +260,7 @@ async fn main() -> anyhow::Result<()> {
             .map(|l| format!("{}:{}", l.file(), l.line()))
             .unwrap_or_else(|| "Unknown location".to_string());
         let now = chrono::Local::now();
-        eprintln!("[CRITICAL] TaskMod 崩溃: {} at {}", msg, location);
+        tracing::error!("[CRITICAL] TaskMod 崩溃: {} at {}", msg, location);
         let email_conf = utils::email::get_email_config();
         if email_conf.enable_notify {
             let subject = format!(
@@ -562,7 +561,7 @@ async fn main() -> anyhow::Result<()> {
         .layer(CorsLayer::permissive());
 
     let addr = SocketAddr::from(([0, 0, 0, 0], listen_port));
-    println!("TaskMod Web 管理服务已启动: http://0.0.0.0:{}", listen_port);
+    tracing::info!("TaskMod Web 管理服务已启动: http://0.0.0.0:{}", listen_port);
 
     // 使用 tokio TcpListener 启用 TCP_NODELAY（减少小包延迟，对投屏串流至关重要）
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -578,11 +577,11 @@ async fn main() -> anyhow::Result<()> {
     tokio::select! {
         result = server => {
             if let Err(e) = result {
-                eprintln!("服务器错误: {}", e);
+                tracing::error!("服务器错误: {}", e);
             }
         }
         _ = ctrl_c => {
-            println!("收到关闭信号，正在停止...");
+            tracing::info!("收到关闭信号，正在停止...");
         }
     }
 

@@ -86,11 +86,11 @@ impl TtsConfig {
         }
         match fs::read_to_string(CONFIG_PATH).await {
             Ok(content) => serde_json::from_str(&content).unwrap_or_else(|e| {
-                eprintln!("[TTS Config] 解析配置文件失败: {}, 使用默认配置", e);
+                tracing::warn!("[TTS Config] 解析配置文件失败: {}, 使用默认配置", e);
                 Self::default()
             }),
             Err(e) => {
-                eprintln!("[TTS Config] 读取配置文件失败: {}, 使用默认配置", e);
+                tracing::warn!("[TTS Config] 读取配置文件失败: {}, 使用默认配置", e);
                 Self::default()
             }
         }
@@ -141,7 +141,7 @@ impl TtsConfig {
                             .to_string();
                     }
                     Err(e) => {
-                        eprintln!("[TTS Replace] 正则表达式错误 '{}': {}", rule.pattern, e);
+                        tracing::warn!("[TTS Replace] 正则表达式错误 '{}': {}", rule.pattern, e);
                     }
                 }
             } else {

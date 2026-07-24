@@ -1,122 +1,22 @@
+mod components;
+mod state;
+mod websocket;
+
 use dioxus::prelude::*;
 use eq_ui::prelude::*;
-use serde_json::{json, Value};
-use web_sys::{WebSocket, MessageEvent, CloseEvent, ErrorEvent, KeyboardEvent};
-use wasm_bindgen::JsCast;
 use gloo_timers::future::sleep;
+use serde_json::json;
 use std::time::Duration;
+use web_sys::{KeyboardEvent, WebSocket};
+
 use crate::api::client::{
-    get_ai_providers, list_chat_sessions, get_chat_session, delete_chat_session, create_chat_session,
-    screenshot_analyze, AiProvider, ChatSession,
+    create_chat_session, delete_chat_session, get_ai_providers, get_chat_session,
+    list_chat_sessions, screenshot_analyze, AiProvider, ChatSession,
 };
 
-#[derive(Debug, Clone, PartialEq)]
-enum ChatMessage {
-    User { content: String },
-    Assistant { content: String, thinking: String, tool_results: Vec<ToolResult> },
-    System { content: String },
-    Tool { name: String, args: String, result: String },
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct ToolResult {
-    tool_name: String,
-    result: String,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct ChatState {
-    messages: Vec<ChatMessage>,
-    current_message: String,
-    selected_provider: Option<AiProvider>,
-    providers: Vec<AiProvider>,
-    sessions: Vec<ChatSession>,
-    current_session: Option<ChatSession>,
-    is_typing: bool,
-    current_thinking: String,
-    error: Option<String>,
-    ws_connected: bool,
-    loading_providers: bool,
-    loading_sessions: bool,
-    reconnect_attempts: usize,
-}
-
-impl Default for ChatState {
-    fn default() -> Self {
-        Self {
-            messages: Vec::new(),
-            current_message: String::new(),
-            selected_provider: None,
-            providers: Vec::new(),
-            sessions: Vec::new(),
-            current_session: Option::None,
-            is_typing: false,
-            current_thinking: String::new(),
-            error: None,
-            ws_connected: false,
-            loading_providers: true,
-            loading_sessions: true,
-            reconnect_attempts: 0,
-        }
-    }
-}
-
-fn scroll_to_bottom(container: &Signal<Option<MountedData>>) {
-    if let Some(md) = container.read().as_ref() {
-        if let Ok(element) = md.get() {
-            if let Some(elem) = element.dyn_ref::<web_sys::HtmlDivElement>() {
-                elem.set_scroll_top(elem.scroll_height());
-            }
-        }
-    }
-}
-
-fn render_markdown(content: &str) -> String {
-    let mut result = content.to_string();
-    result = result.replace("&", "&amp;");
-    result = result.replace("<", "&lt;");
-    result = result.replace(">", "&gt;");
-    
-    let mut parts = Vec::new();
-    let mut lines = result.lines().peekable();
-    
-    while let Some(line) = lines.next() {
-        if line.starts_with("```") {
-            let lang = line[3..].trim().to_string();
-            let mut code = String::new();
-            while let Some(code_line) = lines.next() {
-                if code_line.starts_with("```") {
-                    break;
-                }
-                code.push_str(code_line);
-                code.push('\n');
-            }
-            if !code.is_empty() {
-                parts.push(format!("<pre class=\"bg-gray-800 text-gray-100 p-3 rounded-lg text-xs overflow-x-auto\"><code class=\"language-{}\">{}</code></pre>", lang, code.trim()));
-            }
-        } else if line.starts_with("`") && line.ends_with("`") && line != "`" {
-            parts.push(format!("<code class=\"bg-gray-200 px-1.5 py-0.5 rounded text-xs font-mono\">{}</code>", &line[1..line.len()-1]));
-        } else if line.starts_with("**") && line.ends_with("**") {
-            parts.push(format!("<strong>{}</strong>", &line[2..line.len()-2]));
-        } else if line.starts_with("*") && line.ends_with("*") && line.len() > 2 {
-            parts.push(format!("<em>{}</em>", &line[1..line.len()-1]));
-        } else if line.starts_with("# ") {
-            parts.push(format!("<h3 class=\"font-bold text-base mb-1\">{}</h3>", &line[2..]));
-        } else if line.starts_with("## ") {
-            parts.push(format!("<h4 class=\"font-semibold text-sm mb-1\">{}</h4>", &line[3..]));
-        } else if line.starts_with("- ") {
-            parts.push(format!("<li class=\"ml-4 text-sm\">{}</li>", &line[2..]));
-        } else if line.starts_with("1. ") {
-            parts.push(format!("<li class=\"ml-4 text-sm\">{}</li>", &line[3..]));
-        } else if line.starts_with("> ") {
-            parts.push(format!("<blockquote class=\"border-l-2 border-gray-300 pl-3 italic text-sm text-gray-600\">{}</blockquote>", &line[2..]));
-        } else {
-            parts.push(line.to_string());
-        }
-    }
-    
-    parts.join("\n")
-}
+use self::components::{render_markdown, scroll_to_bottom, QuickPromptCard};
+use self::state::{ChatMessage, ChatState};
+use self::websocket::{connect_ws, schedule_reconnect};
 
 #[component]
 pub fn ChatPage() -> Element {
@@ -124,13 +24,12 @@ pub fn ChatPage() -> Element {
     let ws = use_signal(|| Option::<WebSocket>::None);
     let message_container = use_signal(|| None::<MountedData>);
 
+    // 初始化加载
     use_effect(move || {
         let state = state.clone();
         async move {
-            let (providers_res, sessions_res) = join(
-                get_ai_providers(),
-                list_chat_sessions()
-            ).await;
+            let (providers_res, sessions_res) =
+                join(get_ai_providers(), list_chat_sessions()).await;
 
             let mut new_state = state.write();
             new_state.loading_providers = false;
@@ -158,228 +57,17 @@ pub fn ChatPage() -> Element {
         }
     });
 
+    // 自动连接 WebSocket
     use_effect(move || {
         let ws = ws.clone();
         let state = state.clone();
+        let message_container = message_container.clone();
         async move {
             if ws.read().is_none() {
-                connect_ws().await;
+                connect_ws(state, ws, message_container).await;
             }
         }
     });
-
-    let connect_ws = move || {
-        let state = state.clone();
-        let ws = ws.clone();
-        let message_container = message_container.clone();
-        async move {
-            if ws.read().is_some() {
-                return;
-            }
-
-            let window = web_sys::window().unwrap();
-            let protocol = window.location().protocol().unwrap_or_default();
-            let ws_protocol = if protocol == "https:" { "wss:" } else { "ws:" };
-            let host = window.location().host().unwrap_or_default();
-            let ws_url = format!("{}//{}/ws/ai-chat", ws_protocol, host);
-
-            let socket = match WebSocket::new(&ws_url) {
-                Ok(s) => s,
-                Err(e) => {
-                    state.write().error = Some(format!("WebSocket连接失败: {}", e.as_string().unwrap_or_default()));
-                    schedule_reconnect(&state, &ws, &message_container).await;
-                    return;
-                }
-            };
-            socket.set_binary_type(web_sys::BinaryType::Arraybuffer);
-
-            let state_clone = state.clone();
-            let ws_clone = ws.clone();
-            let message_container_clone = message_container.clone();
-            
-            let on_message = Closure::wrap(Box::new(move |event: MessageEvent| {
-                if let Ok(text) = event.data().as_string() {
-                    if text == "ping" {
-                        if let Some(s) = ws_clone.read().as_ref() {
-                            let _ = s.send_with_str("pong");
-                        }
-                        return;
-                    }
-                    let mut state = state_clone.write();
-                    if let Ok(data) = serde_json::from_str::<Value>(&text) {
-                        match data.get("type").and_then(|t| t.as_str()) {
-                            Some("chunk") => {
-                                if let Some(content) = data.get("content").and_then(|c| c.as_str()) {
-                                    if let Some(ChatMessage::Assistant { content: ref mut c, .. }) = state.messages.last_mut() {
-                                        c.push_str(content);
-                                    } else {
-                                        state.messages.push(ChatMessage::Assistant {
-                                            content: content.to_string(),
-                                            thinking: String::new(),
-                                            tool_results: Vec::new(),
-                                        });
-                                    }
-                                }
-                            }
-                            Some("thinking") => {
-                                if let Some(content) = data.get("content").and_then(|c| c.as_str()) {
-                                    state.current_thinking.push_str(content);
-                                    if let Some(ChatMessage::Assistant { thinking: ref mut t, .. }) = state.messages.last_mut() {
-                                        t.push_str(content);
-                                    } else {
-                                        state.messages.push(ChatMessage::Assistant {
-                                            content: String::new(),
-                                            thinking: content.to_string(),
-                                            tool_results: Vec::new(),
-                                        });
-                                    }
-                                }
-                            }
-                            Some("tool_result") => {
-                                if let Some(results) = data.get("results").and_then(|r| r.as_array()) {
-                                    for result in results {
-                                        if let (Some(role), Some(content)) = (
-                                            result.get("role").and_then(|r| r.as_str()),
-                                            result.get("content").and_then(|c| c.as_str()),
-                                        ) {
-                                            if role == "tool" {
-                                                let tool_name = result.get("name").and_then(|n| n.as_str()).unwrap_or("unknown_tool").to_string();
-                                                state.messages.push(ChatMessage::Tool {
-                                                    name: tool_name,
-                                                    args: String::new(),
-                                                    result: content.to_string(),
-                                                });
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            Some("title") => {
-                                if let Some(title) = data.get("title").and_then(|t| t.as_str()) {
-                                    if let Some(session) = state.current_session.as_mut() {
-                                        session.title = title.to_string();
-                                    }
-                                }
-                            }
-                            Some("error") => {
-                                if let Some(message) = data.get("message").and_then(|m| m.as_str()) {
-                                    state.error = Some(message.to_string());
-                                    state.is_typing = false;
-                                }
-                            }
-                            Some("stream_end") => {
-                                state.is_typing = false;
-                                state.current_thinking = String::new();
-                            }
-                            Some("message") => {
-                                if let Some(content) = data.get("content").and_then(|c| c.as_str()) {
-                                    state.messages.push(ChatMessage::Assistant {
-                                        content: content.to_string(),
-                                        thinking: String::new(),
-                                        tool_results: Vec::new(),
-                                    });
-                                    state.is_typing = false;
-                                }
-                            }
-                            Some("image") => {
-                                if let Some(url) = data.get("url").and_then(|u| u.as_str()) {
-                                    if let Some(ChatMessage::Assistant { content: ref mut c, .. }) = state.messages.last_mut() {
-                                        c.push_str(&format!("\n\n![image]({})", url));
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    scroll_to_bottom(&message_container_clone);
-                }
-            }) as Box<dyn FnMut(_)>);
-
-            socket.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
-            on_message.forget();
-
-            let state_clone2 = state.clone();
-            let ws_clone2 = ws.clone();
-            let message_container_clone2 = message_container.clone();
-            let on_close = Closure::wrap(Box::new(move |_event: CloseEvent| {
-                let mut state = state_clone2.write();
-                state.is_typing = false;
-                state.ws_connected = false;
-                state.reconnect_attempts += 1;
-                ws_clone2.write().take();
-                spawn(async move {
-                    schedule_reconnect(&state_clone2, &ws_clone2, &message_container_clone2).await;
-                });
-            }) as Box<dyn FnMut(_)>);
-
-            socket.set_onclose(Some(on_close.as_ref().unchecked_ref()));
-            on_close.forget();
-
-            let state_clone3 = state.clone();
-            let ws_clone3 = ws.clone();
-            let message_container_clone3 = message_container.clone();
-            let on_error = Closure::wrap(Box::new(move |_event: ErrorEvent| {
-                let mut state = state_clone3.write();
-                state.is_typing = false;
-                state.error = Some("WebSocket连接失败".to_string());
-                state.ws_connected = false;
-                state.reconnect_attempts += 1;
-                ws_clone3.write().take();
-                spawn(async move {
-                    schedule_reconnect(&state_clone3, &ws_clone3, &message_container_clone3).await;
-                });
-            }) as Box<dyn FnMut(_)>);
-
-            socket.set_onerror(Some(on_error.as_ref().unchecked_ref()));
-            on_error.forget();
-
-            let state_clone4 = state.clone();
-            let on_open = Closure::wrap(Box::new(move || {
-                let mut state = state_clone4.write();
-                state.ws_connected = true;
-                state.reconnect_attempts = 0;
-                state.error = None;
-            }) as Box<dyn FnMut()>);
-
-            socket.set_onopen(Some(on_open.as_ref().unchecked_ref()));
-            on_open.forget();
-
-            ws.write().replace(socket);
-
-            start_heartbeat(&ws, &state);
-        }
-    };
-
-    let schedule_reconnect = move |state: &Signal<ChatState>, ws: &Signal<Option<WebSocket>>, message_container: &Signal<Option<MountedData>>| {
-        async move {
-            let attempts = state.read().reconnect_attempts;
-            let delay = std::cmp::min(attempts * 2, 16);
-            sleep(Duration::from_secs(delay)).await;
-            if ws.read().is_none() {
-                connect_ws().await;
-            }
-        }
-    };
-
-    let start_heartbeat = move |ws: &Signal<Option<WebSocket>>, state: &Signal<ChatState>| {
-        spawn(async move {
-            loop {
-                sleep(Duration::from_secs(30)).await;
-                if let Some(socket) = ws.read().as_ref() {
-                    if socket.ready_state() == 1 {
-                        let _ = socket.send_with_str("ping");
-                    } else {
-                        state.write().ws_connected = false;
-                        ws.write().take();
-                        connect_ws().await;
-                        break;
-                    }
-                } else {
-                    break;
-                }
-            }
-        });
-    };
 
     let send_message = move |message: String| {
         let state = state.clone();
@@ -399,7 +87,9 @@ pub fn ChatPage() -> Element {
             }
 
             let mut state_mut = state.write();
-            state_mut.messages.push(ChatMessage::User { content: message.clone() });
+            state_mut.messages.push(ChatMessage::User {
+                content: message.clone(),
+            });
             state_mut.current_message = String::new();
             state_mut.is_typing = true;
             state_mut.error = None;
@@ -407,10 +97,16 @@ pub fn ChatPage() -> Element {
 
             if ws.read().is_none() {
                 drop(state_mut);
-                connect_ws().await;
+                connect_ws(state, ws, message_container).await;
                 for _ in 0..20 {
                     sleep(Duration::from_millis(100)).await;
-                    if ws.read().is_some() && ws.read().as_ref().map(|s| s.ready_state() == 1).unwrap_or(false) {
+                    if ws.read().is_some()
+                        && ws
+                            .read()
+                            .as_ref()
+                            .map(|s| s.ready_state() == 1)
+                            .unwrap_or(false)
+                    {
                         break;
                     }
                 }
@@ -419,7 +115,14 @@ pub fn ChatPage() -> Element {
             let session_id = match state.read().current_session.as_ref() {
                 Some(s) => s.id.clone(),
                 None => {
-                    let new_session = match create_chat_session("新对话", &provider.id, &provider.name, &provider.model).await {
+                    let new_session = match create_chat_session(
+                        "新对话",
+                        &provider.id,
+                        &provider.name,
+                        &provider.model,
+                    )
+                    .await
+                    {
                         Ok(s) => s,
                         Err(e) => {
                             state.write().error = Some(format!("创建会话失败: {}", e));
@@ -446,7 +149,10 @@ pub fn ChatPage() -> Element {
                     "session_id": session_id,
                 });
                 if let Err(e) = socket.send_with_str(&req.to_string()) {
-                    state.write().error = Some(format!("发送消息失败: {}", e.as_string().unwrap_or_default()));
+                    state.write().error = Some(format!(
+                        "发送消息失败: {}",
+                        e.as_string().unwrap_or_default()
+                    ));
                     state.write().is_typing = false;
                 }
             } else {
@@ -481,43 +187,93 @@ pub fn ChatPage() -> Element {
 
             match get_chat_session(&session.id).await {
                 Ok(full_session) => {
-                    state.write().current_session = Some(full_session.clone());
-                    state.write().messages = full_session.messages.iter().filter_map(|msg| {
-                        match msg.get("role").and_then(|r| r.as_str()) {
-                            Some("user") => msg.get("content").and_then(|c| c.as_str()).map(|c| ChatMessage::User { content: c.to_string() }),
+                    let messages: Vec<ChatMessage> = full_session
+                        .messages
+                        .iter()
+                        .filter_map(|msg| match msg.get("role").and_then(|r| r.as_str()) {
+                            Some("user") => msg
+                                .get("content")
+                                .and_then(|c| c.as_str())
+                                .map(|c| ChatMessage::User {
+                                    content: c.to_string(),
+                                }),
                             Some("assistant") => {
-                                let content = msg.get("content").and_then(|c| c.as_str()).unwrap_or("").to_string();
-                                let thinking = msg.get("reasoning").and_then(|r| r.as_str()).unwrap_or("").to_string();
-                                Some(ChatMessage::Assistant { content, thinking, tool_results: Vec::new() })
-                            }
-                            Some("tool") => {
-                                let name = msg.get("name").and_then(|n| n.as_str()).unwrap_or("tool").to_string();
-                                msg.get("content").and_then(|c| c.as_str()).map(|result| ChatMessage::Tool {
-                                    name,
-                                    args: String::new(),
-                                    result: result.to_string(),
+                                let content = msg
+                                    .get("content")
+                                    .and_then(|c| c.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let thinking = msg
+                                    .get("reasoning")
+                                    .and_then(|r| r.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                Some(ChatMessage::Assistant {
+                                    content,
+                                    thinking,
+                                    tool_results: Vec::new(),
                                 })
                             }
-                            Some("system") => msg.get("content").and_then(|c| c.as_str()).map(|c| ChatMessage::System { content: c.to_string() }),
+                            Some("tool") => {
+                                let name = msg
+                                    .get("name")
+                                    .and_then(|n| n.as_str())
+                                    .unwrap_or("tool")
+                                    .to_string();
+                                msg.get("content")
+                                    .and_then(|c| c.as_str())
+                                    .map(|result| ChatMessage::Tool {
+                                        name,
+                                        args: String::new(),
+                                        result: result.to_string(),
+                                    })
+                            }
+                            Some("system") => msg
+                                .get("content")
+                                .and_then(|c| c.as_str())
+                                .map(|c| ChatMessage::System {
+                                    content: c.to_string(),
+                                }),
                             _ => None,
-                        }
-                    }).collect();
+                        })
+                        .collect();
+                    state.write().current_session = Some(full_session.clone());
+                    state.write().messages = messages;
                     scroll_to_bottom(&message_container);
                 }
                 Err(e) => {
                     state.write().error = Some(format!("加载会话失败: {}", e));
                     state.write().current_session = Some(session);
-                    state.write().messages = session.messages.iter().filter_map(|msg| {
-                        match msg.get("role").and_then(|r| r.as_str()) {
-                            Some("user") => msg.get("content").and_then(|c| c.as_str()).map(|c| ChatMessage::User { content: c.to_string() }),
+                    state.write().messages = session
+                        .messages
+                        .iter()
+                        .filter_map(|msg| match msg.get("role").and_then(|r| r.as_str()) {
+                            Some("user") => msg
+                                .get("content")
+                                .and_then(|c| c.as_str())
+                                .map(|c| ChatMessage::User {
+                                    content: c.to_string(),
+                                }),
                             Some("assistant") => {
-                                let content = msg.get("content").and_then(|c| c.as_str()).unwrap_or("").to_string();
-                                let thinking = msg.get("reasoning").and_then(|r| r.as_str()).unwrap_or("").to_string();
-                                Some(ChatMessage::Assistant { content, thinking, tool_results: Vec::new() })
+                                let content = msg
+                                    .get("content")
+                                    .and_then(|c| c.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let thinking = msg
+                                    .get("reasoning")
+                                    .and_then(|r| r.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                Some(ChatMessage::Assistant {
+                                    content,
+                                    thinking,
+                                    tool_results: Vec::new(),
+                                })
                             }
                             _ => None,
-                        }
-                    }).collect();
+                        })
+                        .collect();
                 }
             }
         });
@@ -551,17 +307,16 @@ pub fn ChatPage() -> Element {
         let state = state.clone();
         let message_container = message_container.clone();
         async move {
-            let provider = match state.read().selected_provider.clone() {
-                Some(p) => p,
-                None => {
-                    state.write().error = Some("请先选择AI提供商".to_string());
-                    return;
-                }
-            };
+            if state.read().selected_provider.is_none() {
+                state.write().error = Some("请先选择AI提供商".to_string());
+                return;
+            }
 
             state.write().is_typing = true;
             state.write().current_thinking = String::new();
-            state.write().messages.push(ChatMessage::User { content: "截图分析".to_string() });
+            state.write().messages.push(ChatMessage::User {
+                content: "截图分析".to_string(),
+            });
 
             match screenshot_analyze(None).await {
                 Ok(result) => {
@@ -580,10 +335,15 @@ pub fn ChatPage() -> Element {
         }
     };
 
-    let provider_label = state.read().selected_provider.as_ref().map_or("未选择".to_string(), |p| p.name.clone());
+    let provider_label = state
+        .read()
+        .selected_provider
+        .as_ref()
+        .map_or("未选择".to_string(), |p| p.name.clone());
 
     rsx! {
         div { class: "flex flex-col h-full",
+            // Header
             div { class: "flex items-center justify-between px-4 py-3 border-b border-[var(--ds-border)]",
                 div { class: "flex items-center gap-3",
                     span { class: "text-sm font-semibold text-[var(--ds-text)]", "AI 助手" }
@@ -612,7 +372,9 @@ pub fn ChatPage() -> Element {
                 }
             }
 
+            // Sidebar + Chat area
             div { class: "flex flex-1 overflow-hidden",
+                // Sidebar
                 div { class: "w-60 border-r border-[var(--ds-border)] overflow-y-auto flex flex-col",
                     div { class: "p-3 border-b border-[var(--ds-border)]",
                         div { class: "text-xs font-semibold text-[var(--ds-text-tertiary)] mb-2", "对话列表" }
@@ -698,8 +460,8 @@ pub fn ChatPage() -> Element {
                     }
                 }
 
-                div {
-                    class: "flex-1 flex flex-col overflow-hidden",
+                // Main chat area
+                div { class: "flex-1 flex flex-col overflow-hidden",
                     if state.read().messages.is_empty() {
                         div { class: "flex-1 flex flex-col items-center justify-center p-8 text-center",
                             div { class: "w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mb-4 shadow-lg",
@@ -752,11 +514,14 @@ pub fn ChatPage() -> Element {
                                         variant: EqButtonVariant::Primary,
                                         size: EqButtonSize::Sm,
                                         onclick: move |_| {
+                                            let state = state.clone();
+                                            let ws = ws.clone();
+                                            let message_container = message_container.clone();
                                             state.write().ws_connected = false;
                                             state.write().reconnect_attempts = 0;
                                             ws.write().take();
                                             spawn(async move {
-                                                connect_ws().await;
+                                                connect_ws(state, ws, message_container).await;
                                             });
                                         },
                                         "重新连接"
@@ -778,7 +543,7 @@ pub fn ChatPage() -> Element {
                                                         "思考中: {thinking}"
                                                     }
                                                 }
-                                                div { 
+                                                div {
                                                     class: "px-4 py-2.5 rounded-2xl rounded-tl-sm bg-[var(--ds-card)] border border-[var(--ds-border)] text-[var(--ds-text)] text-sm shadow-sm",
                                                     inner_html: "{render_markdown(content)}"
                                                 }
@@ -824,6 +589,7 @@ pub fn ChatPage() -> Element {
                         }
                     }
 
+                    // Input area
                     div { class: "border-t border-[var(--ds-border)] px-4 py-3 bg-[color-mix(in_srgb,var(--ds-bg)_94%,var(--ds-surface))]",
                         div { class: "flex items-end gap-2",
                             div { class: "flex-1 border border-[var(--ds-border)] rounded-xl bg-[var(--ds-card)] shadow-sm overflow-hidden",
@@ -840,11 +606,14 @@ pub fn ChatPage() -> Element {
                                     variant: EqButtonVariant::Danger,
                                     size: EqButtonSize::Md,
                                     onclick: move |_| {
+                                        let ws = ws.clone();
+                                        let state = state.clone();
+                                        let message_container = message_container.clone();
                                         state.write().is_typing = false;
                                         state.write().current_thinking = String::new();
                                         ws.write().take();
                                         spawn(async move {
-                                            connect_ws().await;
+                                            connect_ws(state, ws, message_container).await;
                                         });
                                     },
                                     "停止"
@@ -867,23 +636,6 @@ pub fn ChatPage() -> Element {
                     }
                 }
             }
-        }
-    }
-}
-
-#[derive(Props, PartialEq, Clone)]
-struct QuickPromptCardProps {
-    label: &'static str,
-    on_click: EventHandler<()>,
-}
-
-#[component]
-fn QuickPromptCard(props: QuickPromptCardProps) -> Element {
-    rsx! {
-        button {
-            class: "flex items-center justify-center gap-2 px-3 py-2.5 border border-[var(--ds-border)] rounded-lg bg-[var(--ds-card)] text-[var(--ds-text-secondary)] cursor-pointer text-xs font-medium transition-all hover:border-[var(--ds-blue)] hover:bg-[var(--ds-blue-light)] hover:text-[var(--ds-blue)]",
-            onclick: props.on_click,
-            "{props.label}"
         }
     }
 }

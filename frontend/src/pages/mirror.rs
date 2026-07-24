@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use eq_ui::prelude::*;
 use wasm_bindgen::closure::Closure;
 use web_sys::MessageEvent;
-use crate::api::client::{get_device_info, DeviceInfo};
+use crate::api::client::{execute_command, get_device_info, DeviceInfo};
 
 #[component]
 pub fn MirrorPage() -> Element {
@@ -10,6 +10,7 @@ pub fn MirrorPage() -> Element {
     let mut audio_enabled = use_signal(|| false);
     let device_info = use_signal(|| Option::<DeviceInfo>::None);
     let is_refreshing = use_signal(|| false);
+    let cmd_output = use_signal(|| "等待执行命令...".to_string());
 
     let load_device_info = move || {
         is_refreshing.set(true);
@@ -29,6 +30,56 @@ pub fn MirrorPage() -> Element {
     use_effect(move || {
         load_device_info();
     });
+
+    let exec_adb = move |label: &'static str| {
+        let cmd: Option<String> = match label {
+            "唤醒" => Some("input keyevent 224".to_string()),
+            "息屏" => Some("input keyevent 26".to_string()),
+            "解锁" => Some("input keyevent 82; input swipe 540 1800 540 600 300".to_string()),
+            "Home" => Some("input keyevent 3".to_string()),
+            "返回" => Some("input keyevent 4".to_string()),
+            "重启设备" => Some("reboot".to_string()),
+            "关闭设备" => Some("reboot -p".to_string()),
+            "启动应用" => {
+                let window = web_sys::window().expect("window should be available");
+                match window.prompt_with_message("请输入要启动的应用包名 (如 com.example.app):") {
+                    Ok(Some(pkg)) if !pkg.trim().is_empty() => {
+                        Some(format!("monkey -p {} -c android.intent.category.LAUNCHER 1", pkg.trim()))
+                    }
+                    _ => {
+                        cmd_output.set("[启动应用] 已取消或包名为空".to_string());
+                        return;
+                    }
+                }
+            }
+            "停止应用" => {
+                let window = web_sys::window().expect("window should be available");
+                match window.prompt_with_message("请输入要停止的应用包名 (如 com.example.app):") {
+                    Ok(Some(pkg)) if !pkg.trim().is_empty() => {
+                        Some(format!("am force-stop {}", pkg.trim()))
+                    }
+                    _ => {
+                        cmd_output.set("[停止应用] 已取消或包名为空".to_string());
+                        return;
+                    }
+                }
+            }
+            _ => None,
+        };
+        if let Some(cmd) = cmd {
+            cmd_output.set(format!("正在执行: {} ...", cmd));
+            spawn(async move {
+                match execute_command(&cmd).await {
+                    Ok(result) => {
+                        cmd_output.set(format!("[{}] 执行成功:\n{}", label, result));
+                    }
+                    Err(e) => {
+                        cmd_output.set(format!("[{}] 执行失败: {}", label, e));
+                    }
+                }
+            });
+        }
+    };
 
     let start_mirror = move |_| {
         is_connected.set(true);
@@ -137,11 +188,11 @@ pub fn MirrorPage() -> Element {
                             }
                         }
                         div { class: "grid grid-cols-5 gap-1.5",
-                            AdbCommandCard { label: "唤醒" }
-                            AdbCommandCard { label: "息屏" }
-                            AdbCommandCard { label: "解锁" }
-                            AdbCommandCard { label: "Home" }
-                            AdbCommandCard { label: "返回" }
+                            AdbCommandCard { label: "唤醒", onclick: move |_| exec_adb("唤醒") }
+                            AdbCommandCard { label: "息屏", onclick: move |_| exec_adb("息屏") }
+                            AdbCommandCard { label: "解锁", onclick: move |_| exec_adb("解锁") }
+                            AdbCommandCard { label: "Home", onclick: move |_| exec_adb("Home") }
+                            AdbCommandCard { label: "返回", onclick: move |_| exec_adb("返回") }
                         }
                     }
                 }
@@ -215,7 +266,7 @@ pub fn MirrorPage() -> Element {
                             span { class: "text-sm font-semibold text-[var(--ds-text)]", "命令输出" }
                         }
                         div { class: "min-h-[100px] max-h-[200px] overflow-y-auto p-2.5 bg-[var(--ds-bg)] border border-[var(--ds-border)] rounded text-xs font-mono text-[var(--ds-text-secondary)] whitespace-pre-wrap break-all",
-                            "等待执行命令..."
+                            "{cmd_output.read()}"
                         }
                     }
                 }
@@ -230,8 +281,8 @@ pub fn MirrorPage() -> Element {
                                 span { class: "text-sm font-semibold text-[var(--ds-text)]", "应用管理" }
                             }
                             div { class: "grid grid-cols-2 gap-1.5",
-                                DeviceToolCard { label: "启动应用", icon: "start" }
-                                DeviceToolCard { label: "停止应用", icon: "stop" }
+                                DeviceToolCard { label: "启动应用", icon: "start", onclick: move |_| exec_adb("启动应用") }
+                                DeviceToolCard { label: "停止应用", icon: "stop", onclick: move |_| exec_adb("停止应用") }
                             }
                         }
 
@@ -243,8 +294,8 @@ pub fn MirrorPage() -> Element {
                                 span { class: "text-sm font-semibold text-[var(--ds-text)]", "系统操作" }
                             }
                             div { class: "grid grid-cols-2 gap-1.5",
-                                DeviceToolCard { label: "重启设备", icon: "reboot" }
-                                DeviceToolCard { label: "关闭设备", icon: "shutdown" }
+                                DeviceToolCard { label: "重启设备", icon: "reboot", onclick: move |_| exec_adb("重启设备") }
+                                DeviceToolCard { label: "关闭设备", icon: "shutdown", onclick: move |_| exec_adb("关闭设备") }
                             }
                         }
                     }
@@ -270,11 +321,11 @@ pub fn MirrorPage() -> Element {
                         }
                     }
                     div { class: "grid grid-cols-5 gap-1.5",
-                        AdbCommandCard { label: "唤醒" }
-                        AdbCommandCard { label: "息屏" }
-                        AdbCommandCard { label: "解锁" }
-                        AdbCommandCard { label: "Home" }
-                        AdbCommandCard { label: "返回" }
+                        AdbCommandCard { label: "唤醒", onclick: move |_| exec_adb("唤醒") }
+                        AdbCommandCard { label: "息屏", onclick: move |_| exec_adb("息屏") }
+                        AdbCommandCard { label: "解锁", onclick: move |_| exec_adb("解锁") }
+                        AdbCommandCard { label: "Home", onclick: move |_| exec_adb("Home") }
+                        AdbCommandCard { label: "返回", onclick: move |_| exec_adb("返回") }
                     }
                 }
 
@@ -416,6 +467,7 @@ fn DeviceInfoItem(props: DeviceInfoItemProps) -> Element {
 #[derive(Props, PartialEq, Clone)]
 struct AdbCommandCardProps {
     label: &'static str,
+    onclick: EventHandler<()>,
 }
 
 #[component]
@@ -423,6 +475,7 @@ fn AdbCommandCard(props: AdbCommandCardProps) -> Element {
     rsx! {
         button {
             class: "flex items-center justify-center gap-1.5 px-2 py-2 bg-[var(--ds-surface)] border border-[var(--ds-border)] rounded cursor-pointer text-[11px] text-[var(--ds-text-secondary)] transition-all hover:bg-[var(--ds-blue-light)] hover:border-[var(--ds-blue)] hover:text-[var(--ds-blue)] active:scale-95",
+            onclick: move |_| props.onclick.call(()),
             "{props.label}"
         }
     }
@@ -432,6 +485,7 @@ fn AdbCommandCard(props: AdbCommandCardProps) -> Element {
 struct DeviceToolCardProps {
     label: &'static str,
     icon: &'static str,
+    onclick: EventHandler<()>,
 }
 
 #[component]
@@ -439,6 +493,7 @@ fn DeviceToolCard(props: DeviceToolCardProps) -> Element {
     rsx! {
         button {
             class: "flex flex-col items-center gap-1 px-2 py-2.5 bg-[var(--ds-surface)] border border-[var(--ds-border)] rounded cursor-pointer text-[10px] text-[var(--ds-text-secondary)] transition-all hover:bg-[var(--ds-blue-light)] hover:border-[var(--ds-blue)] hover:text-[var(--ds-blue)] active:scale-95",
+            onclick: move |_| props.onclick.call(()),
             DeviceToolIcon { icon: props.icon },
             "{props.label}"
         }

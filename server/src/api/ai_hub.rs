@@ -171,7 +171,8 @@ pub struct PresetReq {
 
 fn presets_data() -> Vec<Preset> {
     // 同步读取，供 AI 模块调用
-    std::fs::read(PRESETS_FILE)
+    let config = get_config();
+    std::fs::read(&config.presets_file)
         .ok()
         .and_then(|d| serde_json::from_slice(&d).ok())
         .unwrap_or_default()
@@ -182,12 +183,14 @@ pub fn get_active_presets() -> Vec<Preset> {
 }
 
 pub async fn list_presets() -> Json<ApiResponse<Vec<Preset>>> {
-    let presets: Vec<Preset> = read_json_file(PRESETS_FILE).await.unwrap_or_default();
+    let config = get_config();
+    let presets: Vec<Preset> = read_json_file(&config.presets_file).await.unwrap_or_default();
     Json(ApiResponse::ok(presets))
 }
 
 pub async fn save_preset(Json(req): Json<PresetReq>) -> Json<ApiResponse<Preset>> {
-    let mut presets: Vec<Preset> = read_json_file(PRESETS_FILE).await.unwrap_or_default();
+    let config = get_config();
+    let mut presets: Vec<Preset> = read_json_file(&config.presets_file).await.unwrap_or_default();
     let preset = Preset {
         id: gen_id(),
         name: req.name,
@@ -196,7 +199,7 @@ pub async fn save_preset(Json(req): Json<PresetReq>) -> Json<ApiResponse<Preset>
         enabled: req.enabled.unwrap_or(false),
     };
     presets.push(preset.clone());
-    match write_json_file(PRESETS_FILE, &presets).await {
+    match write_json_file(&config.presets_file, &presets).await {
         Ok(()) => Json(ApiResponse::ok(preset)),
         Err(e) => Json(ApiResponse::err(&format!("保存失败: {}", e))),
     }
@@ -206,7 +209,8 @@ pub async fn update_preset(
     Path(id): Path<String>,
     Json(req): Json<PresetReq>,
 ) -> Json<ApiResponse<Preset>> {
-    let mut presets: Vec<Preset> = read_json_file(PRESETS_FILE).await.unwrap_or_default();
+    let config = get_config();
+    let mut presets: Vec<Preset> = read_json_file(&config.presets_file).await.unwrap_or_default();
     if let Some(p) = presets.iter_mut().find(|p| p.id == id) {
         p.name = req.name;
         p.description = req.description.unwrap_or_default();
@@ -215,7 +219,7 @@ pub async fn update_preset(
             p.enabled = enabled;
         }
         let updated = p.clone();
-        match write_json_file(PRESETS_FILE, &presets).await {
+        match write_json_file(&config.presets_file, &presets).await {
             Ok(()) => return Json(ApiResponse::ok(updated)),
             Err(e) => return Json(ApiResponse::err(&format!("保存失败: {}", e))),
         }
@@ -224,13 +228,14 @@ pub async fn update_preset(
 }
 
 pub async fn delete_preset(Path(id): Path<String>) -> Json<ApiResponse<String>> {
-    let mut presets: Vec<Preset> = read_json_file(PRESETS_FILE).await.unwrap_or_default();
+    let config = get_config();
+    let mut presets: Vec<Preset> = read_json_file(&config.presets_file).await.unwrap_or_default();
     let before = presets.len();
     presets.retain(|p| p.id != id);
     if presets.len() == before {
         return Json(ApiResponse::err("预设不存在"));
     }
-    match write_json_file(PRESETS_FILE, &presets).await {
+    match write_json_file(&config.presets_file, &presets).await {
         Ok(()) => Json(ApiResponse::ok("已删除".to_string())),
         Err(e) => Json(ApiResponse::err(&format!("删除失败: {}", e))),
     }
@@ -312,7 +317,8 @@ pub fn get_all_memories_sync() -> Vec<Memory> {
 }
 
 pub async fn list_memories(Query(q): Query<MemoryQuery>) -> Json<ApiResponse<Vec<Memory>>> {
-    let mut items: Vec<Memory> = list_json_dir(MEMORY_DIR).await;
+    let config = get_config();
+    let mut items: Vec<Memory> = list_json_dir(&config.memory_dir).await;
 
     // 默认不显示归档记忆
     if !q.include_archived.unwrap_or(false) {
@@ -339,7 +345,8 @@ pub async fn list_memories(Query(q): Query<MemoryQuery>) -> Json<ApiResponse<Vec
 }
 
 pub async fn create_memory(Json(req): Json<MemoryReq>) -> Json<ApiResponse<Memory>> {
-    ensure_dir(MEMORY_DIR).await;
+    let config = get_config();
+    ensure_dir(&config.memory_dir).await;
     let now = now_ms();
     let mem = Memory {
         id: gen_id(),
@@ -591,7 +598,8 @@ pub async fn archive_stale_memories(days_threshold: i64) {
     let now = now_ms();
     let threshold_ms = days_threshold * 86_400_000;
 
-    let mut memories: Vec<Memory> = list_json_dir(MEMORY_DIR).await;
+    let config = get_config();
+    let mut memories: Vec<Memory> = list_json_dir(&config.memory_dir).await;
     let mut archived_count = 0;
 
     for mem in &mut memories {
@@ -599,7 +607,7 @@ pub async fn archive_stale_memories(days_threshold: i64) {
             mem.archived = true;
             mem.updated_at = now;
             if let Err(e) = write_json_file(&memory_path(&mem.id), mem).await {
-                eprintln!("[记忆清理] 归档失败 {}: {}", mem.id, e);
+                tracing::warn!("[记忆清理] 归档失败 {}: {}", mem.id, e);
             } else {
                 archived_count += 1;
             }
@@ -607,7 +615,7 @@ pub async fn archive_stale_memories(days_threshold: i64) {
     }
 
     if archived_count > 0 {
-        println!("[记忆清理] 已归档 {} 条过期记忆", archived_count);
+        tracing::info!("[记忆清理] 已归档 {} 条过期记忆", archived_count);
     }
 }
 
@@ -659,8 +667,9 @@ fn skill_path(id: &str) -> String {
 /// 获取所有已启用的Skill（同步，供AI模块调用）
 #[allow(dead_code)]
 pub fn get_enabled_skills_sync() -> Vec<Skill> {
+    let config = get_config();
     let mut items = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(SKILLS_DIR) {
+    if let Ok(entries) = std::fs::read_dir(&config.skills_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().is_some_and(|e| e == "json") {
@@ -678,13 +687,15 @@ pub fn get_enabled_skills_sync() -> Vec<Skill> {
 }
 
 pub async fn list_skills() -> Json<ApiResponse<Vec<Skill>>> {
-    let mut items: Vec<Skill> = list_json_dir(SKILLS_DIR).await;
+    let config = get_config();
+    let mut items: Vec<Skill> = list_json_dir(&config.skills_dir).await;
     items.sort_by(|a, b| a.name.cmp(&b.name));
     Json(ApiResponse::ok(items))
 }
 
 pub async fn create_skill(Json(req): Json<SkillReq>) -> Json<ApiResponse<Skill>> {
-    ensure_dir(SKILLS_DIR).await;
+    let config = get_config();
+    ensure_dir(&config.skills_dir).await;
     let skill = Skill {
         id: gen_id(),
         name: req.name,
@@ -775,13 +786,15 @@ fn saved_item_path(id: &str) -> String {
 }
 
 pub async fn list_saved_items() -> Json<ApiResponse<Vec<SavedItem>>> {
-    let mut items: Vec<SavedItem> = list_json_dir(SAVED_ITEMS_DIR).await;
+    let config = get_config();
+    let mut items: Vec<SavedItem> = list_json_dir(&config.saved_items_dir).await;
     items.sort_by_key(|b| std::cmp::Reverse(b.updated_at));
     Json(ApiResponse::ok(items))
 }
 
 pub async fn create_saved_item(Json(req): Json<SavedItemReq>) -> Json<ApiResponse<SavedItem>> {
-    ensure_dir(SAVED_ITEMS_DIR).await;
+    let config = get_config();
+    ensure_dir(&config.saved_items_dir).await;
     let now = now_ms();
     let item = SavedItem {
         id: gen_id(),
@@ -865,8 +878,9 @@ fn project_path(id: &str) -> String {
 
 /// 获取所有已启用且自动注入的项目（同步，供AI模块调用）
 pub fn get_active_projects_sync() -> Vec<Project> {
+    let config = get_config();
     let mut items = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(PROJECTS_DIR) {
+    if let Ok(entries) = std::fs::read_dir(&config.projects_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().is_some_and(|e| e == "json") {
@@ -884,13 +898,15 @@ pub fn get_active_projects_sync() -> Vec<Project> {
 }
 
 pub async fn list_projects() -> Json<ApiResponse<Vec<Project>>> {
-    let mut items: Vec<Project> = list_json_dir(PROJECTS_DIR).await;
+    let config = get_config();
+    let mut items: Vec<Project> = list_json_dir(&config.projects_dir).await;
     items.sort_by_key(|b| std::cmp::Reverse(b.updated_at));
     Json(ApiResponse::ok(items))
 }
 
 pub async fn create_project(Json(req): Json<ProjectReq>) -> Json<ApiResponse<Project>> {
-    ensure_dir(PROJECTS_DIR).await;
+    let config = get_config();
+    ensure_dir(&config.projects_dir).await;
     let now = now_ms();
     let proj = Project {
         id: gen_id(),
@@ -990,8 +1006,9 @@ fn mcp_path(id: &str) -> String {
 /// 获取所有已启用的MCP服务器（同步）
 #[allow(dead_code)]
 pub fn get_enabled_mcp_servers_sync() -> Vec<McpServer> {
+    let config = get_config();
     let mut items = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(MCP_DIR) {
+    if let Ok(entries) = std::fs::read_dir(&config.mcp_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().is_some_and(|e| e == "json") {
@@ -1009,13 +1026,15 @@ pub fn get_enabled_mcp_servers_sync() -> Vec<McpServer> {
 }
 
 pub async fn list_mcp_servers() -> Json<ApiResponse<Vec<McpServer>>> {
-    let mut items: Vec<McpServer> = list_json_dir(MCP_DIR).await;
+    let config = get_config();
+    let mut items: Vec<McpServer> = list_json_dir(&config.mcp_dir).await;
     items.sort_by(|a, b| a.name.cmp(&b.name));
     Json(ApiResponse::ok(items))
 }
 
 pub async fn create_mcp_server(Json(req): Json<McpServerReq>) -> Json<ApiResponse<McpServer>> {
-    ensure_dir(MCP_DIR).await;
+    let config = get_config();
+    ensure_dir(&config.mcp_dir).await;
     let server = McpServer {
         id: gen_id(),
         name: req.name,
@@ -1205,17 +1224,17 @@ impl Default for PromptSettings {
     }
 }
 
-const PROMPT_SETTINGS_FILE: &str = "/sdcard/TaskMod/prompt_settings.json";
-
 pub fn get_prompt_settings_sync() -> PromptSettings {
-    std::fs::read(PROMPT_SETTINGS_FILE)
+    let config = get_config();
+    std::fs::read(&config.prompt_settings_file)
         .ok()
         .and_then(|d| serde_json::from_slice(&d).ok())
         .unwrap_or_default()
 }
 
 pub async fn get_prompt_settings() -> Json<ApiResponse<PromptSettings>> {
-    let settings: PromptSettings = read_json_file(PROMPT_SETTINGS_FILE)
+    let config = get_config();
+    let settings: PromptSettings = read_json_file(&config.prompt_settings_file)
         .await
         .unwrap_or_default();
     Json(ApiResponse::ok(settings))
@@ -1224,7 +1243,8 @@ pub async fn get_prompt_settings() -> Json<ApiResponse<PromptSettings>> {
 pub async fn update_prompt_settings(
     Json(req): Json<PromptSettings>,
 ) -> Json<ApiResponse<PromptSettings>> {
-    match write_json_file(PROMPT_SETTINGS_FILE, &req).await {
+    let config = get_config();
+    match write_json_file(&config.prompt_settings_file, &req).await {
         Ok(()) => Json(ApiResponse::ok(req)),
         Err(e) => Json(ApiResponse::err(&format!("保存失败: {}", e))),
     }
@@ -1242,8 +1262,6 @@ pub struct Scenario {
     #[serde(default)]
     pub built_in: bool,
 }
-
-const SCENARIOS_FILE: &str = "/sdcard/TaskMod/scenarios.json";
 
 fn default_scenarios() -> Vec<Scenario> {
     vec![
@@ -1286,7 +1304,8 @@ fn default_scenarios() -> Vec<Scenario> {
 }
 
 fn load_scenarios_sync() -> Vec<Scenario> {
-    std::fs::read(SCENARIOS_FILE)
+    let config = get_config();
+    std::fs::read(&config.scenarios_file)
         .ok()
         .and_then(|d| serde_json::from_slice(&d).ok())
         .unwrap_or_else(default_scenarios)
@@ -1322,7 +1341,8 @@ pub async fn create_scenario(Json(req): Json<ScenarioReq>) -> Json<ApiResponse<S
         built_in: false,
     };
     scenarios.push(scenario.clone());
-    match write_json_file(SCENARIOS_FILE, &scenarios).await {
+    let config = get_config();
+    match write_json_file(&config.scenarios_file, &scenarios).await {
         Ok(()) => Json(ApiResponse::ok(scenario)),
         Err(e) => Json(ApiResponse::err(&format!("保存失败: {}", e))),
     }
@@ -1340,7 +1360,8 @@ pub async fn update_scenario(
             s.enabled = enabled;
         }
         let updated = s.clone();
-        match write_json_file(SCENARIOS_FILE, &scenarios).await {
+        let config = get_config();
+        match write_json_file(&config.scenarios_file, &scenarios).await {
             Ok(()) => return Json(ApiResponse::ok(updated)),
             Err(e) => return Json(ApiResponse::err(&format!("保存失败: {}", e))),
         }
@@ -1355,7 +1376,8 @@ pub async fn delete_scenario(Path(id): Path<String>) -> Json<ApiResponse<String>
     if scenarios.len() == before {
         return Json(ApiResponse::err("场景不存在或为内置场景"));
     }
-    match write_json_file(SCENARIOS_FILE, &scenarios).await {
+    let config = get_config();
+    match write_json_file(&config.scenarios_file, &scenarios).await {
         Ok(()) => Json(ApiResponse::ok("已删除".to_string())),
         Err(e) => Json(ApiResponse::err(&format!("删除失败: {}", e))),
     }
@@ -1409,8 +1431,8 @@ pub struct UploadImageReq {
 }
 
 pub async fn upload_image(Json(req): Json<UploadImageReq>) -> Json<serde_json::Value> {
-    use crate::config::UPLOAD_DIR;
-    let _ = fs::create_dir_all(UPLOAD_DIR).await;
+    let config = get_config();
+    let _ = fs::create_dir_all(&config.upload_dir).await;
     let id = gen_id();
     let ext = match req.mime_type.as_deref() {
         Some("image/png") => "png",
@@ -1419,7 +1441,7 @@ pub async fn upload_image(Json(req): Json<UploadImageReq>) -> Json<serde_json::V
         Some("image/webp") => "webp",
         _ => "png",
     };
-    let path = format!("{}/{}.{}", UPLOAD_DIR, id, ext);
+    let path = format!("{}/{}.{}", config.upload_dir, id, ext);
     match base64::engine::general_purpose::STANDARD.decode(&req.image_base64) {
         Ok(bytes) => {
             if fs::write(&path, &bytes).await.is_ok() {
@@ -1435,9 +1457,9 @@ pub async fn upload_image(Json(req): Json<UploadImageReq>) -> Json<serde_json::V
 }
 
 pub async fn get_image(Path(id): Path<String>) -> impl axum::response::IntoResponse {
-    use crate::config::UPLOAD_DIR;
+    let config = get_config();
     for ext in &["png", "jpg", "gif", "webp"] {
-        let path = format!("{}/{}.{}", UPLOAD_DIR, id, ext);
+        let path = format!("{}/{}.{}", config.upload_dir, id, ext);
         if let Ok(bytes) = fs::read(&path).await {
             let mime = match *ext {
                 "png" => "image/png",
@@ -1565,7 +1587,8 @@ pub async fn list_mcp_history(
         .unwrap_or(50);
     let server_id = params.get("server_id");
 
-    if let Ok(mut entries) = fs::read_dir(MCP_HISTORY_DIR).await {
+    let config = get_config();
+    if let Ok(mut entries) = fs::read_dir(&config.mcp_history_dir).await {
         let mut calls: Vec<McpToolCall> = vec![];
         while let Ok(Some(entry)) = entries.next_entry().await {
             let path = entry.path();
@@ -1588,15 +1611,17 @@ pub async fn list_mcp_history(
 }
 
 pub async fn record_mcp_tool_call(Json(call): Json<McpToolCall>) -> Json<serde_json::Value> {
-    let _ = fs::create_dir_all(MCP_HISTORY_DIR).await;
+    let config = get_config();
+    let _ = fs::create_dir_all(&config.mcp_history_dir).await;
     let path = mcp_history_path(&call.id);
     let _ = write_json_file(&path, &call).await;
     Json(json!({"ok": true}))
 }
 
 pub async fn clear_mcp_history() -> Json<serde_json::Value> {
-    let _ = fs::create_dir_all(MCP_HISTORY_DIR).await;
-    if let Ok(mut entries) = fs::read_dir(MCP_HISTORY_DIR).await {
+    let config = get_config();
+    let _ = fs::create_dir_all(&config.mcp_history_dir).await;
+    if let Ok(mut entries) = fs::read_dir(&config.mcp_history_dir).await {
         while let Ok(Some(entry)) = entries.next_entry().await {
             let _ = fs::remove_file(entry.path()).await;
         }
@@ -1641,7 +1666,8 @@ pub struct RecordUsageReq {
 }
 
 pub async fn get_usage_stats() -> Json<serde_json::Value> {
-    let stats: UsageStats = if let Ok(data) = fs::read_to_string(USAGE_STATS_FILE).await {
+    let config = get_config();
+    let stats: UsageStats = if let Ok(data) = fs::read_to_string(&config.usage_stats_file).await {
         serde_json::from_str(&data).unwrap_or_default()
     } else {
         UsageStats::default()
@@ -1650,7 +1676,8 @@ pub async fn get_usage_stats() -> Json<serde_json::Value> {
 }
 
 pub async fn record_usage(Json(req): Json<RecordUsageReq>) -> Json<serde_json::Value> {
-    let mut stats: UsageStats = if let Ok(data) = fs::read_to_string(USAGE_STATS_FILE).await {
+    let config = get_config();
+    let mut stats: UsageStats = if let Ok(data) = fs::read_to_string(&config.usage_stats_file).await {
         serde_json::from_str(&data).unwrap_or_default()
     } else {
         UsageStats::default()
@@ -1675,7 +1702,7 @@ pub async fn record_usage(Json(req): Json<RecordUsageReq>) -> Json<serde_json::V
     daily.input_tokens += req.input_tokens;
     daily.output_tokens += req.output_tokens;
 
-    let _ = write_json_file(USAGE_STATS_FILE, &stats).await;
+    let _ = write_json_file(&config.usage_stats_file, &stats).await;
     Json(json!({"ok": true}))
 }
 
@@ -1703,24 +1730,25 @@ pub fn generate_title_from_message(message: &str) -> String {
 // ==================== 统一初始化 ====================
 
 pub async fn init_dirs() {
+    let config = get_config();
     for dir in &[
-        SKILLS_DIR,
-        MCP_DIR,
-        MEMORY_DIR,
-        PROJECTS_DIR,
-        CHAT_HISTORY_DIR,
-        SAVED_ITEMS_DIR,
-        MCP_HISTORY_DIR,
-        UPLOAD_DIR,
+        &config.skills_dir,
+        &config.mcp_dir,
+        &config.memory_dir,
+        &config.projects_dir,
+        &config.chat_history_dir,
+        &config.saved_items_dir,
+        &config.mcp_history_dir,
+        &config.upload_dir,
     ] {
         let _ = fs::create_dir_all(dir).await;
     }
     // 初始化预设文件
-    if fs::metadata(PRESETS_FILE).await.is_err() {
-        let _ = write_json_file(PRESETS_FILE, &Vec::<Preset>::new()).await;
+    if fs::metadata(&config.presets_file).await.is_err() {
+        let _ = write_json_file(&config.presets_file, &Vec::<Preset>::new()).await;
     }
     // 初始化使用量统计
-    if fs::metadata(USAGE_STATS_FILE).await.is_err() {
-        let _ = write_json_file(USAGE_STATS_FILE, &UsageStats::default()).await;
+    if fs::metadata(&config.usage_stats_file).await.is_err() {
+        let _ = write_json_file(&config.usage_stats_file, &UsageStats::default()).await;
     }
 }

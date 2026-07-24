@@ -172,7 +172,7 @@ async fn send_email_inner(
                     SinglePart::builder()
                         .header(
                             lettre::message::header::ContentType::parse("application/octet-stream")
-                                .unwrap(),
+                                .expect("application/octet-stream should be a valid MIME type"),
                         )
                         .header(lettre::message::header::ContentDisposition::attachment(
                             filename,

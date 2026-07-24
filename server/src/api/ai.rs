@@ -1022,9 +1022,11 @@ pub fn get_ai_provider(id: &str) -> Option<AiProvider> {
 fn extract_images(text: &str) -> Vec<String> {
     lazy_static::lazy_static! {
         static ref RE_MD_IMAGE: regex::Regex =
-            regex::Regex::new(r"!\[.*?\]\((https?://[^\)]+)\)").unwrap();
+            regex::Regex::new(r"!\[.*?\]\((https?://[^\)]+)\)")
+                .expect("Markdown image regex pattern should be valid");
         static ref RE_BASE64: regex::Regex =
-            regex::Regex::new(r#"data:image/[a-zA-Z]+;base64,[^\s"'"]+"#).unwrap();
+            regex::Regex::new(r#"data:image/[a-zA-Z]+;base64,[^\s"'"]+"#)
+                .expect("Base64 image regex pattern should be valid");
     }
 
     let mut images = Vec::new();
