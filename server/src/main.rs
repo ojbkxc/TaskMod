@@ -199,7 +199,8 @@ fn handle_event(event: utils::event_monitor::SystemEvent) {
         if trigger_matches {
             tracing::info!(
                 "[事件触发] 工作流: {} 被事件: {:?} 触发",
-                workflow.name, event
+                workflow.name,
+                event
             );
             let wf = workflow.clone();
             let ctx = context.clone();

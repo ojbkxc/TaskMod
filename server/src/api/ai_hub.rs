@@ -184,13 +184,17 @@ pub fn get_active_presets() -> Vec<Preset> {
 
 pub async fn list_presets() -> Json<ApiResponse<Vec<Preset>>> {
     let config = get_config();
-    let presets: Vec<Preset> = read_json_file(&config.presets_file).await.unwrap_or_default();
+    let presets: Vec<Preset> = read_json_file(&config.presets_file)
+        .await
+        .unwrap_or_default();
     Json(ApiResponse::ok(presets))
 }
 
 pub async fn save_preset(Json(req): Json<PresetReq>) -> Json<ApiResponse<Preset>> {
     let config = get_config();
-    let mut presets: Vec<Preset> = read_json_file(&config.presets_file).await.unwrap_or_default();
+    let mut presets: Vec<Preset> = read_json_file(&config.presets_file)
+        .await
+        .unwrap_or_default();
     let preset = Preset {
         id: gen_id(),
         name: req.name,
@@ -210,7 +214,9 @@ pub async fn update_preset(
     Json(req): Json<PresetReq>,
 ) -> Json<ApiResponse<Preset>> {
     let config = get_config();
-    let mut presets: Vec<Preset> = read_json_file(&config.presets_file).await.unwrap_or_default();
+    let mut presets: Vec<Preset> = read_json_file(&config.presets_file)
+        .await
+        .unwrap_or_default();
     if let Some(p) = presets.iter_mut().find(|p| p.id == id) {
         p.name = req.name;
         p.description = req.description.unwrap_or_default();
@@ -229,7 +235,9 @@ pub async fn update_preset(
 
 pub async fn delete_preset(Path(id): Path<String>) -> Json<ApiResponse<String>> {
     let config = get_config();
-    let mut presets: Vec<Preset> = read_json_file(&config.presets_file).await.unwrap_or_default();
+    let mut presets: Vec<Preset> = read_json_file(&config.presets_file)
+        .await
+        .unwrap_or_default();
     let before = presets.len();
     presets.retain(|p| p.id != id);
     if presets.len() == before {
@@ -1677,7 +1685,8 @@ pub async fn get_usage_stats() -> Json<serde_json::Value> {
 
 pub async fn record_usage(Json(req): Json<RecordUsageReq>) -> Json<serde_json::Value> {
     let config = get_config();
-    let mut stats: UsageStats = if let Ok(data) = fs::read_to_string(&config.usage_stats_file).await {
+    let mut stats: UsageStats = if let Ok(data) = fs::read_to_string(&config.usage_stats_file).await
+    {
         serde_json::from_str(&data).unwrap_or_default()
     } else {
         UsageStats::default()
