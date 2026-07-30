@@ -359,9 +359,10 @@ pub async fn upload_file(mut multipart: Multipart) -> Json<ApiResponse<String>> 
     let mut file_data: Option<Bytes> = None;
 
     // 先收集所有字段；不要用 unwrap_or(None) 吞掉错误，否则超限/中断会被静默成"未收到文件"
-    while let Some(field_result) = multipart.next_field().await {
-        let field = match field_result {
-            Ok(f) => f,
+    loop {
+        let field = match multipart.next_field().await {
+            Ok(Some(f)) => f,
+            Ok(None) => break,
             Err(e) => return Json(ApiResponse::err(&format!("读取上传字段失败: {}", e))),
         };
         let name = field.name().unwrap_or("").to_string();
