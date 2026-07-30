@@ -526,22 +526,30 @@
         const progress = document.getElementById('file-upload-progress');
         for (const file of files) {
             progress.innerHTML = '<p style="color:var(--ds-text-secondary);">正在上传: ' + file.name + ' (' + (file.size/1024).toFixed(1) + 'KB)...</p>';
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                const base64 = e.target.result.split(',')[1];
-                try {
-                    const res = await apiPost('/api/device/upload-file', { file_base64: base64, filename: file.name });
-                    if (res.success) {
-                        progress.innerHTML += '<p style="color:#28a745;">✓ ' + file.name + ' → ' + res.data + '</p>';
-                    } else {
-                        progress.innerHTML += '<p style="color:#dc3545;">✗ ' + file.name + ': ' + (res.message || '上传失败') + '</p>';
+            // 必须等待 onload 里的真正上传完成再处理下一个文件，
+            // 否则多文件进度/结果会交错错乱（原实现只用 setTimeout(500) 凑数）
+            await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const base64 = e.target.result.split(',')[1];
+                    try {
+                        const res = await apiPost('/api/device/upload-file', { file_base64: base64, filename: file.name });
+                        if (res.success) {
+                            progress.innerHTML += '<p style="color:#28a745;">✓ ' + file.name + ' → ' + res.data + '</p>';
+                        } else {
+                            progress.innerHTML += '<p style="color:#dc3545;">✗ ' + file.name + ': ' + (res.message || '上传失败') + '</p>';
+                        }
+                    } catch(err) {
+                        progress.innerHTML += '<p style="color:var(--ds-danger);">✗ ' + file.name + ': ' + err.message + '</p>';
                     }
-                } catch(err) {
-                    progress.innerHTML += '<p style="color:var(--ds-danger);">✗ ' + file.name + ': ' + err.message + '</p>';
-                }
-            };
-            reader.readAsDataURL(file);
-            await new Promise(r => setTimeout(r, 500));
+                    resolve();
+                };
+                reader.onerror = () => {
+                    progress.innerHTML += '<p style="color:var(--ds-danger);">✗ ' + file.name + ': 读取文件失败</p>';
+                    resolve();
+                };
+                reader.readAsDataURL(file);
+            });
         }
     }
 

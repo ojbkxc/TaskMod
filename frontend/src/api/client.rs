@@ -858,6 +858,136 @@ pub async fn list_files(path: &str) -> Result<Vec<serde_json::Value>, reqwest::E
     Ok(resp.data.unwrap_or_default())
 }
 
+/// 上传文件（multipart）。WASM 下 reqwest 不支持 multipart feature，
+/// 这里用 web_sys::FormData + 原生 fetch 实现，与后端 /api/files/upload 对接。
+///
+/// 成功返回 (目标路径, 提示消息)；失败返回错误。
+pub async fn upload_file(
+    dir: &str,
+    file_name: &str,
+    file_bytes: &[u8],
+) -> Result<(String, String), String> {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_futures::JsFuture;
+
+    let form = web_sys::FormData::new().map_err(|e| format!("创建 FormData 失败: {:?}", e))?;
+    form.append_with_str("dir", dir)
+        .map_err(|e| format!("写入 dir 字段失败: {:?}", e))?;
+
+    // 构造 Blob 并放入 file 字段
+    let mut blob_parts = js_sys::Array::new();
+    let u8arr = js_sys::Uint8Array::from(file_bytes);
+    blob_parts.push(&u8arr);
+    let blob = web_sys::Blob::new_with_u8_array_sequence(&blob_parts)
+        .map_err(|e| format!("创建 Blob 失败: {:?}", e))?;
+    form.append_with_blob_and_filename("file", &blob, file_name)
+        .map_err(|e| format!("写入 file 字段失败: {:?}", e))?;
+
+    let url = format!("{}/files/upload", API_BASE);
+    let mut opts = web_sys::RequestInit::new();
+    opts.method("POST");
+    opts.body(Some(&form));
+
+    let request = web_sys::Request::new_with_str_and_init(&url, &opts)
+        .map_err(|e| format!("构造请求失败: {:?}", e))?;
+
+    let resp_val =
+        JsFuture::from(web_sys::window().unwrap().fetch_with_request(&request))
+            .await
+            .map_err(|e| format!("fetch 失败: {:?}", e))?;
+    let resp: web_sys::Response = resp_val
+        .dyn_into()
+        .map_err(|e| format!("响应类型转换失败: {:?}", e))?;
+
+    let text = JsFuture::from(resp.text().unwrap())
+        .await
+        .map_err(|e| format!("读取响应文本失败: {:?}", e))?
+        .as_string()
+        .unwrap_or_default();
+
+    let parsed: ApiResponse<String> = serde_json::from_str(&text)
+        .map_err(|e| format!("解析响应失败: {} (原始: {})", e, text))?;
+
+    if parsed.success {
+        Ok((
+            parsed.data.unwrap_or_default(),
+            parsed.message.unwrap_or_else(|| "已上传".to_string()),
+        ))
+    } else {
+        Err(parsed.message.unwrap_or_else(|| "上传失败".to_string()))
+    }
+}
+
+/// 下载文件（返回文件字节）。WASM 下用原生 fetch 读取 blob。
+pub async fn download_file(path: &str) -> Result<Vec<u8>, String> {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_futures::JsFuture;
+
+    let url = format!("{}/files/download?path={}", API_BASE, path);
+    let resp_val = JsFuture::from(web_sys::window().unwrap().fetch_with_str(&url))
+        .await
+        .map_err(|e| format!("fetch 失败: {:?}", e))?;
+    let resp: web_sys::Response = resp_val
+        .dyn_into()
+        .map_err(|e| format!("响应类型转换失败: {:?}", e))?;
+
+    if !resp.ok() {
+        return Err(format!("下载失败: HTTP {}", resp.status()));
+    }
+
+    let blob = JsFuture::from(resp.blob().unwrap())
+        .await
+        .map_err(|e| format!("读取 blob 失败: {:?}", e))?;
+    let blob: web_sys::Blob = blob
+        .dyn_into()
+        .map_err(|e| format!("blob 类型转换失败: {:?}", e))?;
+
+    let buf = JsFuture::from(blob.array_buffer())
+        .await
+        .map_err(|e| format!("读取 array_buffer 失败: {:?}", e))?;
+    let u8arr = js_sys::Uint8Array::new(&buf);
+    Ok(u8arr.to_vec())
+}
+
+/// 删除文件/目录
+pub async fn delete_file(path: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/files/delete", API_BASE);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .json(&serde_json::json!({ "path": path }))
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+/// 创建目录
+pub async fn create_dir(path: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/files/mkdir", API_BASE);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .json(&serde_json::json!({ "path": path }))
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
+/// 重命名/移动
+pub async fn rename_file(from: &str, to: &str) -> Result<String, reqwest::Error> {
+    let url = format!("{}/files/rename", API_BASE);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .json(&serde_json::json!({ "from": from, "to": to }))
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
 pub async fn list_saved_items() -> Result<Vec<SavedItem>, reqwest::Error> {
     let url = format!("{}/ai/saved", API_BASE);
     let resp: ApiResponse<Vec<SavedItem>> = reqwest::get(&url).await?.json().await?;

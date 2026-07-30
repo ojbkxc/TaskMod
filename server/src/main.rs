@@ -1,4 +1,5 @@
 use axum::{
+    extract::DefaultBodyLimit,
     routing::{delete, get, post, put},
     Json, Router,
 };
@@ -6,6 +7,9 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
+
+/// 单次请求体上限：512MB（覆盖 axum 默认 2MB，保证大文件上传可用）
+const MAX_BODY_SIZE: usize = 512 * 1024 * 1024;
 
 use crate::config::get_listen_port;
 use crate::state::MirrorState;
@@ -559,7 +563,8 @@ async fn main() -> anyhow::Result<()> {
         // 隧道管理（守护进程）
         .merge(api::daemon::routes())
         .merge(mirror_routes)
-        .layer(CorsLayer::permissive());
+        .layer(CorsLayer::permissive())
+        .layer(DefaultBodyLimit::max(MAX_BODY_SIZE));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], listen_port));
     tracing::info!("TaskMod Web 管理服务已启动: http://0.0.0.0:{}", listen_port);
