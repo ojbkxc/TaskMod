@@ -254,7 +254,7 @@ async fn apply_tts_params(rate: f32, pitch: f32, volume: f32) {
 /// 广播协议（APK 端 TtsReceiver 监听）:
 /// - action: com.taskmod.app.TTS_SPEAK
 /// - extras: text(String 必填) / engine(String 可选) / language(String 可选)
-///           rate(Float 可选) / pitch(Float 可选) / volume(Float 可选)
+///   rate(Float 可选) / pitch(Float 可选) / volume(Float 可选)
 async fn exec_speak_via_apk(
     text: &str,
     engine: Option<&str>,
