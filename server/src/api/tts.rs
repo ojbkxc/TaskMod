@@ -559,12 +559,7 @@ pub async fn speak(Json(req): Json<TtsRequest>) -> Json<ApiResponse<String>> {
                 let ok =
                     exec_speak(sentence, engine_owned.as_deref(), language_owned.as_deref()).await;
                 if !ok {
-                    tracing::warn!(
-                        "[TTS] 第 {}/{} 句朗读失败: {}",
-                        i + 1,
-                        total,
-                        sentence
-                    );
+                    tracing::warn!("[TTS] 第 {}/{} 句朗读失败: {}", i + 1, total, sentence);
                     failed += 1;
                 }
             }
