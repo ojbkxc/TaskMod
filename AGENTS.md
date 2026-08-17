@@ -248,7 +248,7 @@ TaskMod/
 ## 4. 当前进度（截至 2026-08-17）
 
 ### ✅ 已完成
-- **v1.0.15 发版**：bump 三处版本号到 1.0.15 / versionCode 1000015（`server/Cargo.toml` + `module.prop` + `android/app/build.gradle`），commit `eb5dd70`，tag `v1.0.15` 已 push，触发 Build & Release (run 32014268222) + Build APK (run 32014268238) + CI (run 32014263189)，均 in_progress，待全绿后产出 TaskMod-1.0.15.zip + TaskMod-app-1.0.15.apk Release。
+- **v1.0.15 发版**：bump 三处版本号到 1.0.15 / versionCode 1000015（`server/Cargo.toml` + `module.prop` + `android/app/build.gradle`），commit `eb5dd70`，tag `v1.0.15` 已 push。Build & Release (run 32014268222) **success**，Release v1.0.15 已创建：TaskMod-1.0.15.zip (5.38 MB) + TaskMod-app-1.0.15.apk (7.09 MB)。CI (run 32014263189) success。附带修复 build-apk.yml（原手动 config.toml + cargo build 致 ring/openssl-sys 编译失败，改用 cargo-ndk 与 build.yml 一致，commit `c506ab7`，workflow_dispatch run 32015753734 success）。
 - **v1.0.14 TTS 原生调用借鉴 Agora**：用户反馈 TaskMod 的 shell 命令调用 TTS 失败，Agora 调用系统 TTS 成功。借鉴 Agora 的 `TtsManager.kt` 到 TaskMod APK 端：新建 `TtsManager.kt`（333 行，多引擎切换+看门狗 30s+诊断日志+init 重试+stale 回调防护+stripMarkdown+setLanguage 三级回退+主线程 speak+setPitch）+ `TtsReceiver.kt`（54 行，BroadcastReceiver 接收 TTS_SPEAK/TTS_STOP/TTS_INIT）；修改 `AndroidManifest.xml`（注册 TtsReceiver + `<queries>` 声明 TTS_SERVICE）+ `TaskModApp.kt`（onCreate 调 TtsManager.init）；修改 `server/src/api/tts.rs`（新增 `exec_speak_via_apk` 函数，`exec_speak` 优先 `am broadcast` 调 APK，失败 fallback shell 命令）。CI 全绿验证通过（run 32013772236, commit 46a6e54）。
 
 ### 🔲 未开始 / 进行中
@@ -291,7 +291,7 @@ TaskMod/
 
 ## 6. 下一步任务（按优先级，逐项勾选）
 
-- [ ] **验证 v1.0.15 Build & Release 全绿**：监控 run 32014268222 (Build & Release) + 32014268238 (Build APK) + 32014263189 (CI) 至 completed/conclusion=success，确认 GitHub Release v1.0.15 产出 TaskMod-1.0.15.zip + TaskMod-app-1.0.15.apk。
+- [x] **验证 v1.0.15 Build & Release 全绿**：Build & Release (run 32014268222) success，Release v1.0.15 已产出 TaskMod-1.0.15.zip (5.38 MB) + TaskMod-app-1.0.15.apk (7.09 MB)。CI (run 32014263189) success。build-apk.yml 修复后 workflow_dispatch run 32015753734 success。
 - [ ] **验证 v1.0.14 TTS 原生调用**：CI 已全绿（run 32013772236），待设备实测 TTS 是否成功（Rust 服务端优先调 APK 广播，APK 内 TtsManager 直接用 Android TextToSpeech API）。
 - [ ] （按用户后续需求补充）
 
@@ -378,6 +378,7 @@ curl -X POST http://设备IP:9527/api/tts/stop
 
 ## 9. 变更日志（追加新行，最新在上）
 
+- **2026-08-17**：修复 build-apk.yml 的 "Build Rust server for Android (arm64)" 步骤。原用手动 `~/.cargo/config.toml` + `cargo build`，ring 的 cc-rs 找不到 `aarch64-linux-android-clang`（不带 API level）→ 加 CC/CXX/AR env（commit `a926a6c`）后 openssl-sys vendored 又因缺 RANLIB 等失败 → 最终改用 `cargo-ndk`（与 build.yml build-server job 一致，commit `c506ab7`），workflow_dispatch 验证 run 32015753734 **success**。现 build-apk.yml 与 build.yml 走同一 cargo-ndk 路径，CI 全绿。
 - **2026-08-17**：发版 v1.0.15。bump 三处版本号（`server/Cargo.toml` version 1.0.14→1.0.15；`module.prop` version 1.0.14→1.0.15 / versionCode 1000014→1000015；`android/app/build.gradle` versionCode 1→1000015 / versionName "1.0.0"→"1.0.15"）。commit `eb5dd70` "chore: bump version to v1.0.15"，tag `v1.0.15` 已 push。触发 Build & Release (run 32014268222) + Build APK (run 32014268238) + CI (run 32014263189)，均 in_progress。待全绿后产出 Release。下一步：监控三 run 至 success，确认 Release 产物。
 - **2026-08-17**：借鉴 Agora 的 TTS 调用方式到 TaskMod。新建 `TtsManager.kt`（333 行，多引擎切换+看门狗+诊断日志+init 重试+stale 回调防护+stripMarkdown+setLanguage 三级回退+主线程 speak）+ `TtsReceiver.kt`（54 行，BroadcastReceiver）；修改 `AndroidManifest.xml`（注册 TtsReceiver + `<queries>` TTS_SERVICE）+ `TaskModApp.kt`（onCreate 调 TtsManager.init）+ `server/src/api/tts.rs`（新增 `exec_speak_via_apk`，`exec_speak` 优先广播调 APK，fallback shell）。待 CI 验证。下一步：push 确认 CI 全绿，设备测试 TTS。
 - **2026-08-17**：创建 `AGENTS.md` 代理工作指引，借鉴 Agora 项目结构，适配 TaskMod 多语言技术栈（Rust + Dioxus + Kotlin + Magisk）。
