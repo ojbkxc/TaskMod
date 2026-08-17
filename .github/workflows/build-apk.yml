@@ -84,24 +84,14 @@ jobs:
 
           echo "Updated to $TAG_VERSION (code: $VERSION_CODE)"
 
-      - name: Build Rust server for Android (arm64)
-        env:
-          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-          CC_aarch64_linux_android: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang
-          CXX_aarch64_linux_android: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang++
-          AR_aarch64_linux_android: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
-        run: |
-          # 创建 linker 配置
-          mkdir -p ~/.cargo
-          cat > ~/.cargo/config.toml << EOF
-          [target.aarch64-linux-android]
-          linker = "${NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
-          ar = "${NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
-          EOF
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
 
-          # 编译 arm64 版本
+      - name: Build Rust server for Android (arm64)
+        run: |
+          # 编译 arm64 版本 (cargo-ndk 自动设置 CC/CXX/AR/RANLIB 等 NDK 工具链)
           cd server
-          cargo build --release --target aarch64-linux-android
+          cargo ndk -t arm64-v8a build --release
           # 复制到 assets 目录
           mkdir -p ../android/app/src/main/assets
           cp target/aarch64-linux-android/release/taskmod-server \
