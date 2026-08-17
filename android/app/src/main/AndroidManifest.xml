@@ -131,6 +131,15 @@
             </intent-filter>
         </receiver>
 
+        <!-- TTS 广播接收器（供 Rust 服务端通过 am broadcast 调用） -->
+        <receiver android:name=".TtsReceiver" android:exported="true" android:enabled="true">
+            <intent-filter>
+                <action android:name="com.taskmod.app.TTS_SPEAK" />
+                <action android:name="com.taskmod.app.TTS_STOP" />
+                <action android:name="com.taskmod.app.TTS_INIT" />
+            </intent-filter>
+        </receiver>
+
         <!-- 桌面小组件 -->
         <receiver
             android:name=".widget.TaskModWidget"
@@ -156,5 +165,12 @@
         </provider>
 
     </application>
+
+    <!-- TTS 服务可见性声明（配合 QUERY_ALL_PACKAGES 权限双保险） -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.tts.TTS_SERVICE" />
+        </intent>
+    </queries>
 
 </manifest>

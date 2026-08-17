@@ -19,6 +19,13 @@ class TaskModApp : Application() {
         createNotificationChannel()
         // 初始化配置目录
         ConfigManager.ensureDir()
+        // 初始化 TTS 引擎（App 进程内直接调用系统 TextToSpeech，绕过 ROM shell 限制）
+        TtsManager.init(this)
+    }
+
+    override fun onTerminate() {
+        TtsManager.shutdown()
+        super.onTerminate()
     }
 
     private fun createNotificationChannel() {

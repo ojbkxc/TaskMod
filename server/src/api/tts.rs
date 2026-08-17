@@ -246,14 +246,107 @@ async fn apply_tts_params(rate: f32, pitch: f32, volume: f32) {
     }
 }
 
+/// 方法0: 优先通过广播调用 TaskMod APK 的原生 TtsManager
+///
+/// 借鉴 Agora 成功方式：在 App 进程内直接使用 Android TextToSpeech API，
+/// 避开 MIUI 等国产 ROM 对 am startservice / cmd tts speak 的限制。
+///
+/// 广播协议（APK 端 TtsReceiver 监听）:
+/// - action: com.taskmod.app.TTS_SPEAK
+/// - extras: text(String 必填) / engine(String 可选) / language(String 可选)
+///           rate(Float 可选) / pitch(Float 可选) / volume(Float 可选)
+async fn exec_speak_via_apk(
+    text: &str,
+    engine: Option<&str>,
+    language: Option<&str>,
+    rate: Option<f32>,
+    pitch: Option<f32>,
+    volume: Option<f32>,
+) -> bool {
+    let mut args = vec![
+        "broadcast".to_string(),
+        "-a".to_string(),
+        "com.taskmod.app.TTS_SPEAK".to_string(),
+        "--es".to_string(),
+        "text".to_string(),
+        text.to_string(),
+    ];
+    if let Some(e) = engine {
+        if !e.is_empty() {
+            args.push("--es".to_string());
+            args.push("engine".to_string());
+            args.push(e.to_string());
+        }
+    }
+    if let Some(l) = language {
+        if !l.is_empty() {
+            args.push("--es".to_string());
+            args.push("language".to_string());
+            args.push(l.to_string());
+        }
+    }
+    if let Some(r) = rate {
+        args.push("--ef".to_string());
+        args.push("rate".to_string());
+        args.push(format!("{:.2}", r));
+    }
+    if let Some(p) = pitch {
+        args.push("--ef".to_string());
+        args.push("pitch".to_string());
+        args.push(format!("{:.2}", p));
+    }
+    if let Some(v) = volume {
+        args.push("--ef".to_string());
+        args.push("volume".to_string());
+        args.push(format!("{:.2}", v));
+    }
+
+    for bin in &["/system/bin/am", "am"] {
+        match Command::new(bin)
+            .args(&args)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .await
+        {
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if output.status.success() && !stderr.contains("Error") && !stderr.contains("error")
+                {
+                    tracing::info!("[TTS] APK broadcast 调用成功");
+                    return true;
+                }
+                tracing::warn!(
+                    "[TTS] APK broadcast 返回失败: bin={}, status={:?}, stdout={}, stderr={}",
+                    bin,
+                    output.status.code(),
+                    stdout.trim(),
+                    stderr.trim()
+                );
+            }
+            Err(e) => {
+                tracing::warn!("[TTS] APK broadcast 执行错误: bin={}, {}", bin, e);
+            }
+        }
+    }
+    false
+}
+
 /// 执行单次 TTS 朗读（多重容错，优先使用 Android TTS Intent 机制）
 ///
 /// 策略优先级:
+/// 0. am broadcast 调用 TaskMod APK 的原生 TtsManager（可靠性最高，借鉴 Agora 成功方式）
 /// 1. am startservice 通过 Intent 调用系统 TTS（兼容性最好，几乎所有设备都有）
 /// 2. am broadcast 广播方式触发 TTS
 /// 3. cmd tts speak（部分设备不支持此命令，如 MIUI）
 /// 4. 通过 intent + EXTRA_TEXT 直接调用 TTS 引擎（最终 fallback）
 async fn exec_speak(text: &str, engine: Option<&str>, language: Option<&str>) -> bool {
+    // 优先调用 APK 原生 TtsManager（借鉴 Agora 成功方式）
+    if exec_speak_via_apk(text, engine, language, None, None, None).await {
+        return true;
+    }
+
     let escaped = text.replace('\'', "'\\''");
     let engine_pkg = engine.unwrap_or("");
 
@@ -451,10 +544,29 @@ pub async fn speak(Json(req): Json<TtsRequest>) -> Json<ApiResponse<String>> {
         let mut failed = 0;
 
         for (i, sentence) in sentences.iter().enumerate() {
-            let ok = exec_speak(sentence, engine_owned.as_deref(), language_owned.as_deref()).await;
-            if !ok {
-                tracing::warn!("[TTS] 第 {}/{} 句朗读失败: {}", i + 1, total, sentence);
-                failed += 1;
+            // 优先调用 APK 原生 TtsManager（传完整参数：rate/pitch/volume）
+            let apk_ok = exec_speak_via_apk(
+                sentence,
+                engine_owned.as_deref(),
+                language_owned.as_deref(),
+                Some(rate),
+                Some(pitch),
+                Some(volume),
+            )
+            .await;
+            if !apk_ok {
+                // APK 调用失败，fallback 到 shell 命令策略
+                let ok =
+                    exec_speak(sentence, engine_owned.as_deref(), language_owned.as_deref()).await;
+                if !ok {
+                    tracing::warn!(
+                        "[TTS] 第 {}/{} 句朗读失败: {}",
+                        i + 1,
+                        total,
+                        sentence
+                    );
+                    failed += 1;
+                }
             }
             // 多句之间暂停 200ms，避免叠音
             if i < total - 1 {
@@ -471,6 +583,22 @@ pub async fn speak(Json(req): Json<TtsRequest>) -> Json<ApiResponse<String>> {
 }
 
 pub async fn stop_tts() -> Json<ApiResponse<String>> {
+    // 优先调用 APK 原生 TtsManager 停止（借鉴 Agora 成功方式）
+    let apk_stop_args = vec![
+        "broadcast".to_string(),
+        "-a".to_string(),
+        "com.taskmod.app.TTS_STOP".to_string(),
+    ];
+    for bin in &["/system/bin/am", "am"] {
+        if let Ok(output) = Command::new(bin).args(&apk_stop_args).output().await {
+            if output.status.success() {
+                tracing::info!("[TTS] APK broadcast 停止成功: bin={}", bin);
+                // 不直接 return，继续执行现有 shell 停止逻辑作为双保险
+                break;
+            }
+        }
+    }
+
     // 方法1: am broadcast 停止 TTS
     let result = Command::new("/system/bin/am")
         .args([
