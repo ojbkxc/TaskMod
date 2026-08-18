@@ -253,6 +253,19 @@ pub async fn save_email_config(config: &EmailConfig) -> Result<String, reqwest::
     Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
 }
 
+/// 发送测试邮件（POST /api/send-email）
+pub async fn send_test_email(config: &EmailConfig) -> Result<String, reqwest::Error> {
+    let url = format!("{}/send-email", API_BASE);
+    let resp: ApiResponse<String> = reqwest::Client::new()
+        .post(&url)
+        .json(config)
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
+}
+
 /// 获取 MQTT 配置
 pub async fn get_mqtt_config() -> Result<MqttConfig, reqwest::Error> {
     let url = format!("{}/mqtt/config", API_BASE);
@@ -368,7 +381,7 @@ pub async fn delete_ai_provider(id: &str) -> Result<String, reqwest::Error> {
 }
 
 /// 测试 AI 连接
-pub async fn test_ai_connection(provider: &AiProvider) -> Result<u64, reqwest::Error> {
+pub async fn test_ai_connection(provider: &AiProvider) -> Result<u64, String> {
     let url = format!("{}/ai/test-connection", API_BASE);
     let mut body = serde_json::json!({
         "base_url": provider.base_url,
@@ -381,17 +394,16 @@ pub async fn test_ai_connection(provider: &AiProvider) -> Result<u64, reqwest::E
         .post(&url)
         .json(&body)
         .send()
-        .await?
+        .await
+        .map_err(|e| format!("连接失败: {}", e))?
         .json()
-        .await?;
+        .await
+        .map_err(|e| format!("解析失败: {}", e))?;
     if resp.success {
         let latency = resp.data.and_then(|d| d.get("latency").and_then(|l| l.as_u64())).unwrap_or(0);
         Ok(latency)
     } else {
-        Err(reqwest::Error::new(
-            reqwest::error::Kind::Other,
-            std::io::Error::new(std::io::ErrorKind::Other, resp.message.unwrap_or_else(|| "连接失败".to_string()))
-        ))
+        Err(resp.message.unwrap_or_else(|| "连接失败".to_string()))
     }
 }
 

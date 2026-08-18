@@ -560,3 +560,4 @@ fn DeviceToolIcon(icon: &'static str) -> Element {
         },
     }
 }
+}

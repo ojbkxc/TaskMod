@@ -9,8 +9,8 @@ default = ["mqtt"]
 mqtt = ["dep:rumqttc"]
 
 [dependencies]
-# --- 强制编译OpenSSL源码，解决交叉编译问题 ---
-openssl-sys = { version = "0.9", features = ["vendored"] }
+# --- TLS 说明: 所有网络依赖(reqwest/rumqttc)均使用 rustls 纯 Rust 实现, 无需 OpenSSL C 依赖 ---
+# openssl-sys = { version = "0.9", features = ["vendored"] }
 
 # --- Web框架 ---
 axum = { version = "0.6.20", features = ["ws", "multipart"] }
@@ -49,8 +49,8 @@ kcp = "0.5"
 async-trait = "0.1"
 dirs-next = "2.0"
 
-# --- AI API ---
-reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"] }
+# --- AI API (rustls 纯 Rust TLS, 与 default-tls 等价但无 OpenSSL C 依赖, 便于交叉编译) ---
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls", "charset", "http2"] }
 regex = "1.10"
 
 # --- MQTT (轻量级协议，按需加载，使用rustls避免系统OpenSSL依赖) ---

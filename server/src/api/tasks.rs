@@ -4,7 +4,7 @@ use std::path::Path;
 use tokio::fs;
 use tokio::process::Command;
 
-use crate::config::{EMAIL_CONF, SCHEDULE_FILE, SCRIPTS_DIR};
+use crate::config::{SCHEDULE_FILE, SCRIPTS_DIR};
 use crate::data::models::{AddTaskRequest, Task, TriggerRequest};
 use crate::data::response::ApiResponse;
 use crate::utils::email;
@@ -125,53 +125,21 @@ pub async fn trigger_script(Json(req): Json<TriggerRequest>) -> Json<ApiResponse
                 let result = String::from_utf8_lossy(&output.stdout);
                 let now: DateTime<Local> = Local::now();
 
-                let email_conf = parse_email_conf().await;
-                let enable_notify = email_conf
-                    .get("enable_notify")
-                    .map(|v| v == "true" || v == "1")
-                    .unwrap_or(false);
+                let email_conf = email::get_email_config();
 
-                if enable_notify {
-                    let config = email::EmailConfig {
-                        enable_notify: true,
-                        smtp_server: email_conf
-                            .get("smtp_server")
-                            .unwrap_or(&String::new())
-                            .clone(),
-                        smtp_port: email_conf
-                            .get("smtp_port")
-                            .and_then(|s| s.parse().ok())
-                            .unwrap_or(587),
-                        username: email_conf.get("username").unwrap_or(&String::new()).clone(),
-                        password: email_conf.get("password").unwrap_or(&String::new()).clone(),
-                        from: email_conf.get("from").unwrap_or(&String::new()).clone(),
-                        to: email_conf.get("to").unwrap_or(&String::new()).clone(),
-                        subject: email_conf
-                            .get("subject")
-                            .unwrap_or(&"TaskMod 通知".to_string())
-                            .replace("{script}", &script_name_clone)
-                            .replace("{time}", &now.format("%H:%M:%S").to_string())
-                            .replace("{date}", &now.format("%Y-%m-%d").to_string()),
-                        body: email_conf
-                            .get("body")
-                            .unwrap_or(&"脚本已执行完成".to_string())
-                            .replace("{script}", &script_name_clone)
-                            .replace("{time}", &now.format("%H:%M:%S").to_string())
-                            .replace("{date}", &now.format("%Y-%m-%d").to_string())
-                            .replace("{result}", result.as_ref()),
-                        timeout_secs: email_conf
-                            .get("timeout_secs")
-                            .and_then(|s| s.parse().ok())
-                            .unwrap_or(30),
-                        max_retries: email_conf
-                            .get("max_retries")
-                            .and_then(|s| s.parse().ok())
-                            .unwrap_or(3),
-                        retry_interval: email_conf
-                            .get("retry_interval")
-                            .and_then(|s| s.parse().ok())
-                            .unwrap_or(1),
-                    };
+                if email_conf.enable_notify {
+                    let mut config = email_conf;
+                    config.subject = config
+                        .subject
+                        .replace("{script}", &script_name_clone)
+                        .replace("{time}", &now.format("%H:%M:%S").to_string())
+                        .replace("{date}", &now.format("%Y-%m-%d").to_string());
+                    config.body = config
+                        .body
+                        .replace("{script}", &script_name_clone)
+                        .replace("{time}", &now.format("%H:%M:%S").to_string())
+                        .replace("{date}", &now.format("%Y-%m-%d").to_string())
+                        .replace("{result}", result.as_ref());
                     let _ = email::send_email(&config, None, None, None).await;
                 }
             }
@@ -182,15 +150,4 @@ pub async fn trigger_script(Json(req): Json<TriggerRequest>) -> Json<ApiResponse
     });
 
     Json(ApiResponse::ok(format!("脚本 {} 已触发", script_name)))
-}
-
-async fn parse_email_conf() -> std::collections::HashMap<String, String> {
-    let content = fs::read_to_string(EMAIL_CONF).await.unwrap_or_default();
-    let mut conf = std::collections::HashMap::new();
-    for line in content.lines() {
-        if let Some((key, value)) = line.split_once('=') {
-            conf.insert(key.trim().to_string(), value.trim().to_string());
-        }
-    }
-    conf
 }

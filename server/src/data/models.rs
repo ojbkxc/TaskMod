@@ -23,14 +23,22 @@ pub struct AddTaskRequest {
 #[derive(Debug, Deserialize)]
 pub struct EmailConfig {
     #[serde(default)]
-    pub enable_notify: String,
+    pub enable_notify: bool,
+    #[serde(default)]
     pub smtp_server: String,
+    #[serde(default)]
     pub smtp_port: u16,
+    #[serde(default)]
     pub username: String,
+    #[serde(default)]
     pub password: String,
+    #[serde(default)]
     pub from: String,
+    #[serde(default)]
     pub to: String,
+    #[serde(default)]
     pub subject: String,
+    #[serde(default)]
     pub body: String,
     #[serde(default)]
     pub timeout_secs: u64,

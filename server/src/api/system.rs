@@ -245,6 +245,7 @@ pub async fn update_config(Json(req): Json<ConfigUpdate>) -> Json<ApiResponse<St
 }
 
 pub async fn send_email(Json(config): Json<EmailConfig>) -> Json<ApiResponse<String>> {
+    // 测试邮件接口：忽略 enable_notify 开关，总是尝试发送以验证 SMTP 配置
     let email_config = email::EmailConfig {
         enable_notify: true,
         smtp_server: config.smtp_server.clone(),
@@ -289,7 +290,7 @@ pub async fn get_email_config() -> Json<serde_json::Value> {
 
 pub async fn save_email_config(Json(config): Json<EmailConfig>) -> Json<ApiResponse<String>> {
     let email_config = email::EmailConfig {
-        enable_notify: config.enable_notify == "true" || config.enable_notify == "1",
+        enable_notify: config.enable_notify,
         smtp_server: config.smtp_server,
         smtp_port: config.smtp_port,
         username: config.username,

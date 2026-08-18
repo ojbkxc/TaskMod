@@ -1,10 +1,9 @@
 use dioxus::prelude::*;
 use eq_ui::prelude::*;
-use serde::{Deserialize, Serialize};
 use crate::api::client::{
     get_ai_providers, save_ai_provider, add_ai_provider, delete_ai_provider,
-    get_email_config, save_email_config, get_mqtt_config, save_mqtt_config, execute_command,
-    AiProvider, EmailConfig, MqttConfig,
+    get_email_config, save_email_config, send_test_email, get_mqtt_config, save_mqtt_config,
+    execute_command, AiProvider, EmailConfig, MqttConfig,
 };
 
 #[component]
@@ -27,6 +26,7 @@ pub fn ConfigPage() -> Element {
     let mut email_config = use_signal(|| EmailConfig::default());
     let mut mqtt_config = use_signal(|| MqttConfig::default());
     let mut cmd_output = use_signal(String::new);
+    let mut cmd_input = use_signal(String::new);
 
     use_effect(move || {
         let _ = *refresh.read();
@@ -47,35 +47,27 @@ pub fn ConfigPage() -> Element {
         });
     });
 
-    let reset_form = move || {
-        editing_id.set(None);
-        form_name.set(String::new());
-        form_base_url.set(String::new());
-        form_api_key.set(String::new());
-        form_model.set(String::new());
-        form_enabled.set(true);
-        test_status.set(TestStatus::Idle);
-    };
+    // 重置表单逻辑用宏实现，避免多个事件闭包共享可变闭包的借用冲突
+    macro_rules! reset_form {
+        () => {
+            editing_id.set(None);
+            form_name.set(String::new());
+            form_base_url.set(String::new());
+            form_api_key.set(String::new());
+            form_model.set(String::new());
+            form_enabled.set(true);
+            test_status.set(TestStatus::Idle);
+        };
+    }
 
     let on_add = move |_| {
-        reset_form();
-        show_form.set(true);
-    };
-
-    let on_edit = move |provider: AiProvider| {
-        editing_id.set(Some(provider.id.clone()));
-        form_name.set(provider.name.clone());
-        form_base_url.set(provider.base_url.clone());
-        form_api_key.set(provider.api_key.clone());
-        form_model.set(provider.model.clone());
-        form_enabled.set(provider.enabled);
-        test_status.set(TestStatus::Idle);
+        reset_form!();
         show_form.set(true);
     };
 
     let on_cancel = move |_| {
         show_form.set(false);
-        reset_form();
+        reset_form!();
     };
 
     let on_save = move |_| {
@@ -111,8 +103,9 @@ pub fn ConfigPage() -> Element {
             match result {
                 Ok(_) => {
                     show_form.set(false);
-                    reset_form();
-                    refresh.set(*refresh.read() + 1);
+                    reset_form!();
+                    let next = refresh.read().wrapping_add(1);
+                    refresh.set(next);
                 }
                 Err(e) => {
                     error.set(Some(format!("保存失败: {}", e)));
@@ -149,41 +142,21 @@ pub fn ConfigPage() -> Element {
                     test_status.set(TestStatus::Success(latency));
                 }
                 Err(e) => {
-                    test_status.set(TestStatus::Failed(e));
+                    test_status.set(TestStatus::Failed(e.to_string()));
                 }
             }
         });
     };
 
-    let on_test_provider = move |provider: AiProvider| {
-        editing_id.set(Some(provider.id.clone()));
-        form_name.set(provider.name.clone());
-        form_base_url.set(provider.base_url.clone());
-        form_api_key.set(provider.api_key.clone());
-        form_model.set(provider.model.clone());
-        form_enabled.set(provider.enabled);
-        show_form.set(true);
-        test_status.set(TestStatus::Testing);
-        spawn(async move {
-            match crate::api::client::test_ai_connection(&provider).await {
-                Ok(latency) => {
-                    test_status.set(TestStatus::Success(latency));
-                }
-                Err(e) => {
-                    test_status.set(TestStatus::Failed(e));
-                }
-            }
-        });
-    };
-
-    let on_delete = move |provider: AiProvider| {
+    let on_delete_provider = move |provider: AiProvider| {
         let id = provider.id.clone();
         spawn(async move {
             if let Ok(_) = delete_ai_provider(&id).await {
-                refresh.set(*refresh.read() + 1);
+                let next = refresh.read().wrapping_add(1);
+                refresh.set(next);
                 if editing_id.read().as_deref() == Some(&id) {
                     show_form.set(false);
-                    reset_form();
+                    reset_form!();
                 }
             }
         });
@@ -239,8 +212,8 @@ pub fn ConfigPage() -> Element {
                     div { class: "flex items-center justify-between mb-4",
                         h3 { class: "font-semibold text-[var(--ds-text)]", "AI 通道" }
                         EqButton {
-                            variant: EqButtonVariant::Ghost,
-                            onclick: on_add,
+                            variant: ButtonVariant::Ghost,
+                            on_click: on_add,
                             disabled: *show_form.read(),
                             "添加通道"
                         }
@@ -258,6 +231,9 @@ pub fn ConfigPage() -> Element {
                     div { class: "space-y-2",
                         {providers.read().iter().map(|p| {
                             let provider = p.clone();
+                            let provider_test = provider.clone();
+                            let provider_edit = provider.clone();
+                            let provider_delete = provider.clone();
                             rsx! {
                                 div { class: "p-3 border border-[var(--ds-border)] rounded-md",
                                     div { class: "flex items-center justify-between",
@@ -277,18 +253,47 @@ pub fn ConfigPage() -> Element {
                                         }
                                         div { class: "flex items-center gap-1",
                                             EqButton {
-                                                variant: EqButtonVariant::Ghost,
-                                                onclick: move |_| on_test_provider(provider.clone()),
+                                                variant: ButtonVariant::Ghost,
+                                                on_click: move |_| {
+                                                    editing_id.set(Some(provider_test.id.clone()));
+                                                    form_name.set(provider_test.name.clone());
+                                                    form_base_url.set(provider_test.base_url.clone());
+                                                    form_api_key.set(provider_test.api_key.clone());
+                                                    form_model.set(provider_test.model.clone());
+                                                    form_enabled.set(provider_test.enabled);
+                                                    show_form.set(true);
+                                                    test_status.set(TestStatus::Testing);
+                                                    let pt = provider_test.clone();
+                                                    spawn(async move {
+                                                        match crate::api::client::test_ai_connection(&pt).await {
+                                                            Ok(latency) => {
+                                                                test_status.set(TestStatus::Success(latency));
+                                                            }
+                                                            Err(e) => {
+                                                                test_status.set(TestStatus::Failed(e.to_string()));
+                                                            }
+                                                        }
+                                                    });
+                                                },
                                                 "测试"
                                             }
                                             EqButton {
-                                                variant: EqButtonVariant::Ghost,
-                                                onclick: move |_| on_edit(provider.clone()),
+                                                variant: ButtonVariant::Ghost,
+                                                on_click: move |_| {
+                                                    editing_id.set(Some(provider_edit.id.clone()));
+                                                    form_name.set(provider_edit.name.clone());
+                                                    form_base_url.set(provider_edit.base_url.clone());
+                                                    form_api_key.set(provider_edit.api_key.clone());
+                                                    form_model.set(provider_edit.model.clone());
+                                                    form_enabled.set(provider_edit.enabled);
+                                                    test_status.set(TestStatus::Idle);
+                                                    show_form.set(true);
+                                                },
                                                 "编辑"
                                             }
                                             EqButton {
-                                                variant: EqButtonVariant::Ghost,
-                                                onclick: move |_| on_delete(provider.clone()),
+                                                variant: ButtonVariant::Ghost,
+                                                on_click: move |_| on_delete_provider(provider_delete.clone()),
                                                 "删除"
                                             }
                                         }
@@ -322,7 +327,7 @@ pub fn ConfigPage() -> Element {
                                     r#type: "text",
                                     placeholder: "DeepSeek",
                                     value: "{form_name}",
-                                    oninput: move |e| form_name.set(e.value.clone()),
+                                    oninput: move |e| form_name.set(e.value()),
                                 }
                             }
 
@@ -335,7 +340,7 @@ pub fn ConfigPage() -> Element {
                                     r#type: "text",
                                     placeholder: "https://api.deepseek.com 或 https://api.deepseek.com/v1",
                                     value: "{form_base_url}",
-                                    oninput: move |e| form_base_url.set(e.value.clone()),
+                                    oninput: move |e| form_base_url.set(e.value()),
                                 }
                             }
 
@@ -348,7 +353,7 @@ pub fn ConfigPage() -> Element {
                                     r#type: "password",
                                     placeholder: "sk-...",
                                     value: "{form_api_key}",
-                                    oninput: move |e| form_api_key.set(e.value.clone()),
+                                    oninput: move |e| form_api_key.set(e.value()),
                                 }
                             }
 
@@ -361,7 +366,7 @@ pub fn ConfigPage() -> Element {
                                     r#type: "text",
                                     placeholder: "deepseek-chat, gpt-4o, qwen-plus 等（手动输入）",
                                     value: "{form_model}",
-                                    oninput: move |e| form_model.set(e.value.clone()),
+                                    oninput: move |e| form_model.set(e.value()),
                                 }
                             }
 
@@ -377,7 +382,7 @@ pub fn ConfigPage() -> Element {
                                 }
                             }
 
-                            {match test_status.read().as_ref() {
+                            {match test_status.read().clone() {
                                 TestStatus::Testing => rsx! {
                                     div { class: "text-[11px] text-[var(--ds-text-secondary)]",
                                         "测试中..."
@@ -399,20 +404,20 @@ pub fn ConfigPage() -> Element {
                             div { class: "flex items-center justify-between gap-2",
                                 div { class: "flex gap-2",
                                     EqButton {
-                                        variant: EqButtonVariant::Secondary,
-                                        onclick: on_cancel,
+                                        variant: ButtonVariant::Outline,
+                                        on_click: on_cancel,
                                         "取消"
                                     }
                                     EqButton {
-                                        variant: EqButtonVariant::Primary,
-                                        onclick: on_save,
+                                        variant: ButtonVariant::Primary,
+                                        on_click: on_save,
                                         disabled: *loading.read(),
                                         if editing_id.read().is_some() { "更新" } else { "保存" }
                                     }
                                 }
                                 EqButton {
-                                    variant: EqButtonVariant::Ghost,
-                                    onclick: on_test,
+                                    variant: ButtonVariant::Ghost,
+                                    on_click: on_test,
                                     "测试连接"
                                 }
                             }
@@ -426,11 +431,21 @@ pub fn ConfigPage() -> Element {
 
                 EqCard { class: "p-5",
                     h3 { class: "font-semibold mb-4 text-[var(--ds-text)]", "邮件配置 (SMTP)" }
+                    div { class: "flex items-center justify-between mb-4",
+                        label { class: "text-[11px] font-bold text-[var(--ds-text)] uppercase tracking-wider", "启用邮件通知" }
+                        input {
+                            r#type: "checkbox",
+                            checked: email_config.read().enable_notify,
+                            onchange: move |e| email_config.write().enable_notify = e.checked(),
+                            class: "w-4 h-4 accent-[var(--ds-blue)] cursor-pointer",
+                        }
+                    }
                     div { class: "mb-3",
                         label { class: "block text-[11px] font-bold text-[var(--ds-text)] uppercase tracking-wider mb-1", "SMTP 服务器" }
                         input {
                             class: "w-full px-2.5 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                             value: "{email_config.read().smtp_server}",
+                            placeholder: "smtp.qq.com",
                             oninput: move |e| email_config.write().smtp_server = e.value(),
                         }
                     }
@@ -439,7 +454,8 @@ pub fn ConfigPage() -> Element {
                         input {
                             class: "w-full px-2.5 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                             value: "{email_config.read().smtp_port}",
-                            oninput: move |e| email_config.write().smtp_port = e.value(),
+                            placeholder: "587",
+                            oninput: move |e| email_config.write().smtp_port = e.value().parse().unwrap_or(587),
                         }
                     }
                     div { class: "mb-3",
@@ -451,7 +467,7 @@ pub fn ConfigPage() -> Element {
                         }
                     }
                     div { class: "mb-3",
-                        label { class: "block text-[11px] font-bold text-[var(--ds-text)] uppercase tracking-wider mb-1", "密码" }
+                        label { class: "block text-[11px] font-bold text-[var(--ds-text)] uppercase tracking-wider mb-1", "密码 / 授权码" }
                         input {
                             class: "w-full px-2.5 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                             r#type: "password",
@@ -460,25 +476,53 @@ pub fn ConfigPage() -> Element {
                         }
                     }
                     div { class: "mb-3",
-                        label { class: "block text-[11px] font-bold text-[var(--ds-text)] uppercase tracking-wider mb-1", "收件人" }
+                        label { class: "block text-[11px] font-bold text-[var(--ds-text)] uppercase tracking-wider mb-1", "发件人" }
+                        input {
+                            class: "w-full px-2.5 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
+                            value: "{email_config.read().from}",
+                            placeholder: "your@qq.com",
+                            oninput: move |e| email_config.write().from = e.value(),
+                        }
+                    }
+                    div { class: "mb-3",
+                        label { class: "block text-[11px] font-bold text-[var(--ds-text)] uppercase tracking-wider mb-1", "收件人 (多个用逗号分隔)" }
                         input {
                             class: "w-full px-2.5 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                             value: "{email_config.read().to}",
                             oninput: move |e| email_config.write().to = e.value(),
                         }
                     }
+                    div { class: "mb-3",
+                        label { class: "block text-[11px] font-bold text-[var(--ds-text)] uppercase tracking-wider mb-1", "主题" }
+                        input {
+                            class: "w-full px-2.5 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
+                            value: "{email_config.read().subject}",
+                            placeholder: "TaskMod 通知",
+                            oninput: move |e| email_config.write().subject = e.value(),
+                        }
+                    }
+                    div { class: "mb-3",
+                        label { class: "block text-[11px] font-bold text-[var(--ds-text)] uppercase tracking-wider mb-1", "正文 (支持占位符 script / time / date / result)" }
+                        textarea {
+                            class: "w-full px-2.5 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
+                            rows: "3",
+                            value: "{email_config.read().body}",
+                            placeholder: "脚本已执行完成",
+                            oninput: move |e| email_config.write().body = e.value(),
+                        }
+                    }
                     div { class: "flex gap-2",
                         EqButton {
-                            variant: EqButtonVariant::Primary,
-                            onclick: on_save_email,
+                            variant: ButtonVariant::Primary,
+                            on_click: on_save_email,
                             "保存邮件配置"
                         }
                         EqButton {
-                            variant: EqButtonVariant::Secondary,
-                            onclick: move |_| {
+                            variant: ButtonVariant::Outline,
+                            on_click: move |_| {
                                 let config = email_config.read().clone();
                                 spawn(async move {
-                                    match crate::api::client::send_test_email(&config).await {
+                                    match send_test_email(&config).await {
                                         Ok(_) => error.set(Some("测试邮件发送成功".to_string())),
                                         Err(e) => error.set(Some(format!("发送失败: {}", e))),
                                     }
@@ -500,11 +544,11 @@ pub fn ConfigPage() -> Element {
                         }
                     }
                     div { class: "mb-3",
-                        label { class: "block text-[11px] font-bold text-[var(--ds-text)] uppercase tracking-wider mb-1", "主题 (Topic)" }
+                        label { class: "block text-[11px] font-bold text-[var(--ds-text)] uppercase tracking-wider mb-1", "主题前缀 (Topic Prefix)" }
                         input {
                             class: "w-full px-2.5 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
-                            value: "{mqtt_config.read().topic}",
-                            oninput: move |e| mqtt_config.write().topic = e.value(),
+                            value: "{mqtt_config.read().topic_prefix}",
+                            oninput: move |e| mqtt_config.write().topic_prefix = e.value(),
                         }
                     }
                     div { class: "mb-3",
@@ -533,15 +577,14 @@ pub fn ConfigPage() -> Element {
                         }
                     }
                     EqButton {
-                        variant: EqButtonVariant::Primary,
-                        onclick: on_save_mqtt,
+                        variant: ButtonVariant::Primary,
+                        on_click: on_save_mqtt,
                         "保存 MQTT 配置"
                     }
                 }
 
                 EqCard { class: "p-5",
                     h3 { class: "font-semibold mb-4 text-[var(--ds-text)]", "系统命令" }
-                    let cmd_input = use_signal(String::new);
                     div { class: "mb-3",
                         input {
                             class: "w-full px-2.5 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
@@ -549,7 +592,7 @@ pub fn ConfigPage() -> Element {
                             value: "{cmd_input}",
                             oninput: move |e| cmd_input.set(e.value()),
                             onkeydown: move |ev| {
-                                if ev.key() == "Enter" {
+                                if ev.key() == Key::Enter {
                                     on_execute_cmd(cmd_input.read().clone());
                                 }
                             },
@@ -564,8 +607,8 @@ pub fn ConfigPage() -> Element {
                         }
                     }
                     EqButton {
-                        variant: EqButtonVariant::Primary,
-                        onclick: move |_| on_execute_cmd(cmd_input.read().clone()),
+                        variant: ButtonVariant::Primary,
+                        on_click: move |_| on_execute_cmd(cmd_input.read().clone()),
                         "执行"
                     }
                 }

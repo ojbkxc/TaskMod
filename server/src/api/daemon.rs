@@ -923,6 +923,8 @@ async fn send_ipc(cmd: &IpcCommand) -> Result<IpcResponse, String> {
             .await
             .map_err(|e| format!("连接 IPC 服务失败: {}", e))?;
 
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
         stream
             .set_nodelay(true)
             .map_err(|e| format!("设置 TCP_NODELAY 失败: {}", e))?;
@@ -931,21 +933,25 @@ async fn send_ipc(cmd: &IpcCommand) -> Result<IpcResponse, String> {
         let len = json_bytes.len() as u32;
         let len_bytes = len.to_be_bytes();
 
-        tokio::io::write_all(&mut stream, &len_bytes)
+        stream
+            .write_all(&len_bytes)
             .await
             .map_err(|e| format!("发送长度失败: {}", e))?;
-        tokio::io::write_all(&mut stream, json_bytes)
+        stream
+            .write_all(json_bytes)
             .await
             .map_err(|e| format!("发送命令失败: {}", e))?;
 
         let mut len_buf = [0u8; 4];
-        tokio::io::read_exact(&mut stream, &mut len_buf)
+        stream
+            .read_exact(&mut len_buf)
             .await
             .map_err(|e| format!("读取响应长度失败: {}", e))?;
         let resp_len = u32::from_be_bytes(len_buf) as usize;
 
         let mut buf = vec![0u8; resp_len];
-        tokio::io::read_exact(&mut stream, &mut buf)
+        stream
+            .read_exact(&mut buf)
             .await
             .map_err(|e| format!("读取响应失败: {}", e))?;
 
