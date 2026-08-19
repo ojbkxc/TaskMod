@@ -166,15 +166,15 @@ pub fn DaemonPage() -> Element {
                         }
                     }
                     EqButton {
-                        variant: EqButtonVariant::Ghost,
-                        size: EqButtonSize::Sm,
-                        onclick: move |_| refresh_trigger.set(*refresh_trigger.read() + 1),
+                        variant: ButtonVariant::Ghost,
+                        size: ButtonSize::Sm,
+                        on_click: move |_| refresh_trigger.set(*refresh_trigger.read() + 1),
                         "刷新"
                     }
                     EqButton {
-                        variant: EqButtonVariant::Primary,
-                        size: EqButtonSize::Sm,
-                        onclick: move |_| state.write().show_add_tunnel = true,
+                        variant: ButtonVariant::Primary,
+                        size: ButtonSize::Sm,
+                        on_click: move |_| state.write().show_add_tunnel = true,
                         "添加隧道"
                     }
                 }
@@ -306,9 +306,9 @@ fn CloudflaredControl(props: CloudflaredControlProps) -> Element {
                         }
                     }
                     EqButton {
-                        variant: EqButtonVariant::Primary,
-                        size: EqButtonSize::Sm,
-                        onclick: props.on_download,
+                        variant: ButtonVariant::Primary,
+                        size: ButtonSize::Sm,
+                        on_click: props.on_download,
                         "下载/更新"
                     }
                 }
@@ -354,23 +354,23 @@ fn DaemonControl(props: DaemonControlProps) -> Element {
                     if props.is_running {
                         rsx! {
                             EqButton {
-                                variant: EqButtonVariant::Secondary,
-                                size: EqButtonSize::Sm,
-                                onclick: props.on_restart,
+                                variant: ButtonVariant::Outline,
+                                size: ButtonSize::Sm,
+                                on_click: props.on_restart,
                                 "重启"
                             }
                             EqButton {
-                                variant: EqButtonVariant::Danger,
-                                size: EqButtonSize::Sm,
-                                onclick: props.on_stop,
+                                variant: ButtonVariant::Danger,
+                                size: ButtonSize::Sm,
+                                on_click: props.on_stop,
                                 "停止"
                             }
                         }
                     } else {
                         rsx! {
                             EqButton {
-                                variant: EqButtonVariant::Primary,
-                                size: EqButtonSize::Sm,
+                                variant: ButtonVariant::Primary,
+                                size: ButtonSize::Sm,
                                 disabled: true,
                                 "启动"
                             }
@@ -520,33 +520,33 @@ fn TunnelCard(props: TunnelCardProps) -> Element {
                 if is_running {
                     rsx! {
                         EqButton {
-                            variant: EqButtonVariant::Secondary,
-                            size: EqButtonSize::Sm,
-                            onclick: stop_tunnel_fn,
+                            variant: ButtonVariant::Outline,
+                            size: ButtonSize::Sm,
+                            on_click: stop_tunnel_fn,
                             disabled: *loading.read(),
                             "停止"
                         }
                         EqButton {
-                            variant: EqButtonVariant::Secondary,
-                            size: EqButtonSize::Sm,
-                            onclick: restart_tunnel_fn,
+                            variant: ButtonVariant::Outline,
+                            size: ButtonSize::Sm,
+                            on_click: restart_tunnel_fn,
                             disabled: *loading.read(),
                             "重启"
                         }
                     }
                 } else if props.tunnel.enabled {
                     EqButton {
-                        variant: EqButtonVariant::Primary,
-                        size: EqButtonSize::Sm,
-                        onclick: start_tunnel_fn,
+                        variant: ButtonVariant::Primary,
+                        size: ButtonSize::Sm,
+                        on_click: start_tunnel_fn,
                         disabled: *loading.read(),
                         "启动"
                     }
                 }
                 EqButton {
-                    variant: EqButtonVariant::Ghost,
-                    size: EqButtonSize::Sm,
-                    onclick: delete_tunnel_fn,
+                    variant: ButtonVariant::Ghost,
+                    size: ButtonSize::Sm,
+                    on_click: delete_tunnel_fn,
                     disabled: *loading.read(),
                     "删除"
                 }
@@ -738,26 +738,26 @@ fn AddServiceForm(props: AddServiceFormProps) -> Element {
                         class: "flex-1 px-3 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                         placeholder: "服务名称",
                         value: "{name}",
-                        oninput: move |e| name.set(e.value.clone()),
+                        oninput: move |e| name.set(e.value()),
                     }
                     input {
                         class: "flex-1 px-3 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-xs text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                         placeholder: "http://localhost:8080",
                         value: "{url}",
-                        oninput: move |e| url.set(e.value.clone()),
+                        oninput: move |e| url.set(e.value()),
                     }
                 }
                 div { class: "flex justify-end gap-2",
                     EqButton {
-                        variant: EqButtonVariant::Secondary,
-                        size: EqButtonSize::Sm,
-                        onclick: move |_| show_form.set(false),
+                        variant: ButtonVariant::Outline,
+                        size: ButtonSize::Sm,
+                        on_click: move |_| show_form.set(false),
                         "取消"
                     }
                     EqButton {
-                        variant: EqButtonVariant::Primary,
-                        size: EqButtonSize::Sm,
-                        onclick: submit,
+                        variant: ButtonVariant::Primary,
+                        size: ButtonSize::Sm,
+                        on_click: submit,
                         disabled: *loading.read(),
                         "添加"
                     }
@@ -836,7 +836,7 @@ fn CloudflaredDownloadDialog(props: CloudflaredDownloadDialogProps) -> Element {
                         select {
                             class: "w-full px-3 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                             value: "{selected_version}",
-                            onchange: move |e| selected_version.set(e.value.clone()),
+                            onchange: move |e| selected_version.set(e.value()),
                             for version in props.versions.clone() {
                                 option { value: "{version}", "{version}" }
                             }
@@ -845,13 +845,13 @@ fn CloudflaredDownloadDialog(props: CloudflaredDownloadDialogProps) -> Element {
                 }
                 div { class: "flex justify-end gap-2 mt-6",
                     EqButton {
-                        variant: EqButtonVariant::Secondary,
-                        onclick: move |_| props.on_close.call(()),
+                        variant: ButtonVariant::Outline,
+                        on_click: move |_| props.on_close.call(()),
                         "取消"
                     }
                     EqButton {
-                        variant: EqButtonVariant::Primary,
-                        onclick: submit,
+                        variant: ButtonVariant::Primary,
+                        on_click: submit,
                         disabled: *loading.read(),
                         if *loading.read() { "下载中..." } else { "下载" }
                     }
@@ -905,7 +905,7 @@ fn AddTunnelDialog(props: AddTunnelDialogProps) -> Element {
                             class: "w-full px-3 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                             placeholder: "my-tunnel",
                             value: "{name}",
-                            oninput: move |e| name.set(e.value.clone()),
+                            oninput: move |e| name.set(e.value()),
                         }
                     }
                     div {
@@ -916,7 +916,7 @@ fn AddTunnelDialog(props: AddTunnelDialogProps) -> Element {
                             class: "w-full px-3 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-sm text-[var(--ds-text)] font-mono outline-none focus:border-[var(--ds-blue)] h-28",
                             placeholder: "eyJhIjoixxxxxxxxx...",
                             value: "{token}",
-                            oninput: move |e| token.set(e.value.clone()),
+                            oninput: move |e| token.set(e.value()),
                         }
                         p { class: "text-[10px] text-[var(--ds-text-tertiary)] mt-1",
                             "在 Cloudflare 控制台创建隧道后获取此 Token"
@@ -925,13 +925,13 @@ fn AddTunnelDialog(props: AddTunnelDialogProps) -> Element {
                 }
                 div { class: "flex justify-end gap-2 mt-6",
                     EqButton {
-                        variant: EqButtonVariant::Secondary,
-                        onclick: move |_| props.on_close.call(()),
+                        variant: ButtonVariant::Outline,
+                        on_click: move |_| props.on_close.call(()),
                         "取消"
                     }
                     EqButton {
-                        variant: EqButtonVariant::Primary,
-                        onclick: submit,
+                        variant: ButtonVariant::Primary,
+                        on_click: submit,
                         disabled: *loading.read(),
                         if *loading.read() { "添加中..." } else { "添加" }
                     }

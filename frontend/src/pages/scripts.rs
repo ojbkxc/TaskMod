@@ -63,8 +63,8 @@ pub fn ScriptsPage() -> Element {
                 }
                 div { class: "flex gap-1.5",
                     EqButton {
-                        variant: EqButtonVariant::Secondary,
-                        onclick: move |_| refresh += 1,
+                        variant: ButtonVariant::Outline,
+                        on_click: move |_| refresh += 1,
                         "刷新"
                     }
                 }
@@ -84,13 +84,13 @@ pub fn ScriptsPage() -> Element {
                         }
                         div { class: "flex gap-2",
                             EqButton {
-                                variant: EqButtonVariant::Secondary,
-                                onclick: move |_| { editing.set(false); selected.set(None); },
+                                variant: ButtonVariant::Outline,
+                                on_click: move |_| { editing.set(false); selected.set(None); },
                                 "取消"
                             }
                             EqButton {
-                                variant: EqButtonVariant::Primary,
-                                onclick: save_script,
+                                variant: ButtonVariant::Primary,
+                                on_click: save_script,
                                 "保存"
                             }
                         }
@@ -98,7 +98,7 @@ pub fn ScriptsPage() -> Element {
                     textarea {
                         class: "w-full min-h-[300px] px-3 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-xs font-mono text-[var(--ds-text)] resize-y outline-none focus:border-[var(--ds-blue)]",
                         value: "{script_content}",
-                        oninput: move |e| script_content.set(e.value.clone()),
+                        oninput: move |e| script_content.set(e.value()),
                     }
                 }
             }
@@ -134,15 +134,15 @@ pub fn ScriptsPage() -> Element {
                                 }
                                 div { class: "flex gap-1",
                                     EqButton {
-                                        variant: EqButtonVariant::Ghost,
-                                        size: EqButtonSize::Sm,
-                                        onclick: move |_| load_script(n2.clone()),
+                                        variant: ButtonVariant::Ghost,
+                                        size: ButtonSize::Sm,
+                                        on_click: move |_| load_script(n2.clone()),
                                         "编辑"
                                     }
                                     EqButton {
-                                        variant: EqButtonVariant::Ghost,
-                                        size: EqButtonSize::Sm,
-                                        onclick: move |_| {
+                                        variant: ButtonVariant::Ghost,
+                                        size: ButtonSize::Sm,
+                                        on_click: move |_| {
                                             let nn = n.clone();
                                             spawn(async move {
                                                 let _ = crate::api::client::delete_script(&nn).await;

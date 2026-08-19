@@ -575,9 +575,9 @@ fn MemoryList(props: MemoryListProps) -> Element {
                     oninput: move |e| props.on_search.call(e.value()),
                 }
                 EqButton {
-                    variant: EqButtonVariant::Primary,
-                    size: EqButtonSize::Sm,
-                    onclick: move |_| props.on_create.call(()),
+                    variant: ButtonVariant::Primary,
+                    size: ButtonSize::Sm,
+                    on_click: move |_| props.on_create.call(()),
                     "新建记忆"
                 }
             }
@@ -667,9 +667,9 @@ fn PresetList(props: PresetListProps) -> Element {
                     oninput: move |e| props.on_search.call(e.value()),
                 }
                 EqButton {
-                    variant: EqButtonVariant::Primary,
-                    size: EqButtonSize::Sm,
-                    onclick: move |_| props.on_create.call(()),
+                    variant: ButtonVariant::Primary,
+                    size: ButtonSize::Sm,
+                    on_click: move |_| props.on_create.call(()),
                     "新建预设"
                 }
             }
@@ -744,9 +744,9 @@ fn SkillList(props: SkillListProps) -> Element {
                     oninput: move |e| props.on_search.call(e.value()),
                 }
                 EqButton {
-                    variant: EqButtonVariant::Primary,
-                    size: EqButtonSize::Sm,
-                    onclick: move |_| props.on_create.call(()),
+                    variant: ButtonVariant::Primary,
+                    size: ButtonSize::Sm,
+                    on_click: move |_| props.on_create.call(()),
                     "新建技能"
                 }
             }
@@ -831,9 +831,9 @@ fn ProjectList(props: ProjectListProps) -> Element {
                     oninput: move |e| props.on_search.call(e.value()),
                 }
                 EqButton {
-                    variant: EqButtonVariant::Primary,
-                    size: EqButtonSize::Sm,
-                    onclick: move |_| props.on_create.call(()),
+                    variant: ButtonVariant::Primary,
+                    size: ButtonSize::Sm,
+                    on_click: move |_| props.on_create.call(()),
                     "新建项目"
                 }
             }
@@ -920,9 +920,9 @@ fn ScenarioList(props: ScenarioListProps) -> Element {
                     oninput: move |e| props.on_search.call(e.value()),
                 }
                 EqButton {
-                    variant: EqButtonVariant::Primary,
-                    size: EqButtonSize::Sm,
-                    onclick: move |_| props.on_create.call(()),
+                    variant: ButtonVariant::Primary,
+                    size: ButtonSize::Sm,
+                    on_click: move |_| props.on_create.call(()),
                     "新建场景"
                 }
             }
@@ -1007,9 +1007,9 @@ fn SavedList(props: SavedListProps) -> Element {
                     oninput: move |e| props.on_search.call(e.value()),
                 }
                 EqButton {
-                    variant: EqButtonVariant::Primary,
-                    size: EqButtonSize::Sm,
-                    onclick: move |_| props.on_create.call(()),
+                    variant: ButtonVariant::Primary,
+                    size: ButtonSize::Sm,
+                    on_click: move |_| props.on_create.call(()),
                     "+ 添加"
                 }
             }
@@ -1089,9 +1089,9 @@ fn McpList(props: McpListProps) -> Element {
                     oninput: move |e| props.on_search.call(e.value()),
                 }
                 EqButton {
-                    variant: EqButtonVariant::Primary,
-                    size: EqButtonSize::Sm,
-                    onclick: move |_| props.on_create.call(()),
+                    variant: ButtonVariant::Primary,
+                    size: ButtonSize::Sm,
+                    on_click: move |_| props.on_create.call(()),
                     "+ 添加"
                 }
             }
@@ -1233,9 +1233,9 @@ fn PromptControlPanel(props: PromptControlPanelProps) -> Element {
             }
             div { class: "mt-auto pt-4 border-t border-[var(--ds-border)]",
                 EqButton {
-                    variant: EqButtonVariant::Primary,
-                    size: EqButtonSize::Md,
-                    onclick: handle_save,
+                    variant: ButtonVariant::Primary,
+                    size: ButtonSize::Md,
+                    on_click: handle_save,
                     "保存设置"
                 }
             }
@@ -1263,9 +1263,9 @@ fn ScreenshotList(props: ScreenshotListProps) -> Element {
                     oninput: move |e| props.on_search.call(e.value()),
                 }
                 EqButton {
-                    variant: EqButtonVariant::Ghost,
-                    size: EqButtonSize::Sm,
-                    onclick: move |_| props.on_refresh.call(()),
+                    variant: ButtonVariant::Ghost,
+                    size: ButtonSize::Sm,
+                    on_click: move |_| props.on_refresh.call(()),
                     "刷新"
                 }
             }
@@ -1746,13 +1746,13 @@ fn CreateModal(props: CreateModalProps) -> Element {
                 }
                 div { class: "flex justify-end gap-2 mt-4",
                     EqButton {
-                        variant: EqButtonVariant::Ghost,
-                        onclick: move |_| props.on_close.call(()),
+                        variant: ButtonVariant::Ghost,
+                        on_click: move |_| props.on_close.call(()),
                         "取消"
                     }
                     EqButton {
-                        variant: EqButtonVariant::Primary,
-                        onclick: handle_submit,
+                        variant: ButtonVariant::Primary,
+                        on_click: handle_submit,
                         if is_editing { "更新" } else { "创建" }
                     }
                 }

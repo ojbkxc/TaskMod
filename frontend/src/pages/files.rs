@@ -64,9 +64,9 @@ pub fn FilesPage() -> Element {
                 div { class: "flex-1 flex flex-col min-w-0 overflow-hidden",
                     div { class: "flex items-center gap-1.5 p-2 bg-[var(--ds-card)] border-b border-[var(--ds-border)]",
                         EqButton {
-                            variant: EqButtonVariant::Ghost,
-                            size: EqButtonSize::Sm,
-                            onclick: move |_| {
+                            variant: ButtonVariant::Ghost,
+                            size: ButtonSize::Sm,
+                            on_click: move |_| {
                                 let cur = current_path.read().clone();
                                 let parent = if cur == "/" { "/" } else {
                                     let trimmed = cur.trim_end_matches('/');
@@ -80,16 +80,16 @@ pub fn FilesPage() -> Element {
                             "上级目录"
                         }
                         EqButton {
-                            variant: EqButtonVariant::Ghost,
-                            size: EqButtonSize::Sm,
-                            onclick: move |_| refresh += 1,
+                            variant: ButtonVariant::Ghost,
+                            size: ButtonSize::Sm,
+                            on_click: move |_| refresh += 1,
                             "刷新"
                         }
                         // 上传按钮：触发隐藏的 file input
                         EqButton {
-                            variant: EqButtonVariant::Ghost,
-                            size: EqButtonSize::Sm,
-                            onclick: move |_| {
+                            variant: ButtonVariant::Ghost,
+                            size: ButtonSize::Sm,
+                            on_click: move |_| {
                                 // 通过 JS 点击隐藏 input
                                 if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
                                     if let Some(el) = doc.get_element_by_id("fm-file-input") {

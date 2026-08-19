@@ -57,7 +57,7 @@ pub fn TasksPage() -> Element {
             state.write().loading = true;
             state.write().error = None;
             
-            let (tasks_res, scripts_res) = tokio::join!(
+            let (tasks_res, scripts_res) = futures::join!(
                 crate::api::client::get_tasks(),
                 crate::api::client::get_scripts()
             );
@@ -199,13 +199,13 @@ pub fn TasksPage() -> Element {
                 }
                 div { class: "flex gap-1.5",
                     EqButton {
-                        variant: EqButtonVariant::Secondary,
-                        onclick: move |_| spawn(async move { load_data().await; }),
+                        variant: ButtonVariant::Outline,
+                        on_click: move |_| spawn(async move { load_data().await; }),
                         "刷新"
                     }
                     EqButton {
-                        variant: EqButtonVariant::Primary,
-                        onclick: move |_| {
+                        variant: ButtonVariant::Primary,
+                        on_click: move |_| {
                             state.write().show_add = !state.read().show_add;
                             state.write().show_edit = false;
                         },
@@ -237,7 +237,7 @@ pub fn TasksPage() -> Element {
                                 class: "w-full px-2.5 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-xs outline-none focus:border-[var(--ds-blue)]",
                                 r#type: "time",
                                 value: "{state.read().form_time}",
-                                oninput: move |e| state.write().form_time = e.value.clone(),
+                                oninput: move |e| state.write().form_time = e.value(),
                             }
                         }
                         div {
@@ -261,7 +261,7 @@ pub fn TasksPage() -> Element {
                                 max: "120",
                                 placeholder: "例如: 5",
                                 value: "{state.read().form_interval}",
-                                oninput: move |e| state.write().form_interval = e.value.clone(),
+                                oninput: move |e| state.write().form_interval = e.value(),
                             }
                         }
                     }
@@ -307,13 +307,13 @@ pub fn TasksPage() -> Element {
                     }
                     div { class: "flex gap-2",
                         EqButton {
-                            variant: EqButtonVariant::Secondary,
-                            onclick: move |_| state.write().show_add = false,
+                            variant: ButtonVariant::Outline,
+                            on_click: move |_| state.write().show_add = false,
                             "取消"
                         }
                         EqButton {
-                            variant: EqButtonVariant::Primary,
-                            onclick: on_add,
+                            variant: ButtonVariant::Primary,
+                            on_click: on_add,
                             "保存"
                         }
                     }
@@ -340,7 +340,7 @@ pub fn TasksPage() -> Element {
                                 class: "w-full px-2.5 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-xs outline-none focus:border-[var(--ds-blue)]",
                                 r#type: "time",
                                 value: "{state.read().form_time}",
-                                oninput: move |e| state.write().form_time = e.value.clone(),
+                                oninput: move |e| state.write().form_time = e.value(),
                             }
                         }
                         div {
@@ -363,7 +363,7 @@ pub fn TasksPage() -> Element {
                                 min: "1",
                                 max: "120",
                                 value: "{state.read().form_interval}",
-                                oninput: move |e| state.write().form_interval = e.value.clone(),
+                                oninput: move |e| state.write().form_interval = e.value(),
                             }
                         }
                     }
@@ -409,16 +409,16 @@ pub fn TasksPage() -> Element {
                     }
                     div { class: "flex gap-2",
                         EqButton {
-                            variant: EqButtonVariant::Secondary,
-                            onclick: move |_| {
+                            variant: ButtonVariant::Outline,
+                            on_click: move |_| {
                                 state.write().show_edit = false;
                                 state.write().editing_task = None;
                             },
                             "取消"
                         }
                         EqButton {
-                            variant: EqButtonVariant::Primary,
-                            onclick: on_update,
+                            variant: ButtonVariant::Primary,
+                            on_click: on_update,
                             "保存"
                         }
                     }
@@ -472,21 +472,21 @@ pub fn TasksPage() -> Element {
                                 }
                                 div { class: "flex items-center gap-1",
                                     EqButton {
-                                        variant: EqButtonVariant::Ghost,
-                                        size: EqButtonSize::Sm,
-                                        onclick: move |_| on_trigger(task.script.clone()),
+                                        variant: ButtonVariant::Ghost,
+                                        size: ButtonSize::Sm,
+                                        on_click: move |_| on_trigger(task.script.clone()),
                                         "执行"
                                     }
                                     EqButton {
-                                        variant: EqButtonVariant::Ghost,
-                                        size: EqButtonSize::Sm,
-                                        onclick: move |_| on_edit(task.clone()),
+                                        variant: ButtonVariant::Ghost,
+                                        size: ButtonSize::Sm,
+                                        on_click: move |_| on_edit(task.clone()),
                                         "编辑"
                                     }
                                     EqButton {
-                                        variant: EqButtonVariant::Ghost,
-                                        size: EqButtonSize::Sm,
-                                        onclick: move |_| on_delete(task_id),
+                                        variant: ButtonVariant::Ghost,
+                                        size: ButtonSize::Sm,
+                                        on_click: move |_| on_delete(task_id),
                                         "删除"
                                     }
                                 }

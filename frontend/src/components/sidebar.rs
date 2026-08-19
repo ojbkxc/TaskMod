@@ -160,9 +160,14 @@ pub fn Sidebar(props: SidebarProps) -> Element {
                         {
                             let is_active = *props.active_page.read() == page;
                             let close_drawer = close_drawer.clone();
+                            let active_class = if is_active {
+                                "text-[var(--ds-blue)] bg-[var(--ds-blue-light)] font-semibold"
+                            } else {
+                                "text-[var(--ds-text-secondary)] hover:bg-[var(--ds-surface)] hover:text-[var(--ds-text)]"
+                            };
                             rsx! {
                                 button {
-                                    class: "flex items-center gap-3 w-full px-4 py-3 text-sm text-left transition-colors {if is_active { \"text-[var(--ds-blue)] bg-[var(--ds-blue-light)] font-semibold\" } else { \"text-[var(--ds-text-secondary)] hover:bg-[var(--ds-surface)] hover:text-[var(--ds-text)]\" }}",
+                                    class: "flex items-center gap-3 w-full px-4 py-3 text-sm text-left transition-colors {active_class}",
                                     onclick: move |_| {
                                         props.active_page.set(page);
                                         close_drawer();
@@ -199,7 +204,7 @@ pub fn Sidebar(props: SidebarProps) -> Element {
 }
 
 /// 单个导航标签（桌面端）
-fn nav_tab(page: ActivePage, active_page: Signal<ActivePage>) -> Element {
+fn nav_tab(page: ActivePage, mut active_page: Signal<ActivePage>) -> Element {
     let is_active = *active_page.read() == page;
     let active_class = if is_active {
         "text-[var(--ds-blue)]"

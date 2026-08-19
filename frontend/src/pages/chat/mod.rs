@@ -353,20 +353,20 @@ pub fn ChatPage() -> Element {
                 }
                 div { class: "flex items-center gap-2",
                     EqButton {
-                        variant: EqButtonVariant::Ghost,
-                        size: EqButtonSize::Sm,
-                        onclick: move |_| spawn(async move { handle_screenshot_analyze().await; }),
+                        variant: ButtonVariant::Ghost,
+                        size: ButtonSize::Sm,
+                        on_click: move |_| spawn(async move { handle_screenshot_analyze().await; }),
                         "截图分析"
                     }
                     EqButton {
-                        variant: EqButtonVariant::Ghost,
-                        size: EqButtonSize::Sm,
-                        onclick: move |_| new_session(),
+                        variant: ButtonVariant::Ghost,
+                        size: ButtonSize::Sm,
+                        on_click: move |_| new_session(),
                         "新对话"
                     }
                     EqButton {
-                        variant: EqButtonVariant::Ghost,
-                        size: EqButtonSize::Sm,
+                        variant: ButtonVariant::Ghost,
+                        size: ButtonSize::Sm,
                         "管理"
                     }
                 }
@@ -511,9 +511,9 @@ pub fn ChatPage() -> Element {
                                     }
                                     p { class: "text-sm text-[var(--ds-text-tertiary)] mb-3", "WebSocket连接已断开" }
                                     EqButton {
-                                        variant: EqButtonVariant::Primary,
-                                        size: EqButtonSize::Sm,
-                                        onclick: move |_| {
+                                        variant: ButtonVariant::Primary,
+                                        size: ButtonSize::Sm,
+                                        on_click: move |_| {
                                             let state = state.clone();
                                             let ws = ws.clone();
                                             let message_container = message_container.clone();
@@ -603,9 +603,9 @@ pub fn ChatPage() -> Element {
                             }
                             if state.read().is_typing {
                                 EqButton {
-                                    variant: EqButtonVariant::Danger,
-                                    size: EqButtonSize::Md,
-                                    onclick: move |_| {
+                                    variant: ButtonVariant::Danger,
+                                    size: ButtonSize::Md,
+                                    on_click: move |_| {
                                         let ws = ws.clone();
                                         let state = state.clone();
                                         let message_container = message_container.clone();
@@ -620,10 +620,10 @@ pub fn ChatPage() -> Element {
                                 }
                             } else {
                                 EqButton {
-                                    variant: EqButtonVariant::Primary,
-                                    size: EqButtonSize::Md,
+                                    variant: ButtonVariant::Primary,
+                                    size: ButtonSize::Md,
                                     disabled: state.read().current_message.trim().is_empty(),
-                                    onclick: move |_| {
+                                    on_click: move |_| {
                                         let msg = state.read().current_message.clone();
                                         spawn(async move { send_message(msg).await; });
                                     },

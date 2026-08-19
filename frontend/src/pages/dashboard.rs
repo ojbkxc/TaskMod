@@ -72,13 +72,13 @@ pub fn DashboardPage() -> Element {
 
             div { class: "flex gap-2 flex-wrap",
                 EqButton {
-                    variant: EqButtonVariant::Secondary,
-                    onclick: move |_| refresh += 1,
+                    variant: ButtonVariant::Outline,
+                    on_click: move |_| refresh += 1,
                     if *loading.read() { "刷新中..." } else { "刷新状态" }
                 }
                 EqButton {
-                    variant: EqButtonVariant::Secondary,
-                    onclick: move |_| {
+                    variant: ButtonVariant::Outline,
+                    on_click: move |_| {
                         spawn(async move {
                             let _ = crate::api::client::clear_logs().await;
                         });

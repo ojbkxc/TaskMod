@@ -50,13 +50,13 @@ pub fn LogsPage() -> Element {
                         "自动刷新"
                     }
                     EqButton {
-                        variant: EqButtonVariant::Secondary,
-                        onclick: move |_| refresh.set(*refresh.read() + 1),
+                        variant: ButtonVariant::Outline,
+                        on_click: move |_| refresh.set(*refresh.read() + 1),
                         "刷新"
                     }
                     EqButton {
-                        variant: EqButtonVariant::Destructive,
-                        onclick: move |_| {
+                        variant: ButtonVariant::Danger,
+                        on_click: move |_| {
                             spawn(async move {
                                 let _ = crate::api::client::clear_logs().await;
                                 refresh.set(*refresh.read() + 1);

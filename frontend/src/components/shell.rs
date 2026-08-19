@@ -1,5 +1,4 @@
 use dioxus::prelude::*;
-use eq_ui::prelude::*;
 
 use crate::app::ActivePage;
 use crate::components::sidebar::Sidebar;

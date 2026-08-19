@@ -149,8 +149,8 @@ pub fn MirrorPage() -> Element {
                 div { class: "flex items-center gap-2",
                     if *is_connected.read() {
                         EqButton {
-                            variant: EqButtonVariant::Secondary,
-                            onclick: move |_| {
+                            variant: ButtonVariant::Outline,
+                            on_click: move |_| {
                                 is_connected.set(false);
                                 audio_enabled.set(false);
                             },
@@ -158,8 +158,8 @@ pub fn MirrorPage() -> Element {
                         }
                     } else {
                         EqButton {
-                            variant: EqButtonVariant::Primary,
-                            onclick: start_mirror,
+                            variant: ButtonVariant::Primary,
+                            on_click: start_mirror,
                             "开始投屏"
                         }
                     }
@@ -183,7 +183,7 @@ pub fn MirrorPage() -> Element {
                                 placeholder: "输入命令...",
                             }
                             EqButton {
-                                variant: EqButtonVariant::Primary,
+                                variant: ButtonVariant::Primary,
                                 "执行"
                             }
                         }
@@ -316,7 +316,7 @@ pub fn MirrorPage() -> Element {
                             placeholder: "输入命令...",
                         }
                         EqButton {
-                            variant: EqButtonVariant::Primary,
+                            variant: ButtonVariant::Primary,
                             "执行"
                         }
                     }

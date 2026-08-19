@@ -42,8 +42,8 @@ pub fn TtsPage() -> Element {
                 }
                 div { class: "flex gap-1.5",
                     EqButton {
-                        variant: EqButtonVariant::Secondary,
-                        onclick: move |_| refresh += 1,
+                        variant: ButtonVariant::Outline,
+                        on_click: move |_| refresh += 1,
                         "刷新引擎"
                     }
                 }
@@ -87,7 +87,7 @@ pub fn TtsPage() -> Element {
                     class: "w-full min-h-[100px] px-3 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-sm text-[var(--ds-text)] resize-y outline-none focus:border-[var(--ds-blue)]",
                     placeholder: "输入要朗读的文本...",
                     value: "text}",
-                    oninput: move |e| text.set(e.value.clone()),
+                    oninput: move |e| text.set(e.value()),
                 }
                 div { class: "flex items-center justify-between mt-2",
                     span { class: "text-[11px] text-[var(--ds-text-tertiary)]",
@@ -95,8 +95,8 @@ pub fn TtsPage() -> Element {
                     }
                     div { class: "flex gap-2",
                         EqButton {
-                            variant: EqButtonVariant::Primary,
-                            onclick: move |_| {
+                            variant: ButtonVariant::Primary,
+                            on_click: move |_| {
                                 let t = text.read().clone();
                                 let eng = selected_engine.read().clone();
                                 if t.is_empty() { return; }
@@ -110,8 +110,8 @@ pub fn TtsPage() -> Element {
                             "朗读"
                         }
                         EqButton {
-                            variant: EqButtonVariant::Destructive,
-                            onclick: move |_| {
+                            variant: ButtonVariant::Danger,
+                            on_click: move |_| {
                                 spawn(async move {
                                     match crate::api::client::tts_stop().await {
                                         Ok(msg) => status_msg.set(Some(msg)),
