@@ -51,7 +51,7 @@ pub fn TtsPage() -> Element {
 
             if let Some(err) = error.read().as_ref() {
                 div { class: "p-2.5 rounded-md bg-[color-mix(in_srgb,var(--ds-error)_15%,transparent)] border border-[var(--ds-error)] text-[11px] text-[var(--ds-error)]",
-                    "err}"
+                    "{err}"
                 }
             }
 
@@ -86,7 +86,7 @@ pub fn TtsPage() -> Element {
                 textarea {
                     class: "w-full min-h-[100px] px-3 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-bg)] text-sm text-[var(--ds-text)] resize-y outline-none focus:border-[var(--ds-blue)]",
                     placeholder: "输入要朗读的文本...",
-                    value: "text}",
+                    value: "{text}",
                     oninput: move |e| text.set(e.value()),
                 }
                 div { class: "flex items-center justify-between mt-2",

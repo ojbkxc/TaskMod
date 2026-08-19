@@ -25,9 +25,9 @@ const ALL_PAGES: &[ActivePage] = &[
 ];
 
 #[component]
-pub fn Sidebar(props: SidebarProps) -> Element {
+pub fn Sidebar(mut props: SidebarProps) -> Element {
     let mut drawer_open = use_signal(|| false);
-    let close_drawer = move || drawer_open.set(false);
+    let mut close_drawer = move || drawer_open.set(false);
 
     rsx! {
         nav {
@@ -46,7 +46,10 @@ pub fn Sidebar(props: SidebarProps) -> Element {
                 button {
                     class: "flex items-center justify-center w-[44px] h-[44px] bg-transparent cursor-pointer text-[var(--ds-text-secondary)] hover:text-[var(--ds-text)] transition-colors",
                     aria_label: "打开菜单",
-                    onclick: move |_| drawer_open.set(!*drawer_open.read()),
+                    onclick: move |_| {
+                        let v = *drawer_open.read();
+                        drawer_open.set(!v);
+                    },
                     svg {
                         class: "w-5 h-5",
                         fill: "none",
@@ -159,7 +162,7 @@ pub fn Sidebar(props: SidebarProps) -> Element {
                     for page in ALL_PAGES.iter().copied() {
                         {
                             let is_active = *props.active_page.read() == page;
-                            let close_drawer = close_drawer.clone();
+                            let mut close_drawer = close_drawer.clone();
                             let active_class = if is_active {
                                 "text-[var(--ds-blue)] bg-[var(--ds-blue-light)] font-semibold"
                             } else {

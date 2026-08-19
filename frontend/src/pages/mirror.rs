@@ -4,6 +4,74 @@ use wasm_bindgen::closure::Closure;
 use web_sys::MessageEvent;
 use crate::api::client::{execute_command, get_device_info, DeviceInfo};
 
+/// 执行 ADB 命令（模块级函数，可被多个事件闭包安全共享）
+/// 刷新设备信息（模块级函数，可被多个事件闭包安全共享）
+fn refresh_device_info(mut device_info: Signal<Option<DeviceInfo>>, mut is_refreshing: Signal<bool>) {
+    is_refreshing.set(true);
+    spawn(async move {
+        match get_device_info().await {
+            Ok(info) => {
+                device_info.set(Some(info));
+            }
+            Err(_) => {
+                device_info.set(None);
+            }
+        }
+        is_refreshing.set(false);
+    });
+}
+
+fn run_adb_command(label: &'static str, mut cmd_output: Signal<String>) {
+    let cmd: Option<String> = match label {
+        "唤醒" => Some("input keyevent 224".to_string()),
+        "息屏" => Some("input keyevent 26".to_string()),
+        "解锁" => Some("input keyevent 82; input swipe 540 1800 540 600 300".to_string()),
+        "Home" => Some("input keyevent 3".to_string()),
+        "返回" => Some("input keyevent 4".to_string()),
+        "重启设备" => Some("reboot".to_string()),
+        "关闭设备" => Some("reboot -p".to_string()),
+        "启动应用" => {
+            let window = web_sys::window().expect("window should be available");
+            match window.prompt_with_message("请输入要启动的应用包名 (如 com.example.app):") {
+                Ok(Some(pkg)) if !pkg.trim().is_empty() => {
+                    Some(format!("monkey -p {} -c android.intent.category.LAUNCHER 1", pkg.trim()))
+                }
+                _ => {
+                    cmd_output.set("[启动应用] 已取消或包名为空".to_string());
+                    return;
+                }
+            }
+        }
+        "停止应用" => {
+            let window = web_sys::window().expect("window should be available");
+            match window.prompt_with_message("请输入要停止的应用包名 (如 com.example.app):") {
+                Ok(Some(pkg)) if !pkg.trim().is_empty() => {
+                    Some(format!("am force-stop {}", pkg.trim()))
+                }
+                _ => {
+                    cmd_output.set("[停止应用] 已取消或包名为空".to_string());
+                    return;
+                }
+            }
+        }
+        _ => None,
+    };
+    if let Some(cmd) = cmd {
+        cmd_output.set(format!("正在执行: {} ...", cmd));
+        spawn(async move {
+            match execute_command(&cmd).await {
+                Ok(result) => {
+                    cmd_output.set(format!("[{}] 执行成功:
+{}", label, result));
+                }
+                Err(e) => {
+                    cmd_output.set(format!("[{}] 执行失败: {}", label, e));
+                }
+            }
+        });
+    }
+}
+
 #[component]
 pub fn MirrorPage() -> Element {
     let mut is_connected = use_signal(|| false);
@@ -12,74 +80,9 @@ pub fn MirrorPage() -> Element {
     let is_refreshing = use_signal(|| false);
     let cmd_output = use_signal(|| "等待执行命令...".to_string());
 
-    let load_device_info = move || {
-        is_refreshing.set(true);
-        spawn(async move {
-            match get_device_info().await {
-                Ok(info) => {
-                    device_info.set(Some(info));
-                }
-                Err(_) => {
-                    device_info.set(None);
-                }
-            }
-            is_refreshing.set(false);
-        });
-    };
-
     use_effect(move || {
-        load_device_info();
+        refresh_device_info(device_info, is_refreshing);
     });
-
-    let exec_adb = move |label: &'static str| {
-        let cmd: Option<String> = match label {
-            "唤醒" => Some("input keyevent 224".to_string()),
-            "息屏" => Some("input keyevent 26".to_string()),
-            "解锁" => Some("input keyevent 82; input swipe 540 1800 540 600 300".to_string()),
-            "Home" => Some("input keyevent 3".to_string()),
-            "返回" => Some("input keyevent 4".to_string()),
-            "重启设备" => Some("reboot".to_string()),
-            "关闭设备" => Some("reboot -p".to_string()),
-            "启动应用" => {
-                let window = web_sys::window().expect("window should be available");
-                match window.prompt_with_message("请输入要启动的应用包名 (如 com.example.app):") {
-                    Ok(Some(pkg)) if !pkg.trim().is_empty() => {
-                        Some(format!("monkey -p {} -c android.intent.category.LAUNCHER 1", pkg.trim()))
-                    }
-                    _ => {
-                        cmd_output.set("[启动应用] 已取消或包名为空".to_string());
-                        return;
-                    }
-                }
-            }
-            "停止应用" => {
-                let window = web_sys::window().expect("window should be available");
-                match window.prompt_with_message("请输入要停止的应用包名 (如 com.example.app):") {
-                    Ok(Some(pkg)) if !pkg.trim().is_empty() => {
-                        Some(format!("am force-stop {}", pkg.trim()))
-                    }
-                    _ => {
-                        cmd_output.set("[停止应用] 已取消或包名为空".to_string());
-                        return;
-                    }
-                }
-            }
-            _ => None,
-        };
-        if let Some(cmd) = cmd {
-            cmd_output.set(format!("正在执行: {} ...", cmd));
-            spawn(async move {
-                match execute_command(&cmd).await {
-                    Ok(result) => {
-                        cmd_output.set(format!("[{}] 执行成功:\n{}", label, result));
-                    }
-                    Err(e) => {
-                        cmd_output.set(format!("[{}] 执行失败: {}", label, e));
-                    }
-                }
-            });
-        }
-    };
 
     let start_mirror = move |_| {
         is_connected.set(true);
@@ -99,7 +102,7 @@ pub fn MirrorPage() -> Element {
             let audio_ctx = web_sys::AudioContext::new().ok();
             let sample_rate = 48000.0;
 
-            let onmessage = Closure::<dyn FnMut(MessageEvent)>::new(move |ev| {
+            let onmessage = Closure::<dyn FnMut(web_sys::MessageEvent)>::new(move |ev: web_sys::MessageEvent| {
                 if let Some(ab) = ev.data().dyn_ref::<js_sys::ArrayBuffer>() {
                     if let Some(ctx) = &audio_ctx {
                         let array = Uint8Array::new(&ab);
@@ -117,7 +120,8 @@ pub fn MirrorPage() -> Element {
                             buffer.copy_to_channel(&samples, 0);
                             if let Ok(src) = ctx.create_buffer_source() {
                                 src.set_buffer(Some(&buffer));
-                                let _ = src.connect_with_audio_node(&ctx.destination());
+                                let dest = ctx.destination();
+                                let _ = src.connect_with_audio_node(dest.unchecked_ref());
                                 let _ = src.start();
                             }
                         }
@@ -188,11 +192,11 @@ pub fn MirrorPage() -> Element {
                             }
                         }
                         div { class: "grid grid-cols-5 gap-1.5",
-                            AdbCommandCard { label: "唤醒", onclick: move |_| exec_adb("唤醒") }
-                            AdbCommandCard { label: "息屏", onclick: move |_| exec_adb("息屏") }
-                            AdbCommandCard { label: "解锁", onclick: move |_| exec_adb("解锁") }
-                            AdbCommandCard { label: "Home", onclick: move |_| exec_adb("Home") }
-                            AdbCommandCard { label: "返回", onclick: move |_| exec_adb("返回") }
+                            AdbCommandCard { label: "唤醒", onclick: move |_| run_adb_command("唤醒", cmd_output) }
+                            AdbCommandCard { label: "息屏", onclick: move |_| run_adb_command("息屏", cmd_output) }
+                            AdbCommandCard { label: "解锁", onclick: move |_| run_adb_command("解锁", cmd_output) }
+                            AdbCommandCard { label: "Home", onclick: move |_| run_adb_command("Home", cmd_output) }
+                            AdbCommandCard { label: "返回", onclick: move |_| run_adb_command("返回", cmd_output) }
                         }
                     }
                 }
@@ -208,7 +212,7 @@ pub fn MirrorPage() -> Element {
                             span { class: "text-sm font-semibold text-[var(--ds-text)]", "设备信息" }
                             button {
                                 class: "p-1 hover:bg-[var(--ds-surface)] rounded transition-colors",
-                                onclick: move |_| load_device_info(),
+                                onclick: move |_| refresh_device_info(device_info, is_refreshing),
                                 svg { class: "w-4 h-4 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
                                     path { stroke_linecap: "round", stroke_linejoin: "round", d: "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" }
                                 }
@@ -266,7 +270,7 @@ pub fn MirrorPage() -> Element {
                             span { class: "text-sm font-semibold text-[var(--ds-text)]", "命令输出" }
                         }
                         div { class: "min-h-[100px] max-h-[200px] overflow-y-auto p-2.5 bg-[var(--ds-bg)] border border-[var(--ds-border)] rounded text-xs font-mono text-[var(--ds-text-secondary)] whitespace-pre-wrap break-all",
-                            "{cmd_output.read()}"
+                            "{cmd_output}"
                         }
                     }
                 }
@@ -281,8 +285,8 @@ pub fn MirrorPage() -> Element {
                                 span { class: "text-sm font-semibold text-[var(--ds-text)]", "应用管理" }
                             }
                             div { class: "grid grid-cols-2 gap-1.5",
-                                DeviceToolCard { label: "启动应用", icon: "start", onclick: move |_| exec_adb("启动应用") }
-                                DeviceToolCard { label: "停止应用", icon: "stop", onclick: move |_| exec_adb("停止应用") }
+                                DeviceToolCard { label: "启动应用", icon: "start", onclick: move |_| run_adb_command("启动应用", cmd_output) }
+                                DeviceToolCard { label: "停止应用", icon: "stop", onclick: move |_| run_adb_command("停止应用", cmd_output) }
                             }
                         }
 
@@ -294,8 +298,8 @@ pub fn MirrorPage() -> Element {
                                 span { class: "text-sm font-semibold text-[var(--ds-text)]", "系统操作" }
                             }
                             div { class: "grid grid-cols-2 gap-1.5",
-                                DeviceToolCard { label: "重启设备", icon: "reboot", onclick: move |_| exec_adb("重启设备") }
-                                DeviceToolCard { label: "关闭设备", icon: "shutdown", onclick: move |_| exec_adb("关闭设备") }
+                                DeviceToolCard { label: "重启设备", icon: "reboot", onclick: move |_| run_adb_command("重启设备", cmd_output) }
+                                DeviceToolCard { label: "关闭设备", icon: "shutdown", onclick: move |_| run_adb_command("关闭设备", cmd_output) }
                             }
                         }
                     }
@@ -321,11 +325,11 @@ pub fn MirrorPage() -> Element {
                         }
                     }
                     div { class: "grid grid-cols-5 gap-1.5",
-                        AdbCommandCard { label: "唤醒", onclick: move |_| exec_adb("唤醒") }
-                        AdbCommandCard { label: "息屏", onclick: move |_| exec_adb("息屏") }
-                        AdbCommandCard { label: "解锁", onclick: move |_| exec_adb("解锁") }
-                        AdbCommandCard { label: "Home", onclick: move |_| exec_adb("Home") }
-                        AdbCommandCard { label: "返回", onclick: move |_| exec_adb("返回") }
+                        AdbCommandCard { label: "唤醒", onclick: move |_| run_adb_command("唤醒", cmd_output) }
+                        AdbCommandCard { label: "息屏", onclick: move |_| run_adb_command("息屏", cmd_output) }
+                        AdbCommandCard { label: "解锁", onclick: move |_| run_adb_command("解锁", cmd_output) }
+                        AdbCommandCard { label: "Home", onclick: move |_| run_adb_command("Home", cmd_output) }
+                        AdbCommandCard { label: "返回", onclick: move |_| run_adb_command("返回", cmd_output) }
                     }
                 }
 
@@ -340,7 +344,7 @@ pub fn MirrorPage() -> Element {
                         }
                         button {
                             class: "p-1 hover:bg-[var(--ds-surface)] rounded transition-colors",
-                            onclick: move |_| load_device_info(),
+                            onclick: move |_| refresh_device_info(device_info, is_refreshing),
                             svg { class: "w-4 h-4 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
                                 path { stroke_linecap: "round", stroke_linejoin: "round", d: "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" }
                             }
@@ -354,27 +358,27 @@ pub fn MirrorPage() -> Element {
                         div { class: "grid grid-cols-3 gap-2",
                             div { class: "bg-[var(--ds-bg)] rounded p-2 text-center",
                                 span { class: "block text-[10px] text-[var(--ds-text-tertiary)] mb-1", "型号" }
-                                span { class: "text-xs text-[var(--ds-text)] font-mono truncate block", info.model.clone() }
+                                span { class: "text-xs text-[var(--ds-text)] font-mono truncate block", {info.model.clone()} }
                             }
                             div { class: "bg-[var(--ds-bg)] rounded p-2 text-center",
                                 span { class: "block text-[10px] text-[var(--ds-text-tertiary)] mb-1", "电量" }
-                                span { class: "text-xs text-[var(--ds-text)] font-mono", info.battery.clone() }
+                                span { class: "text-xs text-[var(--ds-text)] font-mono", {info.battery.clone()} }
                             }
                             div { class: "bg-[var(--ds-bg)] rounded p-2 text-center",
                                 span { class: "block text-[10px] text-[var(--ds-text-tertiary)] mb-1", "分辨率" }
-                                span { class: "text-xs text-[var(--ds-text)] font-mono", info.screen_size.clone() }
+                                span { class: "text-xs text-[var(--ds-text)] font-mono", {info.screen_size.clone()} }
                             }
                             div { class: "bg-[var(--ds-bg)] rounded p-2 text-center",
                                 span { class: "block text-[10px] text-[var(--ds-text-tertiary)] mb-1", "WiFi" }
-                                span { class: "text-xs text-[var(--ds-text)] font-mono truncate block", info.wifi.clone() }
+                                span { class: "text-xs text-[var(--ds-text)] font-mono truncate block", {info.wifi.clone()} }
                             }
                             div { class: "bg-[var(--ds-bg)] rounded p-2 text-center",
                                 span { class: "block text-[10px] text-[var(--ds-text-tertiary)] mb-1", "IP" }
-                                span { class: "text-xs text-[var(--ds-text)] font-mono", info.ip.clone() }
+                                span { class: "text-xs text-[var(--ds-text)] font-mono", {info.ip.clone()} }
                             }
                             div { class: "bg-[var(--ds-bg)] rounded p-2 text-center",
                                 span { class: "block text-[10px] text-[var(--ds-text-tertiary)] mb-1", "Android" }
-                                span { class: "text-xs text-[var(--ds-text)] font-mono", info.android_version.clone() }
+                                span { class: "text-xs text-[var(--ds-text)] font-mono", {info.android_version.clone()} }
                             }
                         }
                     } else {
@@ -413,8 +417,8 @@ pub fn MirrorPage() -> Element {
                             span { class: "text-sm font-semibold text-[var(--ds-text)]", "应用管理" }
                         }
                         div { class: "grid grid-cols-2 gap-1.5",
-                            DeviceToolCard { label: "启动", icon: "start" }
-                            DeviceToolCard { label: "停止", icon: "stop" }
+                            DeviceToolCard { label: "启动", icon: "start", onclick: move |_| run_adb_command("启动应用", cmd_output) }
+                            DeviceToolCard { label: "停止", icon: "stop", onclick: move |_| run_adb_command("停止应用", cmd_output) }
                         }
                     }
 
@@ -426,8 +430,8 @@ pub fn MirrorPage() -> Element {
                             span { class: "text-sm font-semibold text-[var(--ds-text)]", "系统操作" }
                         }
                         div { class: "grid grid-cols-2 gap-1.5",
-                            DeviceToolCard { label: "重启", icon: "reboot" }
-                            DeviceToolCard { label: "关闭", icon: "shutdown" }
+                            DeviceToolCard { label: "重启", icon: "reboot", onclick: move |_| run_adb_command("重启设备", cmd_output) }
+                            DeviceToolCard { label: "关闭", icon: "shutdown", onclick: move |_| run_adb_command("关闭设备", cmd_output) }
                         }
                     }
                 }
@@ -447,6 +451,7 @@ pub fn MirrorPage() -> Element {
         }
     }
 }
+}
 
 #[derive(Props, PartialEq, Clone)]
 struct DeviceInfoItemProps {
@@ -459,7 +464,7 @@ fn DeviceInfoItem(props: DeviceInfoItemProps) -> Element {
     rsx! {
         div { class: "flex justify-between items-center text-xs",
             span { class: "text-[var(--ds-text-tertiary)]", "{props.label}" }
-            span { class: "text-[var(--ds-text)] font-mono", if props.value.is_empty() { "--" } else { props.value } }
+            span { class: "text-[var(--ds-text)] font-mono", {if props.value.is_empty() { "--".to_string() } else { props.value }} }
         }
     }
 }
@@ -559,5 +564,4 @@ fn DeviceToolIcon(icon: &'static str) -> Element {
             }
         },
     }
-}
 }

@@ -14,7 +14,7 @@ pub fn DashboardPage() -> Element {
         spawn(async move {
             loading.set(true);
             
-            let (device_res, app_res) = tokio::join!(
+            let (device_res, app_res) = futures::join!(
                 get_device_info(),
                 get_app_status()
             );

@@ -2,12 +2,10 @@ use dioxus::prelude::*;
 use eq_ui::prelude::*;
 
 /// 滚动到消息容器底部
-pub fn scroll_to_bottom(container: &Signal<Option<MountedData>>) {
+pub fn scroll_to_bottom(container: &Signal<Option<std::rc::Rc<MountedData>>>) {
     if let Some(md) = container.read().as_ref() {
-        if let Ok(element) = md.get() {
-            if let Some(elem) = element.dyn_ref::<web_sys::HtmlDivElement>() {
-                elem.set_scroll_top(elem.scroll_height());
-            }
+        if let Some(elem) = md.downcast::<web_sys::HtmlElement>() {
+            elem.set_scroll_top(elem.scroll_height());
         }
     }
 }
@@ -87,7 +85,7 @@ pub fn QuickPromptCard(props: QuickPromptCardProps) -> Element {
     rsx! {
         button {
             class: "flex items-center justify-center gap-2 px-3 py-2.5 border border-[var(--ds-border)] rounded-lg bg-[var(--ds-card)] text-[var(--ds-text-secondary)] cursor-pointer text-xs font-medium transition-all hover:border-[var(--ds-blue)] hover:bg-[var(--ds-blue-light)] hover:text-[var(--ds-blue)]",
-            onclick: props.on_click,
+            onclick: move |_| props.on_click.call(()),
             "{props.label}"
         }
     }

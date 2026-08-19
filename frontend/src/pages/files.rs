@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use dioxus::html::HasFileData;
 use eq_ui::prelude::*;
 use wasm_bindgen::JsCast;
 
@@ -31,7 +32,7 @@ pub fn FilesPage() -> Element {
     let mut uploading = use_signal(|| false);
     let mut upload_msg = use_signal(|| None::<String>);
 
-    let load_files = move |path: String| {
+    let mut load_files = move |path: String| {
         let p = path.clone();
         current_path.set(path);
         spawn(async move {
@@ -112,34 +113,30 @@ pub fn FilesPage() -> Element {
                         class: "hidden",
                         onchange: move |ev| {
                             let dir = current_path.read().clone();
-                            let refresh2 = refresh;
-                            let uploading2 = uploading;
-                            let upload_msg2 = upload_msg;
-                            let files_val = ev.files();
-                            let Some(selected) = files_val else { return; };
-                            let names: Vec<String> = selected.files().iter().map(|f| f.name()).collect();
-                            if names.is_empty() { return; }
+                            let mut refresh2 = refresh;
+                            let mut uploading2 = uploading;
+                            let mut upload_msg2 = upload_msg;
+                            let selected: Vec<_> = ev.files();
+                            if selected.is_empty() { return; }
                             uploading2.set(true);
-                            upload_msg2.set(Some(format!("上传中: {} 个文件", names.len())));
+                            upload_msg2.set(Some(format!("上传中: {} 个文件", selected.len())));
                             spawn(async move {
-                                for file in selected.files() {
+                                for file in selected {
                                     let name = file.name();
-                                    match file.read_as_bytes().await {
+                                    match file.read_bytes().await {
                                         Ok(bytes) => {
-                                            match crate::api::client::upload_file(&dir, &name, &bytes).await {
+                                            match crate::api::client::upload_file(&dir, &name, &bytes[..]).await {
                                                 Ok((_p, msg)) => {
                                                     upload_msg2.set(Some(format!("已上传: {}", name)));
-                                                    tracing::info!("{}", msg);
+                                                    let _ = msg;
                                                 }
                                                 Err(e) => {
                                                     upload_msg2.set(Some(format!("上传失败 {}: {}", name, e)));
-                                                    tracing::error!("上传失败 {}: {}", name, e);
                                                 }
                                             }
                                         }
                                         Err(e) => {
                                             upload_msg2.set(Some(format!("读取失败 {}: {:?}", name, e)));
-                                            tracing::error!("读取文件 {} 失败: {:?}", name, e);
                                         }
                                     }
                                 }
@@ -157,21 +154,19 @@ pub fn FilesPage() -> Element {
                         ondrop: move |ev| {
                             ev.prevent_default();
                             let dir = current_path.read().clone();
-                            let refresh2 = refresh;
-                            let uploading2 = uploading;
-                            let upload_msg2 = upload_msg;
-                            let files_val = ev.files();
-                            let Some(selected) = files_val else { return; };
-                            let file_list = selected.files();
-                            if file_list.is_empty() { return; }
+                            let mut refresh2 = refresh;
+                            let mut uploading2 = uploading;
+                            let mut upload_msg2 = upload_msg;
+                            let selected: Vec<_> = ev.files();
+                            if selected.is_empty() { return; }
                             uploading2.set(true);
-                            upload_msg2.set(Some(format!("拖拽上传: {} 个文件", file_list.len())));
+                            upload_msg2.set(Some(format!("拖拽上传: {} 个文件", selected.len())));
                             spawn(async move {
-                                for file in file_list {
+                                for file in selected {
                                     let name = file.name();
-                                    match file.read_as_bytes().await {
+                                    match file.read_bytes().await {
                                         Ok(bytes) => {
-                                            match crate::api::client::upload_file(&dir, &name, &bytes).await {
+                                            match crate::api::client::upload_file(&dir, &name, &bytes[..]).await {
                                                 Ok((_p, _msg)) => {
                                                     upload_msg2.set(Some(format!("已上传: {}", name)));
                                                 }

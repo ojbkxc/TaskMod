@@ -2,14 +2,12 @@ use dioxus::prelude::*;
 use eq_ui::prelude::*;
 use serde_json::json;
 
-#[derive(Debug, Clone, PartialEq)]
-struct Task {
-    id: usize,
-    time: String,
-    weeks: String,
-    script: String,
-    task_type: String,
-    interval: Option<u32>,
+use crate::api::client::Task;
+/// 解析周几字符串（如 "1,3,5"）为数字列表
+fn parse_weeks(weeks: &str) -> Vec<i32> {
+    weeks.split(',')
+        .filter_map(|s| s.trim().parse().ok())
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,10 +47,10 @@ impl Default for TasksState {
 
 #[component]
 pub fn TasksPage() -> Element {
-    let state = use_signal(TasksState::default);
+    let mut state = use_signal(TasksState::default);
 
     let load_data = move || {
-        let state = state.clone();
+        let mut state = state.clone();
         async move {
             state.write().loading = true;
             state.write().error = None;
@@ -85,14 +83,18 @@ pub fn TasksPage() -> Element {
     });
 
     let on_add = move |_| {
-        let state = state.clone();
+        let mut state = state.clone();
         async move {
-            let s = state.read();
-            let time = s.form_time.clone();
-            let weeks = s.form_weeks.clone();
-            let script = s.form_script.clone();
-            let task_type = s.form_task_type.clone();
-            let interval: Option<u32> = s.form_interval.parse().ok();
+            let (time, weeks, script, task_type, interval) = {
+                let s = state.read();
+                (
+                    s.form_time.clone(),
+                    s.form_weeks.clone(),
+                    s.form_script.clone(),
+                    s.form_task_type.clone(),
+                    s.form_interval.parse().ok(),
+                )
+            };
             
             if time.is_empty() || script.is_empty() {
                 state.write().error = Some("时间和脚本不能为空".to_string());
@@ -123,19 +125,21 @@ pub fn TasksPage() -> Element {
     };
 
     let on_update = move |_| {
-        let state = state.clone();
+        let mut state = state.clone();
         async move {
-            let s = state.read();
-            let task = match s.editing_task.clone() {
-                Some(t) => t,
-                None => return,
+            let (task, time, weeks, script, task_type, interval) = {
+                let s = state.read();
+                (
+                    s.editing_task.clone(),
+                    s.form_time.clone(),
+                    s.form_weeks.clone(),
+                    s.form_script.clone(),
+                    s.form_task_type.clone(),
+                    s.form_interval.parse().ok(),
+                )
             };
-            let time = s.form_time.clone();
-            let weeks = s.form_weeks.clone();
-            let script = s.form_script.clone();
-            let task_type = s.form_task_type.clone();
-            let interval: Option<u32> = s.form_interval.parse().ok();
-            
+            let Some(task) = task else { return; };
+
             if time.is_empty() || script.is_empty() {
                 state.write().error = Some("时间和脚本不能为空".to_string());
                 return;
@@ -157,7 +161,7 @@ pub fn TasksPage() -> Element {
     };
 
     let on_delete = move |id: usize| {
-        let state = state.clone();
+        let mut state = state.clone();
         async move {
             match crate::api::client::delete_task(id).await {
                 Ok(_) => load_data().await,
@@ -167,7 +171,7 @@ pub fn TasksPage() -> Element {
     };
 
     let on_trigger = move |script: String| {
-        let state = state.clone();
+        let mut state = state.clone();
         async move {
             match crate::api::client::trigger_script(&script).await {
                 Ok(msg) => {
@@ -184,12 +188,6 @@ pub fn TasksPage() -> Element {
         (5, "周五"), (6, "周六"), (7, "周日"),
     ];
 
-    let parse_weeks = |weeks: &str| -> Vec<i32> {
-        weeks.split(',')
-            .filter_map(|s| s.trim().parse().ok())
-            .collect()
-    };
-
     rsx! {
         div { class: "p-4 space-y-4",
             div { class: "flex items-start justify-between gap-3 pb-4 border-b border-[var(--ds-border)]",
@@ -200,13 +198,14 @@ pub fn TasksPage() -> Element {
                 div { class: "flex gap-1.5",
                     EqButton {
                         variant: ButtonVariant::Outline,
-                        on_click: move |_| spawn(async move { load_data().await; }),
+                        on_click: move |_| { spawn(async move { load_data().await; }); },
                         "刷新"
                     }
                     EqButton {
                         variant: ButtonVariant::Primary,
                         on_click: move |_| {
-                            state.write().show_add = !state.read().show_add;
+                            let v = !state.read().show_add;
+                            state.write().show_add = v;
                             state.write().show_edit = false;
                         },
                         "添加任务"
@@ -268,29 +267,31 @@ pub fn TasksPage() -> Element {
                     div {
                         label { class: "block text-[11px] font-bold mb-1", "执行日期" }
                         div { class: "flex flex-wrap gap-1",
-                            for (day_num, day_label) in week_days {
+                            {week_days.iter().map(|&(day_num, day_label)| {
                                 let selected_days = parse_weeks(&state.read().form_weeks);
                                 let is_selected = selected_days.contains(&day_num);
-                                button {
-                                    class: "px-2 py-1 text-[10px] rounded-md transition-colors",
-                                    class: if is_selected {
-                                        "bg-[var(--ds-blue)] text-white"
-                                    } else {
-                                        "bg-[var(--ds-surface)] text-[var(--ds-text-secondary)] hover:bg-[var(--ds-border)]"
-                                    },
-                                    onclick: move |_| {
-                                        let mut days = parse_weeks(&state.read().form_weeks);
-                                        if is_selected {
-                                            days.retain(|&d| d != day_num);
+                                rsx! {
+                                    button {
+                                        class: "px-2 py-1 text-[10px] rounded-md transition-colors",
+                                        class: if is_selected {
+                                            "bg-[var(--ds-blue)] text-white"
                                         } else {
-                                            days.push(day_num);
-                                            days.sort();
-                                        }
-                                        state.write().form_weeks = days.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(",");
-                                    },
-                                    "{day_label}"
+                                            "bg-[var(--ds-surface)] text-[var(--ds-text-secondary)] hover:bg-[var(--ds-border)]"
+                                        },
+                                        onclick: move |_| {
+                                            let mut days = parse_weeks(&state.read().form_weeks);
+                                            if is_selected {
+                                                days.retain(|&d| d != day_num);
+                                            } else {
+                                                days.push(day_num);
+                                                days.sort();
+                                            }
+                                            state.write().form_weeks = days.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(",");
+                                        },
+                                        "{day_label}"
+                                    }
                                 }
-                            }
+                            })}
                         }
                     }
                     div {
@@ -370,29 +371,31 @@ pub fn TasksPage() -> Element {
                     div {
                         label { class: "block text-[11px] font-bold mb-1", "执行日期" }
                         div { class: "flex flex-wrap gap-1",
-                            for (day_num, day_label) in week_days {
+                            {week_days.iter().map(|&(day_num, day_label)| {
                                 let selected_days = parse_weeks(&state.read().form_weeks);
                                 let is_selected = selected_days.contains(&day_num);
-                                button {
-                                    class: "px-2 py-1 text-[10px] rounded-md transition-colors",
-                                    class: if is_selected {
-                                        "bg-[var(--ds-blue)] text-white"
-                                    } else {
-                                        "bg-[var(--ds-surface)] text-[var(--ds-text-secondary)] hover:bg-[var(--ds-border)]"
-                                    },
-                                    onclick: move |_| {
-                                        let mut days = parse_weeks(&state.read().form_weeks);
-                                        if is_selected {
-                                            days.retain(|&d| d != day_num);
+                                rsx! {
+                                    button {
+                                        class: "px-2 py-1 text-[10px] rounded-md transition-colors",
+                                        class: if is_selected {
+                                            "bg-[var(--ds-blue)] text-white"
                                         } else {
-                                            days.push(day_num);
-                                            days.sort();
-                                        }
-                                        state.write().form_weeks = days.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(",");
-                                    },
-                                    "{day_label}"
+                                            "bg-[var(--ds-surface)] text-[var(--ds-text-secondary)] hover:bg-[var(--ds-border)]"
+                                        },
+                                        onclick: move |_| {
+                                            let mut days = parse_weeks(&state.read().form_weeks);
+                                            if is_selected {
+                                                days.retain(|&d| d != day_num);
+                                            } else {
+                                                days.push(day_num);
+                                                days.sort();
+                                            }
+                                            state.write().form_weeks = days.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(",");
+                                        },
+                                        "{day_label}"
+                                    }
                                 }
-                            }
+                            })}
                         }
                     }
                     div {
@@ -444,6 +447,8 @@ pub fn TasksPage() -> Element {
             div { class: "space-y-2",
                 {state.read().tasks.iter().map(|t| {
                     let task = t.clone();
+                    let task_trigger = task.clone();
+                    let task_edit = task.clone();
                     let task_id = t.id;
                     let is_interval = task.task_type == "interval";
                     let week_labels: Vec<String> = parse_weeks(&task.weeks)
@@ -474,19 +479,49 @@ pub fn TasksPage() -> Element {
                                     EqButton {
                                         variant: ButtonVariant::Ghost,
                                         size: ButtonSize::Sm,
-                                        on_click: move |_| on_trigger(task.script.clone()),
+                                        on_click: move |_| {
+                                            let mut s = state.clone();
+                                            let script = task_trigger.script.clone();
+                                            spawn(async move {
+                                                match crate::api::client::trigger_script(&script).await {
+                                                    Ok(msg) => {
+                                                        s.write().error = Some(format!("{}", msg));
+                                                        load_data().await;
+                                                    }
+                                                    Err(e) => s.write().error = Some(format!("执行失败: {}", e)),
+                                                }
+                                            });
+                                        },
                                         "执行"
                                     }
                                     EqButton {
                                         variant: ButtonVariant::Ghost,
                                         size: ButtonSize::Sm,
-                                        on_click: move |_| on_edit(task.clone()),
+                                        on_click: move |_| {
+                                            let t = task_edit.clone();
+                                            state.write().editing_task = Some(t.clone());
+                                            state.write().form_time = t.time.clone();
+                                            state.write().form_weeks = t.weeks.clone();
+                                            state.write().form_script = t.script.clone();
+                                            state.write().form_task_type = t.task_type.clone();
+                                            state.write().form_interval = t.interval.map(|i| i.to_string()).unwrap_or_default();
+                                            state.write().show_edit = true;
+                                        },
                                         "编辑"
                                     }
                                     EqButton {
                                         variant: ButtonVariant::Ghost,
                                         size: ButtonSize::Sm,
-                                        on_click: move |_| on_delete(task_id),
+                                        on_click: move |_| {
+                                            let mut s = state.clone();
+                                            let id = task_id;
+                                            spawn(async move {
+                                                match crate::api::client::delete_task(id).await {
+                                                    Ok(_) => load_data().await,
+                                                    Err(e) => s.write().error = Some(format!("删除失败: {}", e)),
+                                                }
+                                            });
+                                        },
                                         "删除"
                                     }
                                 }

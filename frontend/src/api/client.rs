@@ -30,7 +30,7 @@ pub struct BatteryInfo {
 }
 
 /// 任务（匹配后端 Task 模型: id, time, weeks, script, task_type, interval）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Task {
     pub id: usize,
     pub time: String,
@@ -42,7 +42,7 @@ pub struct Task {
 }
 
 /// AI 提供商
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct AiProvider {
     pub id: String,
     pub name: String,
@@ -407,7 +407,7 @@ pub async fn test_ai_connection(provider: &AiProvider) -> Result<u64, String> {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct ChatSession {
     pub id: String,
     pub title: String,
@@ -422,7 +422,7 @@ pub struct ChatSession {
     pub project_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct Preset {
     pub id: String,
     pub name: String,
@@ -431,7 +431,7 @@ pub struct Preset {
     pub enabled: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct Memory {
     pub id: String,
     pub name: String,
@@ -449,7 +449,7 @@ pub struct Memory {
     pub archived: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct Skill {
     pub id: String,
     pub name: String,
@@ -462,7 +462,7 @@ pub struct Skill {
     pub created_at: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct SkillVariable {
     pub name: String,
     pub description: String,
@@ -470,7 +470,7 @@ pub struct SkillVariable {
     pub default: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct SavedItem {
     pub id: String,
     pub title: String,
@@ -482,7 +482,7 @@ pub struct SavedItem {
     pub updated_at: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct Project {
     pub id: String,
     pub name: String,
@@ -494,7 +494,7 @@ pub struct Project {
     pub updated_at: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct Scenario {
     pub id: String,
     pub label: String,
@@ -503,7 +503,7 @@ pub struct Scenario {
     pub built_in: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct PromptSettings {
     pub memory_enabled: bool,
     pub system_prompt_enabled: bool,
@@ -1055,7 +1055,7 @@ pub async fn delete_saved_item(id: &str) -> Result<String, reqwest::Error> {
     Ok(resp.message.unwrap_or_else(|| if resp.success { "ok".into() } else { "失败".into() }))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct McpServer {
     pub id: String,
     pub name: String,
@@ -1149,7 +1149,7 @@ pub struct ServiceInfo {
     pub enabled: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ProcessStatus {
     pub tunnel_name: String,
     pub pid: u32,

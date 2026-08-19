@@ -56,21 +56,21 @@ impl Default for DaemonState {
 
 #[component]
 pub fn DaemonPage() -> Element {
-    let state = use_signal(DaemonState::default);
-    let refresh_trigger = use_signal(|| 0u32);
+    let mut state = use_signal(DaemonState::default);
+    let mut refresh_trigger = use_signal(|| 0u32);
 
     let load_data = move || {
-        let state = state.clone();
+        let mut state = state.clone();
         async move {
             state.write().loading = true;
             state.write().error = None;
 
-            let (tunnels_res, processes_res, status_res, cf_status_res) = join(
+            let (tunnels_res, processes_res, status_res, cf_status_res) = futures::join!(
                 list_tunnels(),
                 list_processes(),
                 get_daemon_status(),
                 get_cloudflared_status()
-            ).await;
+            );
 
             let mut s = state.write();
             match tunnels_res {
@@ -98,7 +98,7 @@ pub fn DaemonPage() -> Element {
     };
 
     let load_versions = move || {
-        let state = state.clone();
+        let mut state = state.clone();
         async move {
             match list_cloudflared_versions().await {
                 Ok(versions) => state.write().cloudflared_versions = versions,
@@ -115,8 +115,8 @@ pub fn DaemonPage() -> Element {
     });
 
     use_effect(move || {
-        let state = state.clone();
-        async move {
+        let mut state = state.clone();
+        spawn(async move {
             loop {
                 sleep(Duration::from_secs(5)).await;
                 if state.read().auto_refresh && !state.read().loading {
@@ -125,15 +125,17 @@ pub fn DaemonPage() -> Element {
                     });
                 }
             }
-        }
+        });
     });
 
     let daemon_is_running = state.read().daemon_status.get("running")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let daemon_uptime = state.read().daemon_status.get("uptime")
+    let daemon_uptime = state.read().daemon_status
+        .get("uptime")
         .and_then(|v| v.as_str())
-        .unwrap_or("未知");
+        .unwrap_or("未知")
+        .to_string();
 
     rsx! {
         div { class: "flex flex-col h-full",
@@ -158,17 +160,16 @@ pub fn DaemonPage() -> Element {
                             }
                         }
                         span { class: "text-xs font-medium",
-                            if daemon_is_running {
-                                format!("守护进程运行中 - {}", daemon_uptime)
-                            } else {
-                                "守护进程未运行".to_string()
-                            }
+                            {if daemon_is_running { format!("守护进程运行中 - {}", daemon_uptime) } else { "守护进程未运行".to_string() }}
                         }
                     }
                     EqButton {
                         variant: ButtonVariant::Ghost,
                         size: ButtonSize::Sm,
-                        on_click: move |_| refresh_trigger.set(*refresh_trigger.read() + 1),
+                        on_click: move |_| {
+                            let next = refresh_trigger.read().wrapping_add(1);
+                            refresh_trigger.set(next);
+                        },
                         "刷新"
                     }
                     EqButton {
@@ -184,14 +185,14 @@ pub fn DaemonPage() -> Element {
                 DaemonControl {
                     is_running: daemon_is_running,
                     on_stop: move |_| {
-                        let state = state.clone();
+                        let mut state = state.clone();
                         spawn(async move {
                             let _ = stop_daemon().await;
                             load_data().await;
                         });
                     },
                     on_restart: move |_| {
-                        let state = state.clone();
+                        let mut state = state.clone();
                         spawn(async move {
                             let _ = restart_daemon().await;
                             load_data().await;
@@ -215,7 +216,7 @@ pub fn DaemonPage() -> Element {
                     }
                 }
 
-                if *state.read().loading.read() {
+                if state.read().loading {
                     div { class: "space-y-3",
                         for _ in 0..3 {
                             div { class: "h-44 bg-[var(--ds-surface)] rounded-lg animate-pulse" }
@@ -236,38 +237,47 @@ pub fn DaemonPage() -> Element {
                     }
                 } else {
                     div { class: "space-y-3",
-                        for tunnel in state.read().tunnels.clone() {
+                        {state.read().tunnels.clone().iter().map(|tunnel| {
+                            let tunnel = tunnel.clone();
+                            let key = tunnel.name.clone();
                             let process = state.read().processes
                                 .iter()
                                 .find(|p| p.tunnel_name == tunnel.name)
                                 .cloned();
-                            TunnelCard {
-                                key: "{tunnel.name}",
-                                tunnel: tunnel.clone(),
-                                process: process,
-                                on_refresh: move |_| refresh_trigger.set(*refresh_trigger.read() + 1),
+                            let mut refresh_signal = refresh_trigger;
+                            rsx! {
+                                TunnelCard {
+                                    key: "{key}",
+                                    tunnel: tunnel.clone(),
+                                    process: process,
+                                    on_refresh: move |_| {
+                                        let next = refresh_signal.read().wrapping_add(1);
+                                        refresh_signal.set(next);
+                                    },
+                                }
                             }
-                        }
+                        })}
                     }
                 }
             }
 
-            if *state.read().show_add_tunnel.read() {
+            if state.read().show_add_tunnel {
                 AddTunnelDialog {
                     on_close: move |_| state.write().show_add_tunnel = false,
                     on_success: move |_| {
                         state.write().show_add_tunnel = false;
-                        refresh_trigger.set(*refresh_trigger.read() + 1);
+                        let next = refresh_trigger.read().wrapping_add(1);
+                        refresh_trigger.set(next);
                     }
                 }
             }
 
-            if *state.read().show_cloudflared_download.read() {
+            if state.read().show_cloudflared_download {
                 CloudflaredDownloadDialog {
                     on_close: move |_| state.write().show_cloudflared_download = false,
                     on_success: move |_| {
                         state.write().show_cloudflared_download = false;
-                        load_data().await;
+                        spawn(async move { load_data().await; });
                     },
                     versions: state.read().cloudflared_versions.clone(),
                 }
@@ -308,7 +318,7 @@ fn CloudflaredControl(props: CloudflaredControlProps) -> Element {
                     EqButton {
                         variant: ButtonVariant::Primary,
                         size: ButtonSize::Sm,
-                        on_click: props.on_download,
+                        on_click: move |_| props.on_download.call(()),
                         "下载/更新"
                     }
                 }
@@ -352,28 +362,24 @@ fn DaemonControl(props: DaemonControlProps) -> Element {
                 }
                 div { class: "flex gap-2",
                     if props.is_running {
-                        rsx! {
-                            EqButton {
-                                variant: ButtonVariant::Outline,
-                                size: ButtonSize::Sm,
-                                on_click: props.on_restart,
-                                "重启"
-                            }
-                            EqButton {
-                                variant: ButtonVariant::Danger,
-                                size: ButtonSize::Sm,
-                                on_click: props.on_stop,
-                                "停止"
-                            }
+                        EqButton {
+                            variant: ButtonVariant::Outline,
+                            size: ButtonSize::Sm,
+                            on_click: move |_| props.on_restart.call(()),
+                            "重启"
+                        }
+                        EqButton {
+                            variant: ButtonVariant::Danger,
+                            size: ButtonSize::Sm,
+                            on_click: move |_| props.on_stop.call(()),
+                            "停止"
                         }
                     } else {
-                        rsx! {
-                            EqButton {
-                                variant: ButtonVariant::Primary,
-                                size: ButtonSize::Sm,
-                                disabled: true,
-                                "启动"
-                            }
+                        EqButton {
+                            variant: ButtonVariant::Primary,
+                            size: ButtonSize::Sm,
+                            disabled: true,
+                            "启动"
                         }
                     }
                 }
@@ -394,9 +400,15 @@ fn TunnelCard(props: TunnelCardProps) -> Element {
     let mut expanded = use_signal(|| false);
     let mut loading = use_signal(|| false);
     let tunnel_name = props.tunnel.name.clone();
+    // 每个闭包持有独立副本，避免 move 冲突
+    let name_toggle = tunnel_name.clone();
+    let name_start = tunnel_name.clone();
+    let name_stop = tunnel_name.clone();
+    let name_restart = tunnel_name.clone();
+    let name_delete = tunnel_name.clone();
 
     let toggle_enabled = move |_| {
-        let name = tunnel_name.clone();
+        let name = name_toggle.clone();
         let enabled = !props.tunnel.enabled;
         let on_refresh = props.on_refresh.clone();
         loading.set(true);
@@ -412,7 +424,7 @@ fn TunnelCard(props: TunnelCardProps) -> Element {
     };
 
     let start_tunnel_fn = move |_| {
-        let name = tunnel_name.clone();
+        let name = name_start.clone();
         let on_refresh = props.on_refresh.clone();
         loading.set(true);
         spawn(async move {
@@ -423,7 +435,7 @@ fn TunnelCard(props: TunnelCardProps) -> Element {
     };
 
     let stop_tunnel_fn = move |_| {
-        let name = tunnel_name.clone();
+        let name = name_stop.clone();
         let on_refresh = props.on_refresh.clone();
         loading.set(true);
         spawn(async move {
@@ -434,7 +446,7 @@ fn TunnelCard(props: TunnelCardProps) -> Element {
     };
 
     let restart_tunnel_fn = move |_| {
-        let name = tunnel_name.clone();
+        let name = name_restart.clone();
         let on_refresh = props.on_refresh.clone();
         loading.set(true);
         spawn(async move {
@@ -445,7 +457,7 @@ fn TunnelCard(props: TunnelCardProps) -> Element {
     };
 
     let delete_tunnel_fn = move |_| {
-        let name = tunnel_name.clone();
+        let name = name_delete.clone();
         let on_refresh = props.on_refresh.clone();
         loading.set(true);
         spawn(async move {
@@ -508,7 +520,10 @@ fn TunnelCard(props: TunnelCardProps) -> Element {
                     }
                     button {
                         class: "p-1.5 text-[var(--ds-text-tertiary)] hover:text-[var(--ds-text)] hover:bg-[var(--ds-surface)] rounded transition-colors",
-                        onclick: move |_| expanded.set(!*expanded.read()),
+                        onclick: move |_| {
+                            let v = *expanded.read();
+                            expanded.set(!v);
+                        },
                         svg { class: "w-4 h-4", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
                             path { stroke_linecap: "round", stroke_linejoin: "round", d: if *expanded.read() { "M5 15l7-7 7 7" } else { "M19 9l-7 7-7-7" } }
                         }
@@ -518,21 +533,19 @@ fn TunnelCard(props: TunnelCardProps) -> Element {
 
             div { class: "px-4 pb-3 flex gap-2",
                 if is_running {
-                    rsx! {
-                        EqButton {
-                            variant: ButtonVariant::Outline,
-                            size: ButtonSize::Sm,
-                            on_click: stop_tunnel_fn,
-                            disabled: *loading.read(),
-                            "停止"
-                        }
-                        EqButton {
-                            variant: ButtonVariant::Outline,
-                            size: ButtonSize::Sm,
-                            on_click: restart_tunnel_fn,
-                            disabled: *loading.read(),
-                            "重启"
-                        }
+                    EqButton {
+                        variant: ButtonVariant::Outline,
+                        size: ButtonSize::Sm,
+                        on_click: stop_tunnel_fn,
+                        disabled: *loading.read(),
+                        "停止"
+                    }
+                    EqButton {
+                        variant: ButtonVariant::Outline,
+                        size: ButtonSize::Sm,
+                        on_click: restart_tunnel_fn,
+                        disabled: *loading.read(),
+                        "重启"
                     }
                 } else if props.tunnel.enabled {
                     EqButton {
@@ -619,10 +632,15 @@ fn ServiceItem(props: ServiceItemProps) -> Element {
     let mut loading = use_signal(|| false);
     let tunnel_name = props.tunnel_name.clone();
     let service_name = props.service.name.clone();
+    // 每个闭包持有独立副本，避免 move 冲突
+    let toggle_tn = tunnel_name.clone();
+    let toggle_sn = service_name.clone();
+    let delete_tn = tunnel_name.clone();
+    let delete_sn = service_name.clone();
 
     let toggle_service = move |_| {
-        let tn = tunnel_name.clone();
-        let sn = service_name.clone();
+        let tn = toggle_tn.clone();
+        let sn = toggle_sn.clone();
         let enabled = !props.service.enabled;
         let on_refresh = props.on_refresh.clone();
         loading.set(true);
@@ -638,8 +656,8 @@ fn ServiceItem(props: ServiceItemProps) -> Element {
     };
 
     let delete_service_fn = move |_| {
-        let tn = tunnel_name.clone();
-        let sn = service_name.clone();
+        let tn = delete_tn.clone();
+        let sn = delete_sn.clone();
         let on_refresh = props.on_refresh.clone();
         loading.set(true);
         spawn(async move {

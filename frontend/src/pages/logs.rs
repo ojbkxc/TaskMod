@@ -21,15 +21,19 @@ pub fn LogsPage() -> Element {
         });
     });
 
+    // 自动刷新定时器句柄（Dioxus 0.7 use_effect 不支持返回清理函数，用 Signal 持有）
+    let mut auto_refresh_handle = use_signal(|| None::<Interval>);
+
     use_effect(move || {
         if *auto_refresh.read() {
-            let refresh_clone = refresh.clone();
+            let mut refresh_clone = refresh.clone();
             let interval = Interval::new(3000, move || {
-                refresh_clone.set(*refresh_clone.read() + 1);
+                let next = refresh_clone.read().wrapping_add(1);
+                refresh_clone.set(next);
             });
-            Some(move || drop(interval))
+            auto_refresh_handle.set(Some(interval));
         } else {
-            None
+            auto_refresh_handle.set(None);
         }
     });
 
@@ -51,7 +55,10 @@ pub fn LogsPage() -> Element {
                     }
                     EqButton {
                         variant: ButtonVariant::Outline,
-                        on_click: move |_| refresh.set(*refresh.read() + 1),
+                        on_click: move |_| {
+                            let next = refresh.read().wrapping_add(1);
+                            refresh.set(next);
+                        },
                         "刷新"
                     }
                     EqButton {
@@ -59,7 +66,8 @@ pub fn LogsPage() -> Element {
                         on_click: move |_| {
                             spawn(async move {
                                 let _ = crate::api::client::clear_logs().await;
-                                refresh.set(*refresh.read() + 1);
+                                let next = refresh.read().wrapping_add(1);
+                                refresh.set(next);
                             });
                         },
                         "清除"

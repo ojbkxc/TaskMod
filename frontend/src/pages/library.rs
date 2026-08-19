@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 use eq_ui::prelude::*;
+use eq_ui::atoms::{EqTab, TabItem};
 use serde_json::json;
 use chrono::prelude::*;
 use crate::api::client::{
@@ -14,7 +15,7 @@ use crate::api::client::{
     Memory, Preset, Skill, Project, Scenario, SavedItem, McpServer,
 };
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum TabType {
     Memory,
     Preset,
@@ -72,13 +73,13 @@ impl Default for LibraryState {
 
 #[component]
 pub fn LibraryPage() -> Element {
-    let state = use_signal(LibraryState::default);
+    let mut state = use_signal(LibraryState::default);
 
     use_effect(move || {
-        let state = state.clone();
-        async move {
+        let mut state = state.clone();
+        spawn(async move {
             load_data(state).await;
-        }
+        });
     });
 
     let tabs = vec![
@@ -106,13 +107,13 @@ pub fn LibraryPage() -> Element {
         state.write().editing_item = None;
     };
 
-    let close_modal = move || {
+    let mut close_modal = move || {
         state.write().show_create_modal = false;
         state.write().editing_item = None;
     };
 
     let handle_create = move |data: serde_json::Value| {
-        let state = state.clone();
+        let mut state = state.clone();
         async move {
             match state.read().active_tab {
                 TabType::Memory => {
@@ -179,7 +180,7 @@ pub fn LibraryPage() -> Element {
     };
 
     let handle_update = move |data: serde_json::Value| {
-        let state = state.clone();
+        let mut state = state.clone();
         async move {
             let id = data.get("id").and_then(|i| i.as_str()).unwrap_or("");
             match state.read().active_tab {
@@ -242,7 +243,7 @@ pub fn LibraryPage() -> Element {
     };
 
     let handle_delete = move |id: String| {
-        let state = state.clone();
+        let mut state = state.clone();
         async move {
             match state.read().active_tab {
                 TabType::Memory => { let _ = delete_memory(&id).await; }
@@ -334,12 +335,14 @@ pub fn LibraryPage() -> Element {
             }
 
             div { class: "flex gap-1 overflow-x-auto pb-3 border-b border-[var(--ds-border)]",
-                for (label, tab) in tabs {
-                    EqTab {
-                        active: state.read().active_tab == tab,
-                        onclick: move |_| handle_tab_change(tab.clone()),
-                        "{label}"
-                    }
+                EqTab {
+                    tabs: tabs.iter().map(|(label, _)| TabItem::new(label.to_string())).collect(),
+                    active: tabs.iter().position(|(_, t)| *t == state.read().active_tab).unwrap_or(0),
+                    on_change: move |idx: usize| {
+                        if let Some((_, tab)) = tabs.get(idx) {
+                            state.write().active_tab = *tab;
+                        }
+                    },
                 }
             }
 
@@ -400,7 +403,7 @@ pub fn LibraryPage() -> Element {
                                 search_query: state.read().search_query.clone(),
                                 on_search: handle_search,
                                 on_create: open_create_modal,
-                                on_edit: move |s| {
+                                on_edit: move |s: Scenario| {
                                     state.write().editing_item = Some(json!({
                                         "id": s.id,
                                         "label": s.label,
@@ -410,15 +413,15 @@ pub fn LibraryPage() -> Element {
                                     }));
                                     state.write().show_create_modal = true;
                                 },
-                                on_delete: move |id| {
-                                    let state = state.clone();
+                                on_delete: move |id: String| {
+                                    let mut state = state.clone();
                                     spawn(async move {
                                         let _ = delete_scenario(&id).await;
                                         load_data(state).await;
                                     });
                                 },
-                                on_update: move |(id, label, template, enabled)| {
-                                    let state = state.clone();
+                                on_update: move |(id, label, template, enabled): (String, String, String, bool)| {
+                                    let mut state = state.clone();
                                     spawn(async move {
                                         let _ = update_scenario(&id, &label, &template, enabled).await;
                                         load_data(state).await;
@@ -458,7 +461,7 @@ pub fn LibraryPage() -> Element {
                                 search_query: state.read().search_query.clone(),
                                 on_search: handle_search,
                                 on_refresh: move || {
-                                    let state = state.clone();
+                                    let mut state = state.clone();
                                     spawn(async move { load_data(state).await; });
                                 },
                             }
@@ -469,7 +472,7 @@ pub fn LibraryPage() -> Element {
                             PromptControlPanel {
                                 settings: state.read().prompt_settings.clone(),
                                 on_update: move |new_settings| {
-                                    let state = state.clone();
+                                    let mut state = state.clone();
                                     async move {
                                         let _ = update_prompt_settings(&new_settings).await;
                                         state.write().prompt_settings = new_settings;
@@ -494,7 +497,7 @@ pub fn LibraryPage() -> Element {
     }
 }
 
-async fn load_data(state: Signal<LibraryState>) {
+async fn load_data(mut state: Signal<LibraryState>) {
     let memories_res = list_memories(None, None).await;
     let presets_res = list_presets().await;
     let skills_res = list_skills().await;
@@ -585,60 +588,73 @@ fn MemoryList(props: MemoryListProps) -> Element {
                 if props.memories.is_empty() {
                     div { class: "text-center text-[var(--ds-text-tertiary)] py-8", "暂无记忆" }
                 } else {
-                    for mem in &props.memories {
-                        div {
-                            class: "p-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] hover:border-[var(--ds-blue)] transition-colors",
-                            div { class: "flex items-start justify-between gap-2",
-                                div { class: "flex-1",
-                                    div { class: "flex items-center gap-2 mb-1",
-                                        span { class: "text-sm font-medium text-[var(--ds-text)]", "{mem.name}" }
-                                        if !mem.category.is_empty() {
-                                            span { class: "text-[10px] px-1.5 py-0.5 rounded bg-[var(--ds-surface)] text-[var(--ds-text-tertiary)]", "{mem.category}" }
-                                        }
-                                        if mem.pinned {
-                                            svg { class: "w-3 h-3 text-amber-500", fill: "currentColor", view_box: "0 0 24 24",
-                                                path { d: "M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" }
+                    {props.memories.iter().map(|mem| {
+                        let mem_clone = mem.clone();
+                        let mem_id = mem.id.clone();
+                        let mem_name = mem.name.clone();
+                        let mem_category = mem.category.clone();
+                        let mem_content = mem.content.clone();
+                        let mem_tags = mem.tags.clone();
+                        let mem_pinned = mem.pinned;
+                        let mem_access = mem.access_count;
+                        let mem_created = mem.created_at;
+                        let on_edit = props.on_edit.clone();
+                        let on_delete = props.on_delete.clone();
+                        rsx! {
+                            div {
+                                class: "p-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] hover:border-[var(--ds-blue)] transition-colors",
+                                div { class: "flex items-start justify-between gap-2",
+                                    div { class: "flex-1",
+                                        div { class: "flex items-center gap-2 mb-1",
+                                            span { class: "text-sm font-medium text-[var(--ds-text)]", "{mem_name}" }
+                                            if !mem_category.is_empty() {
+                                                span { class: "text-[10px] px-1.5 py-0.5 rounded bg-[var(--ds-surface)] text-[var(--ds-text-tertiary)]", "{mem_category}" }
+                                            }
+                                            if mem_pinned {
+                                                svg { class: "w-3 h-3 text-amber-500", fill: "currentColor", view_box: "0 0 24 24",
+                                                    path { d: "M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" }
+                                                }
                                             }
                                         }
-                                    }
-                                    p { class: "text-xs text-[var(--ds-text-secondary)] line-clamp-2", "{mem.content}" }
-                                    if !mem.tags.is_empty() {
-                                        div { class: "flex gap-1 mt-2",
-                                            for tag in &mem.tags {
-                                                span { class: "text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--ds-blue-light)] text-[var(--ds-blue)]", "{tag}" }
+                                        p { class: "text-xs text-[var(--ds-text-secondary)] line-clamp-2", "{mem_content}" }
+                                        if !mem_tags.is_empty() {
+                                            div { class: "flex gap-1 mt-2",
+                                                for tag in &mem_tags {
+                                                    span { class: "text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--ds-blue-light)] text-[var(--ds-blue)]", "{tag}" }
+                                                }
                                             }
                                         }
-                                    }
-                                    div { class: "flex items-center gap-3 mt-2 text-[10px] text-[var(--ds-text-tertiary)]",
-                                        span { "访问: {mem.access_count}" }
-                                        span { "创建: {format_time(mem.created_at)}" }
-                                    }
-                                }
-                                div { class: "flex items-center gap-1",
-                                    button {
-                                        class: "p-1.5 hover:bg-[var(--ds-surface)] rounded transition-colors",
-                                        onclick: move |_| props.on_edit.call(json!({
-                                            "id": mem.id,
-                                            "name": mem.name,
-                                            "content": mem.content,
-                                            "category": mem.category,
-                                            "tags": mem.tags,
-                                        })),
-                                        svg { class: "w-4 h-4 text-[var(--ds-text-secondary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
-                                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" }
+                                        div { class: "flex items-center gap-3 mt-2 text-[10px] text-[var(--ds-text-tertiary)]",
+                                            span { "访问: {mem_access}" }
+                                            span { "创建: {format_time(mem_created)}" }
                                         }
                                     }
-                                    button {
-                                        class: "p-1.5 hover:bg-red-50 rounded transition-colors",
-                                        onclick: move |_| props.on_delete.call(mem.id.clone()),
-                                        svg { class: "w-4 h-4 text-red-500", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
-                                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" }
+                                    div { class: "flex items-center gap-1",
+                                        button {
+                                            class: "p-1.5 hover:bg-[var(--ds-surface)] rounded transition-colors",
+                                            onclick: move |_| on_edit.call(json!({
+                                                "id": mem_clone.id,
+                                                "name": mem_clone.name,
+                                                "content": mem_clone.content,
+                                                "category": mem_clone.category,
+                                                "tags": mem_clone.tags,
+                                            })),
+                                            svg { class: "w-4 h-4 text-[var(--ds-text-secondary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
+                                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" }
+                                            }
+                                        }
+                                        button {
+                                            class: "p-1.5 hover:bg-red-50 rounded transition-colors",
+                                            onclick: move |_| on_delete.call(mem_id.clone()),
+                                            svg { class: "w-4 h-4 text-red-500", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
+                                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" }
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
+                    })}
                 }
             }
         }
@@ -677,7 +693,12 @@ fn PresetList(props: PresetListProps) -> Element {
                 if props.presets.is_empty() {
                     div { class: "text-center text-[var(--ds-text-tertiary)] py-8", "暂无预设" }
                 } else {
-                    for preset in &props.presets {
+                    {props.presets.iter().map(|preset| {
+                        let preset_clone = preset.clone();
+                        let preset_id = preset.id.clone();
+                        let on_edit = props.on_edit.clone();
+                        let on_delete = props.on_delete.clone();
+                        rsx! {
                         div {
                             class: "p-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] hover:border-[var(--ds-blue)] transition-colors",
                             div { class: "flex items-start justify-between gap-2",
@@ -694,12 +715,12 @@ fn PresetList(props: PresetListProps) -> Element {
                                 div { class: "flex items-center gap-1",
                                     button {
                                         class: "p-1.5 hover:bg-[var(--ds-surface)] rounded transition-colors",
-                                        onclick: move |_| props.on_edit.call(json!({
-                                            "id": preset.id,
-                                            "name": preset.name,
-                                            "description": preset.description,
-                                            "system_prompt": preset.system_prompt,
-                                            "enabled": preset.enabled,
+                                        onclick: move |_| on_edit.call(json!({
+                                            "id": preset_clone.id,
+                                            "name": preset_clone.name,
+                                            "description": preset_clone.description,
+                                            "system_prompt": preset_clone.system_prompt,
+                                            "enabled": preset_clone.enabled,
                                         })),
                                         svg { class: "w-4 h-4 text-[var(--ds-text-secondary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
                                             path { stroke_linecap: "round", stroke_linejoin: "round", d: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" }
@@ -707,7 +728,7 @@ fn PresetList(props: PresetListProps) -> Element {
                                     }
                                     button {
                                         class: "p-1.5 hover:bg-red-50 rounded transition-colors",
-                                        onclick: move |_| props.on_delete.call(preset.id.clone()),
+                                        onclick: move |_| on_delete.call(preset_id.clone()),
                                         svg { class: "w-4 h-4 text-red-500", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
                                             path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" }
                                         }
@@ -715,7 +736,9 @@ fn PresetList(props: PresetListProps) -> Element {
                                 }
                             }
                         }
-                    }
+                        }
+                    })}
+
                 }
             }
         }
@@ -754,7 +777,12 @@ fn SkillList(props: SkillListProps) -> Element {
                 if props.skills.is_empty() {
                     div { class: "text-center text-[var(--ds-text-tertiary)] py-8", "暂无技能" }
                 } else {
-                    for skill in &props.skills {
+                    {props.skills.iter().map(|skill| {
+                        let skill_clone = skill.clone();
+                        let skill_id = skill.id.clone();
+                        let on_edit = props.on_edit.clone();
+                        let on_delete = props.on_delete.clone();
+                        rsx! {
                         div {
                             class: "p-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] hover:border-[var(--ds-blue)] transition-colors",
                             div { class: "flex items-start justify-between gap-2",
@@ -781,12 +809,12 @@ fn SkillList(props: SkillListProps) -> Element {
                                 div { class: "flex items-center gap-1",
                                     button {
                                         class: "p-1.5 hover:bg-[var(--ds-surface)] rounded transition-colors",
-                                        onclick: move |_| props.on_edit.call(json!({
-                                            "id": skill.id,
-                                            "name": skill.name,
-                                            "description": skill.description,
-                                            "prompt_template": skill.prompt_template,
-                                            "enabled": skill.enabled,
+                                        onclick: move |_| on_edit.call(json!({
+                                            "id": skill_clone.id,
+                                            "name": skill_clone.name,
+                                            "description": skill_clone.description,
+                                            "prompt_template": skill_clone.prompt_template,
+                                            "enabled": skill_clone.enabled,
                                         })),
                                         svg { class: "w-4 h-4 text-[var(--ds-text-secondary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
                                             path { stroke_linecap: "round", stroke_linejoin: "round", d: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" }
@@ -794,7 +822,7 @@ fn SkillList(props: SkillListProps) -> Element {
                                     }
                                     button {
                                         class: "p-1.5 hover:bg-red-50 rounded transition-colors",
-                                        onclick: move |_| props.on_delete.call(skill.id.clone()),
+                                        onclick: move |_| on_delete.call(skill_id.clone()),
                                         svg { class: "w-4 h-4 text-red-500", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
                                             path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" }
                                         }
@@ -802,7 +830,9 @@ fn SkillList(props: SkillListProps) -> Element {
                                 }
                             }
                         }
-                    }
+                        }
+                    })}
+
                 }
             }
         }
@@ -841,7 +871,12 @@ fn ProjectList(props: ProjectListProps) -> Element {
                 if props.projects.is_empty() {
                     div { class: "text-center text-[var(--ds-text-tertiary)] py-8", "暂无项目" }
                 } else {
-                    for project in &props.projects {
+                    {props.projects.iter().map(|project| {
+                        let project_clone = project.clone();
+                        let project_id = project.id.clone();
+                        let on_edit = props.on_edit.clone();
+                        let on_delete = props.on_delete.clone();
+                        rsx! {
                         div {
                             class: "p-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] hover:border-[var(--ds-blue)] transition-colors",
                             div { class: "flex items-start justify-between gap-2",
@@ -861,13 +896,13 @@ fn ProjectList(props: ProjectListProps) -> Element {
                                 div { class: "flex items-center gap-1",
                                     button {
                                         class: "p-1.5 hover:bg-[var(--ds-surface)] rounded transition-colors",
-                                        onclick: move |_| props.on_edit.call(json!({
-                                            "id": project.id,
-                                            "name": project.name,
-                                            "description": project.description,
-                                            "instructions": project.instructions,
-                                            "enabled": project.enabled,
-                                            "auto_inject": project.auto_inject,
+                                        onclick: move |_| on_edit.call(json!({
+                                            "id": project_clone.id,
+                                            "name": project_clone.name,
+                                            "description": project_clone.description,
+                                            "instructions": project_clone.instructions,
+                                            "enabled": project_clone.enabled,
+                                            "auto_inject": project_clone.auto_inject,
                                         })),
                                         svg { class: "w-4 h-4 text-[var(--ds-text-secondary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
                                             path { stroke_linecap: "round", stroke_linejoin: "round", d: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" }
@@ -875,7 +910,7 @@ fn ProjectList(props: ProjectListProps) -> Element {
                                     }
                                     button {
                                         class: "p-1.5 hover:bg-red-50 rounded transition-colors",
-                                        onclick: move |_| props.on_delete.call(project.id.clone()),
+                                        onclick: move |_| on_delete.call(project_id.clone()),
                                         svg { class: "w-4 h-4 text-red-500", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
                                             path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" }
                                         }
@@ -883,7 +918,9 @@ fn ProjectList(props: ProjectListProps) -> Element {
                                 }
                             }
                         }
-                    }
+                        }
+                    })}
+
                 }
             }
         }
@@ -903,13 +940,6 @@ struct ScenarioListProps {
 
 #[component]
 fn ScenarioList(props: ScenarioListProps) -> Element {
-    let toggle_enabled = move |scenario: &Scenario| {
-        let props = props.clone();
-        async move {
-            let _ = update_scenario(&scenario.id, &scenario.label, &scenario.template, !scenario.enabled).await;
-        }
-    };
-
     rsx! {
         div { class: "flex flex-col h-full",
             div { class: "flex gap-2 p-3 border-b border-[var(--ds-border)]",
@@ -930,55 +960,70 @@ fn ScenarioList(props: ScenarioListProps) -> Element {
                 if props.scenarios.is_empty() {
                     div { class: "text-center text-[var(--ds-text-tertiary)] py-8", "暂无场景" }
                 } else {
-                    for scenario in &props.scenarios {
-                        div {
-                            class: "flex items-start justify-between p-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] hover:border-[var(--ds-blue)] transition-colors",
-                            div { class: "flex-1",
-                                div { class: "flex items-center gap-2 mb-1",
-                                    span { class: "text-sm font-medium text-[var(--ds-text)]", "{scenario.label}" }
-                                    if scenario.built_in {
-                                        span { class: "text-[10px] px-1.5 py-0.5 rounded bg-[var(--ds-surface)] text-[var(--ds-text-tertiary)]", "内置" }
-                                    }
-                                    if scenario.enabled {
-                                        div { class: "w-2 h-2 rounded-full bg-green-500" }
-                                    }
-                                }
-                                div { class: "text-[10px] text-[var(--ds-text-tertiary)] line-clamp-2", "{scenario.template}" }
-                            }
-                            div { class: "flex items-center gap-1 ml-2",
-                                button {
-                                    class: "p-1.5 hover:bg-[var(--ds-surface)] rounded transition-colors",
-                                    onclick: move |_| {
-                                        spawn(async move { toggle_enabled(scenario).await; });
-                                    },
-                                    svg { 
-                                        class: "w-4 h-4", 
-                                        fill: "none", 
-                                        view_box: "0 0 24 24", 
-                                        stroke: "currentColor",
-                                        class: if scenario.enabled { "text-green-500" } else { "text-[var(--ds-text-tertiary)]" },
-                                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" }
-                                    }
-                                }
-                                if !scenario.built_in {
-                                    button {
-                                        class: "p-1.5 hover:bg-[var(--ds-surface)] rounded transition-colors",
-                                        onclick: move |_| props.on_edit.call(scenario.clone()),
-                                        svg { class: "w-4 h-4 text-[var(--ds-text-secondary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
-                                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" }
+                    {props.scenarios.iter().map(|scenario| {
+                        let scenario_clone = scenario.clone();
+                        let scenario_toggle = scenario.clone();
+                        let scenario_edit = scenario.clone();
+                        let scenario_id = scenario.id.clone();
+                        let scenario_label = scenario.label.clone();
+                        let scenario_template = scenario.template.clone();
+                        let scenario_built_in = scenario.built_in;
+                        let scenario_enabled = scenario.enabled;
+                        let toggle_class = if scenario_enabled { "text-green-500" } else { "text-[var(--ds-text-tertiary)]" };
+                        let on_edit = props.on_edit.clone();
+                        let on_delete = props.on_delete.clone();
+                        rsx! {
+                            div {
+                                class: "flex items-start justify-between p-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] hover:border-[var(--ds-blue)] transition-colors",
+                                div { class: "flex-1",
+                                    div { class: "flex items-center gap-2 mb-1",
+                                        span { class: "text-sm font-medium text-[var(--ds-text)]", "{scenario_label}" }
+                                        if scenario_built_in {
+                                            span { class: "text-[10px] px-1.5 py-0.5 rounded bg-[var(--ds-surface)] text-[var(--ds-text-tertiary)]", "内置" }
+                                        }
+                                        if scenario_enabled {
+                                            div { class: "w-2 h-2 rounded-full bg-green-500" }
                                         }
                                     }
+                                    div { class: "text-[10px] text-[var(--ds-text-tertiary)] line-clamp-2", "{scenario_template}" }
+                                }
+                                div { class: "flex items-center gap-1 ml-2",
                                     button {
-                                        class: "p-1.5 hover:bg-red-50 rounded transition-colors",
-                                        onclick: move |_| props.on_delete.call(scenario.id.clone()),
-                                        svg { class: "w-4 h-4 text-red-500", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
-                                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" }
+                                        class: "p-1.5 hover:bg-[var(--ds-surface)] rounded transition-colors",
+                                        onclick: move |_| {
+                                            let sc = scenario_toggle.clone();
+                                            spawn(async move {
+                                                let _ = update_scenario(&sc.id, &sc.label, &sc.template, !sc.enabled).await;
+                                            });
+                                        },
+                                        svg {
+                                            class: "w-4 h-4 {toggle_class}",
+                                            fill: "none",
+                                            view_box: "0 0 24 24",
+                                            stroke: "currentColor",
+                                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" }
+                                        }
+                                    }
+                                    if !scenario_built_in {
+                                        button {
+                                            class: "p-1.5 hover:bg-[var(--ds-surface)] rounded transition-colors",
+                                            onclick: move |_| on_edit.call(scenario_edit.clone()),
+                                            svg { class: "w-4 h-4 text-[var(--ds-text-secondary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
+                                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" }
+                                            }
+                                        }
+                                        button {
+                                            class: "p-1.5 hover:bg-red-50 rounded transition-colors",
+                                            onclick: move |_| on_delete.call(scenario_id.clone()),
+                                            svg { class: "w-4 h-4 text-red-500", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
+                                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" }
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
+                    })}
                 }
             }
         }
@@ -1017,7 +1062,12 @@ fn SavedList(props: SavedListProps) -> Element {
                 if props.items.is_empty() {
                     div { class: "text-center text-[var(--ds-text-tertiary)] py-8", "暂无保存项" }
                 } else {
-                    for item in &props.items {
+                    {props.items.iter().map(|item| {
+                        let item_clone = item.clone();
+                        let item_id = item.id.clone();
+                        let on_edit = props.on_edit.clone();
+                        let on_delete = props.on_delete.clone();
+                        rsx! {
                         div {
                             class: "p-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] hover:border-[var(--ds-blue)] transition-colors",
                             div { class: "flex items-start justify-between gap-2",
@@ -1038,13 +1088,13 @@ fn SavedList(props: SavedListProps) -> Element {
                                 div { class: "flex items-center gap-1",
                                     button {
                                         class: "p-1.5 hover:bg-[var(--ds-surface)] rounded transition-colors",
-                                        onclick: move |_| props.on_edit.call(json!({
-                                            "id": item.id,
-                                            "title": item.title,
-                                            "content": item.content,
-                                            "kind": item.kind,
-                                            "tags": item.tags,
-                                            "source_url": item.source_url,
+                                        onclick: move |_| on_edit.call(json!({
+                                            "id": item_clone.id,
+                                            "title": item_clone.title,
+                                            "content": item_clone.content,
+                                            "kind": item_clone.kind,
+                                            "tags": item_clone.tags,
+                                            "source_url": item_clone.source_url,
                                         })),
                                         svg { class: "w-4 h-4 text-[var(--ds-text-secondary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
                                             path { stroke_linecap: "round", stroke_linejoin: "round", d: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" }
@@ -1052,7 +1102,7 @@ fn SavedList(props: SavedListProps) -> Element {
                                     }
                                     button {
                                         class: "p-1.5 hover:bg-red-50 rounded transition-colors",
-                                        onclick: move |_| props.on_delete.call(item.id.clone()),
+                                        onclick: move |_| on_delete.call(item_id.clone()),
                                         svg { class: "w-4 h-4 text-red-500", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
                                             path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" }
                                         }
@@ -1060,7 +1110,9 @@ fn SavedList(props: SavedListProps) -> Element {
                                 }
                             }
                         }
-                    }
+                        }
+                    })}
+
                 }
             }
         }
@@ -1099,7 +1151,12 @@ fn McpList(props: McpListProps) -> Element {
                 if props.servers.is_empty() {
                     div { class: "text-center text-[var(--ds-text-tertiary)] py-8", "暂无MCP服务器" }
                 } else {
-                    for server in &props.servers {
+                    {props.servers.iter().map(|server| {
+                        let server_clone = server.clone();
+                        let server_id = server.id.clone();
+                        let on_edit = props.on_edit.clone();
+                        let on_delete = props.on_delete.clone();
+                        rsx! {
                         div {
                             class: "p-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] hover:border-[var(--ds-blue)] transition-colors",
                             div { class: "flex items-start justify-between gap-2",
@@ -1121,14 +1178,14 @@ fn McpList(props: McpListProps) -> Element {
                                 div { class: "flex items-center gap-1",
                                     button {
                                         class: "p-1.5 hover:bg-[var(--ds-surface)] rounded transition-colors",
-                                        onclick: move |_| props.on_edit.call(json!({
-                                            "id": server.id,
-                                            "name": server.name,
-                                            "transport": server.transport,
-                                            "command": server.command,
-                                            "url": server.url,
-                                            "enabled": server.enabled,
-                                            "auto_connect": server.auto_connect,
+                                        onclick: move |_| on_edit.call(json!({
+                                            "id": server_clone.id,
+                                            "name": server_clone.name,
+                                            "transport": server_clone.transport,
+                                            "command": server_clone.command,
+                                            "url": server_clone.url,
+                                            "enabled": server_clone.enabled,
+                                            "auto_connect": server_clone.auto_connect,
                                         })),
                                         svg { class: "w-4 h-4 text-[var(--ds-text-secondary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
                                             path { stroke_linecap: "round", stroke_linejoin: "round", d: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" }
@@ -1136,7 +1193,7 @@ fn McpList(props: McpListProps) -> Element {
                                     }
                                     button {
                                         class: "p-1.5 hover:bg-red-50 rounded transition-colors",
-                                        onclick: move |_| props.on_delete.call(server.id.clone()),
+                                        onclick: move |_| on_delete.call(server_id.clone()),
                                         svg { class: "w-4 h-4 text-red-500", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
                                             path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" }
                                         }
@@ -1144,7 +1201,9 @@ fn McpList(props: McpListProps) -> Element {
                                 }
                             }
                         }
-                    }
+                        }
+                    })}
+
                 }
             }
         }
@@ -1159,16 +1218,16 @@ struct PromptControlPanelProps {
 
 #[component]
 fn PromptControlPanel(props: PromptControlPanelProps) -> Element {
-    let memory_enabled = use_signal(|| props.settings.memory_enabled);
-    let system_prompt_enabled = use_signal(|| props.settings.system_prompt_enabled);
-    let preset_cadence = use_signal(|| props.settings.preset_cadence.clone());
-    let force_response_language = use_signal(|| props.settings.force_response_language.clone());
-    let active_preset_id = use_signal(|| props.settings.active_preset_id.clone());
+    let mut memory_enabled = use_signal(|| props.settings.memory_enabled);
+    let mut system_prompt_enabled = use_signal(|| props.settings.system_prompt_enabled);
+    let mut preset_cadence = use_signal(|| props.settings.preset_cadence.clone());
+    let mut force_response_language = use_signal(|| props.settings.force_response_language.clone());
+    let mut active_preset_id = use_signal(|| props.settings.active_preset_id.clone());
 
     let handle_save = move |_| {
         let new_settings = PromptSettings {
-            memory_enabled: memory_enabled.read(),
-            system_prompt_enabled: system_prompt_enabled.read(),
+            memory_enabled: *memory_enabled.read(),
+            system_prompt_enabled: *system_prompt_enabled.read(),
             preset_cadence: preset_cadence.read().clone(),
             force_response_language: force_response_language.read().clone(),
             active_preset_id: active_preset_id.read().clone(),
@@ -1183,8 +1242,8 @@ fn PromptControlPanel(props: PromptControlPanelProps) -> Element {
                     label { class: "flex items-center gap-2 cursor-pointer",
                         input {
                             r#type: "checkbox",
-                            checked: memory_enabled.read(),
-                            onchange: move |e| memory_enabled.write(e.checked()),
+                            checked: *memory_enabled.read(),
+                            onchange: move |e| memory_enabled.set(e.checked()),
                             class: "w-4 h-4 rounded border-[var(--ds-border)] text-[var(--ds-blue)] focus:ring-[var(--ds-blue)]",
                         }
                         span { class: "text-sm text-[var(--ds-text)]", "启用记忆注入" }
@@ -1194,8 +1253,8 @@ fn PromptControlPanel(props: PromptControlPanelProps) -> Element {
                     label { class: "flex items-center gap-2 cursor-pointer",
                         input {
                             r#type: "checkbox",
-                            checked: system_prompt_enabled.read(),
-                            onchange: move |e| system_prompt_enabled.write(e.checked()),
+                            checked: *system_prompt_enabled.read(),
+                            onchange: move |e| system_prompt_enabled.set(e.checked()),
                             class: "w-4 h-4 rounded border-[var(--ds-border)] text-[var(--ds-blue)] focus:ring-[var(--ds-blue)]",
                         }
                         span { class: "text-sm text-[var(--ds-text)]", "启用系统提示" }
@@ -1206,7 +1265,7 @@ fn PromptControlPanel(props: PromptControlPanelProps) -> Element {
                     select {
                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                         value: preset_cadence.read().clone(),
-                        onchange: move |e| preset_cadence.write(e.value()),
+                        onchange: move |e| preset_cadence.set(e.value()),
                         option { value: "every", "每次对话" }
                         option { value: "first", "仅首次" }
                         option { value: "none", "不注入" }
@@ -1218,7 +1277,7 @@ fn PromptControlPanel(props: PromptControlPanelProps) -> Element {
                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                         placeholder: "如: zh-CN, en-US",
                         value: force_response_language.read().clone(),
-                        oninput: move |e| force_response_language.write(e.value()),
+                        oninput: move |e| force_response_language.set(e.value()),
                     }
                 }
                 div {
@@ -1227,7 +1286,7 @@ fn PromptControlPanel(props: PromptControlPanelProps) -> Element {
                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                         placeholder: "留空使用默认",
                         value: active_preset_id.read().clone(),
-                        oninput: move |e| active_preset_id.write(e.value()),
+                        oninput: move |e| active_preset_id.set(e.value()),
                     }
                 }
             }
@@ -1281,36 +1340,40 @@ fn ScreenshotList(props: ScreenshotListProps) -> Element {
                     }
                 } else {
                     div { class: "grid grid-cols-3 gap-3",
-                        for (idx, screenshot) in props.screenshots.iter().enumerate() {
+                        {props.screenshots.iter().map(|screenshot| {
+                            let screenshot_clone = screenshot.clone();
                             let image_url = if screenshot.starts_with("http") {
                                 screenshot.clone()
                             } else {
                                 format!("/screenshots/{}", screenshot)
                             };
-                            div {
-                                class: "relative group rounded-lg overflow-hidden border border-[var(--ds-border)] bg-[var(--ds-card)] cursor-pointer hover:border-[var(--ds-blue)] transition-colors",
-                                img {
-                                    src: "{image_url}",
-                                    class: "w-full h-32 object-cover",
-                                    alt: "截图",
-                                }
-                                div { class: "absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100",
-                                    button {
-                                        class: "p-2 bg-white/90 rounded-full hover:bg-white transition-colors",
-                                        onclick: move |_| {
-                                            let window = web_sys::window().expect("window should be available in browser context");
-                                            let _ = window.open_with_url_and_target(&image_url, "_blank");
-                                        },
-                                        svg { class: "w-4 h-4 text-gray-700", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
-                                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" }
+                            let url_open = image_url.clone();
+                            rsx! {
+                                div {
+                                    class: "relative group rounded-lg overflow-hidden border border-[var(--ds-border)] bg-[var(--ds-card)] cursor-pointer hover:border-[var(--ds-blue)] transition-colors",
+                                    img {
+                                        src: "{image_url}",
+                                        class: "w-full h-32 object-cover",
+                                        alt: "截图",
+                                    }
+                                    div { class: "absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100",
+                                        button {
+                                            class: "p-2 bg-white/90 rounded-full hover:bg-white transition-colors",
+                                            onclick: move |_| {
+                                                let window = web_sys::window().expect("window should be available in browser context");
+                                                let _ = window.open_with_url_and_target(&url_open, "_blank");
+                                            },
+                                            svg { class: "w-4 h-4 text-gray-700", fill: "none", view_box: "0 0 24 24", stroke: "currentColor",
+                                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" }
+                                            }
                                         }
                                     }
-                                }
-                                div { class: "absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2",
-                                    span { class: "text-[10px] text-white truncate block", "{screenshot}" }
+                                    div { class: "absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2",
+                                        span { class: "text-[10px] text-white truncate block", "{screenshot_clone}" }
+                                    }
                                 }
                             }
-                        }
+                        })}
                     }
                 }
             }
@@ -1332,75 +1395,75 @@ fn CreateModal(props: CreateModalProps) -> Element {
     let is_editing = props.editing_item.is_some();
     let editing = props.editing_item.clone().unwrap_or_default();
 
-    let name = use_signal(|| editing.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string());
-    let description = use_signal(|| editing.get("description").and_then(|d| d.as_str()).unwrap_or("").to_string());
-    let content = use_signal(|| editing.get("content").and_then(|c| c.as_str()).unwrap_or("").to_string());
-    let system_prompt = use_signal(|| editing.get("system_prompt").and_then(|s| s.as_str()).unwrap_or("").to_string());
-    let prompt_template = use_signal(|| editing.get("prompt_template").and_then(|p| p.as_str()).unwrap_or("").to_string());
-    let instructions = use_signal(|| editing.get("instructions").and_then(|i| i.as_str()).unwrap_or("").to_string());
-    let category = use_signal(|| editing.get("category").and_then(|c| c.as_str()).unwrap_or("").to_string());
-    let enabled = use_signal(|| editing.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true));
-    let auto_inject = use_signal(|| editing.get("auto_inject").and_then(|a| a.as_bool()).unwrap_or(false));
-    let title = use_signal(|| editing.get("title").and_then(|t| t.as_str()).unwrap_or("").to_string());
-    let kind = use_signal(|| editing.get("kind").and_then(|k| k.as_str()).unwrap_or("snippet").to_string());
-    let transport = use_signal(|| editing.get("transport").and_then(|t| t.as_str()).unwrap_or("stdio").to_string());
-    let command = use_signal(|| editing.get("command").and_then(|c| c.as_str()).unwrap_or("").to_string());
-    let url = use_signal(|| editing.get("url").and_then(|u| u.as_str()).unwrap_or("").to_string());
-    let auto_connect = use_signal(|| editing.get("auto_connect").and_then(|ac| ac.as_bool()).unwrap_or(false));
+    let mut name = use_signal(|| editing.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string());
+    let mut description = use_signal(|| editing.get("description").and_then(|d| d.as_str()).unwrap_or("").to_string());
+    let mut content = use_signal(|| editing.get("content").and_then(|c| c.as_str()).unwrap_or("").to_string());
+    let mut system_prompt = use_signal(|| editing.get("system_prompt").and_then(|s| s.as_str()).unwrap_or("").to_string());
+    let mut prompt_template = use_signal(|| editing.get("prompt_template").and_then(|p| p.as_str()).unwrap_or("").to_string());
+    let mut instructions = use_signal(|| editing.get("instructions").and_then(|i| i.as_str()).unwrap_or("").to_string());
+    let mut category = use_signal(|| editing.get("category").and_then(|c| c.as_str()).unwrap_or("").to_string());
+    let mut enabled = use_signal(|| editing.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true));
+    let mut auto_inject = use_signal(|| editing.get("auto_inject").and_then(|a| a.as_bool()).unwrap_or(false));
+    let mut title = use_signal(|| editing.get("title").and_then(|t| t.as_str()).unwrap_or("").to_string());
+    let mut kind = use_signal(|| editing.get("kind").and_then(|k| k.as_str()).unwrap_or("snippet").to_string());
+    let mut transport = use_signal(|| editing.get("transport").and_then(|t| t.as_str()).unwrap_or("stdio").to_string());
+    let mut command = use_signal(|| editing.get("command").and_then(|c| c.as_str()).unwrap_or("").to_string());
+    let mut url = use_signal(|| editing.get("url").and_then(|u| u.as_str()).unwrap_or("").to_string());
+    let mut auto_connect = use_signal(|| editing.get("auto_connect").and_then(|ac| ac.as_bool()).unwrap_or(false));
     
 
     let handle_submit = move |_| {
         let data = match props.tab {
             TabType::Memory => json!({
                 "id": editing.get("id").and_then(|i| i.as_str()).unwrap_or(""),
-                "name": name.read(),
-                "content": content.read(),
-                "category": category.read(),
+                "name": *name.read(),
+                "content": *content.read(),
+                "category": *category.read(),
             }),
             TabType::Preset => json!({
                 "id": editing.get("id").and_then(|i| i.as_str()).unwrap_or(""),
-                "name": name.read(),
-                "description": description.read(),
-                "system_prompt": system_prompt.read(),
-                "enabled": enabled.read(),
+                "name": *name.read(),
+                "description": *description.read(),
+                "system_prompt": *system_prompt.read(),
+                "enabled": *enabled.read(),
             }),
             TabType::Skill => json!({
                 "id": editing.get("id").and_then(|i| i.as_str()).unwrap_or(""),
-                "name": name.read(),
-                "description": description.read(),
-                "prompt_template": prompt_template.read(),
-                "enabled": enabled.read(),
+                "name": *name.read(),
+                "description": *description.read(),
+                "prompt_template": *prompt_template.read(),
+                "enabled": *enabled.read(),
             }),
             TabType::Project => json!({
                 "id": editing.get("id").and_then(|i| i.as_str()).unwrap_or(""),
-                "name": name.read(),
-                "description": description.read(),
-                "instructions": instructions.read(),
-                "enabled": enabled.read(),
-                "auto_inject": auto_inject.read(),
+                "name": *name.read(),
+                "description": *description.read(),
+                "instructions": *instructions.read(),
+                "enabled": *enabled.read(),
+                "auto_inject": *auto_inject.read(),
             }),
             TabType::Scenario => json!({
                 "id": editing.get("id").and_then(|i| i.as_str()).unwrap_or(""),
-                "label": name.read(),
-                "template": content.read(),
-                "enabled": enabled.read(),
+                "label": *name.read(),
+                "template": *content.read(),
+                "enabled": *enabled.read(),
             }),
             TabType::Saved => json!({
                 "id": editing.get("id").and_then(|i| i.as_str()).unwrap_or(""),
-                "title": title.read(),
-                "content": content.read(),
-                "kind": kind.read(),
+                "title": *title.read(),
+                "content": *content.read(),
+                "kind": *kind.read(),
                 "tags": editing.get("tags").unwrap_or(&json!([])),
-                "source_url": url.read(),
+                "source_url": *url.read(),
             }),
             TabType::MCP => json!({
                 "id": editing.get("id").and_then(|i| i.as_str()).unwrap_or(""),
-                "name": name.read(),
-                "transport": transport.read(),
-                "command": command.read(),
-                "url": url.read(),
-                "enabled": enabled.read(),
-                "auto_connect": auto_connect.read(),
+                "name": *name.read(),
+                "transport": *transport.read(),
+                "command": *command.read(),
+                "url": *url.read(),
+                "enabled": *enabled.read(),
+                "auto_connect": *auto_connect.read(),
             }),
             _ => json!({}),
         };
@@ -1408,12 +1471,6 @@ fn CreateModal(props: CreateModalProps) -> Element {
             spawn(async move { props.on_update.call(data); });
         } else {
             spawn(async move { props.on_create.call(data); });
-        }
-    };
-
-    let handle_keydown = move |ev: Event<KeyboardEvent>| {
-        if ev.key() == "Escape" {
-            props.on_close.call(());
         }
     };
 
@@ -1439,7 +1496,11 @@ fn CreateModal(props: CreateModalProps) -> Element {
         div {
             class: "fixed inset-0 bg-black/50 flex items-center justify-center z-50",
             onclick: move |_| props.on_close.call(()),
-            onkeydown: handle_keydown,
+            onkeydown: move |ev| {
+                if ev.key() == Key::Escape {
+                    props.on_close.call(());
+                }
+            },
             tabindex: "0",
             div {
                 class: "bg-[var(--ds-bg)] border border-[var(--ds-border)] rounded-lg shadow-xl w-full max-w-lg p-4",
@@ -1463,9 +1524,11 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                     input {
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: name.read().clone(),
-                                        oninput: move |e| name.write(e.value()),
+                                        oninput: move |e| name.set(e.value()),
                                         onmounted: move |md| {
-                                            md.get().ok().map(|el| el.focus());
+                                            if let Some(el) = md.data().downcast::<web_sys::HtmlElement>() {
+                                            let _ = el.focus();
+                                        }
                                         },
                                     }
                                 }
@@ -1474,7 +1537,7 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                     input {
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: category.read().clone(),
-                                        oninput: move |e| category.write(e.value()),
+                                        oninput: move |e| category.set(e.value()),
                                     }
                                 }
                                 div {
@@ -1482,7 +1545,7 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                     textarea {
                                         class: "w-full min-h-[100px] px-3 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)] resize-none",
                                         value: content.read().clone(),
-                                        oninput: move |e| content.write(e.value()),
+                                        oninput: move |e| content.set(e.value()),
                                     }
                                 }
                             }
@@ -1494,9 +1557,11 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                     input {
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: name.read().clone(),
-                                        oninput: move |e| name.write(e.value()),
+                                        oninput: move |e| name.set(e.value()),
                                         onmounted: move |md| {
-                                            md.get().ok().map(|el| el.focus());
+                                            if let Some(el) = md.data().downcast::<web_sys::HtmlElement>() {
+                                            let _ = el.focus();
+                                        }
                                         },
                                     }
                                 }
@@ -1505,7 +1570,7 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                     input {
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: description.read().clone(),
-                                        oninput: move |e| description.write(e.value()),
+                                        oninput: move |e| description.set(e.value()),
                                     }
                                 }
                                 div {
@@ -1513,14 +1578,14 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                     textarea {
                                         class: "w-full min-h-[100px] px-3 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)] resize-none font-mono",
                                         value: system_prompt.read().clone(),
-                                        oninput: move |e| system_prompt.write(e.value()),
+                                        oninput: move |e| system_prompt.set(e.value()),
                                     }
                                 }
                                 div { class: "flex items-center gap-2",
                                     input {
                                         r#type: "checkbox",
-                                        checked: enabled.read(),
-                                        onchange: move |e| enabled.write(e.checked()),
+                                        checked: *enabled.read(),
+                                        onchange: move |e| enabled.set(e.checked()),
                                     }
                                     label { class: "text-xs text-[var(--ds-text-secondary)]", "启用" }
                                 }
@@ -1533,9 +1598,11 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                     input {
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: name.read().clone(),
-                                        oninput: move |e| name.write(e.value()),
+                                        oninput: move |e| name.set(e.value()),
                                         onmounted: move |md| {
-                                            md.get().ok().map(|el| el.focus());
+                                            if let Some(el) = md.data().downcast::<web_sys::HtmlElement>() {
+                                            let _ = el.focus();
+                                        }
                                         },
                                     }
                                 }
@@ -1544,7 +1611,7 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                     input {
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: description.read().clone(),
-                                        oninput: move |e| description.write(e.value()),
+                                        oninput: move |e| description.set(e.value()),
                                     }
                                 }
                                 div {
@@ -1552,14 +1619,14 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                     textarea {
                                         class: "w-full min-h-[100px] px-3 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)] resize-none font-mono",
                                         value: prompt_template.read().clone(),
-                                        oninput: move |e| prompt_template.write(e.value()),
+                                        oninput: move |e| prompt_template.set(e.value()),
                                     }
                                 }
                                 div { class: "flex items-center gap-2",
                                     input {
                                         r#type: "checkbox",
-                                        checked: enabled.read(),
-                                        onchange: move |e| enabled.write(e.checked()),
+                                        checked: *enabled.read(),
+                                        onchange: move |e| enabled.set(e.checked()),
                                     }
                                     label { class: "text-xs text-[var(--ds-text-secondary)]", "启用" }
                                 }
@@ -1572,9 +1639,11 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                     input {
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: name.read().clone(),
-                                        oninput: move |e| name.write(e.value()),
+                                        oninput: move |e| name.set(e.value()),
                                         onmounted: move |md| {
-                                            md.get().ok().map(|el| el.focus());
+                                            if let Some(el) = md.data().downcast::<web_sys::HtmlElement>() {
+                                            let _ = el.focus();
+                                        }
                                         },
                                     }
                                 }
@@ -1583,7 +1652,7 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                     input {
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: description.read().clone(),
-                                        oninput: move |e| description.write(e.value()),
+                                        oninput: move |e| description.set(e.value()),
                                     }
                                 }
                                 div {
@@ -1591,22 +1660,22 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                     textarea {
                                         class: "w-full min-h-[100px] px-3 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)] resize-none",
                                         value: instructions.read().clone(),
-                                        oninput: move |e| instructions.write(e.value()),
+                                        oninput: move |e| instructions.set(e.value()),
                                     }
                                 }
                                 div { class: "flex items-center gap-2",
                                     input {
                                         r#type: "checkbox",
-                                        checked: enabled.read(),
-                                        onchange: move |e| enabled.write(e.checked()),
+                                        checked: *enabled.read(),
+                                        onchange: move |e| enabled.set(e.checked()),
                                     }
                                     label { class: "text-xs text-[var(--ds-text-secondary)]", "启用" }
                                 }
                                 div { class: "flex items-center gap-2",
                                     input {
                                         r#type: "checkbox",
-                                        checked: auto_inject.read(),
-                                        onchange: move |e| auto_inject.write(e.checked()),
+                                        checked: *auto_inject.read(),
+                                        onchange: move |e| auto_inject.set(e.checked()),
                                     }
                                     label { class: "text-xs text-[var(--ds-text-secondary)]", "自动注入上下文" }
                                 }
@@ -1619,9 +1688,11 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                     input {
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: name.read().clone(),
-                                        oninput: move |e| name.write(e.value()),
+                                        oninput: move |e| name.set(e.value()),
                                         onmounted: move |md| {
-                                            md.get().ok().map(|el| el.focus());
+                                            if let Some(el) = md.data().downcast::<web_sys::HtmlElement>() {
+                                            let _ = el.focus();
+                                        }
                                         },
                                     }
                                 }
@@ -1631,14 +1702,14 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                         class: "w-full min-h-[100px] px-3 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)] resize-none",
                                         placeholder: "输入场景的提示模板...",
                                         value: content.read().clone(),
-                                        oninput: move |e| content.write(e.value()),
+                                        oninput: move |e| content.set(e.value()),
                                     }
                                 }
                                 div { class: "flex items-center gap-2",
                                     input {
                                         r#type: "checkbox",
-                                        checked: enabled.read(),
-                                        onchange: move |e| enabled.write(e.checked()),
+                                        checked: *enabled.read(),
+                                        onchange: move |e| enabled.set(e.checked()),
                                     }
                                     label { class: "text-xs text-[var(--ds-text-secondary)]", "启用" }
                                 }
@@ -1651,9 +1722,11 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                     input {
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: title.read().clone(),
-                                        oninput: move |e| title.write(e.value()),
+                                        oninput: move |e| title.set(e.value()),
                                         onmounted: move |md| {
-                                            md.get().ok().map(|el| el.focus());
+                                            if let Some(el) = md.data().downcast::<web_sys::HtmlElement>() {
+                                            let _ = el.focus();
+                                        }
                                         },
                                     }
                                 }
@@ -1662,7 +1735,7 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                     input {
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: kind.read().clone(),
-                                        oninput: move |e| kind.write(e.value()),
+                                        oninput: move |e| kind.set(e.value()),
                                     }
                                 }
                                 div {
@@ -1670,7 +1743,7 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                     textarea {
                                         class: "w-full min-h-[100px] px-3 py-2 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)] resize-none",
                                         value: content.read().clone(),
-                                        oninput: move |e| content.write(e.value()),
+                                        oninput: move |e| content.set(e.value()),
                                     }
                                 }
                                 div {
@@ -1678,7 +1751,7 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                     input {
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: url.read().clone(),
-                                        oninput: move |e| url.write(e.value()),
+                                        oninput: move |e| url.set(e.value()),
                                     }
                                 }
                             }
@@ -1690,9 +1763,11 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                     input {
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: name.read().clone(),
-                                        oninput: move |e| name.write(e.value()),
+                                        oninput: move |e| name.set(e.value()),
                                         onmounted: move |md| {
-                                            md.get().ok().map(|el| el.focus());
+                                            if let Some(el) = md.data().downcast::<web_sys::HtmlElement>() {
+                                            let _ = el.focus();
+                                        }
                                         },
                                     }
                                 }
@@ -1701,7 +1776,7 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                     select {
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: transport.read().clone(),
-                                        onchange: move |e| transport.write(e.value()),
+                                        onchange: move |e| transport.set(e.value()),
                                         option { value: "stdio", "标准输入输出" }
                                         option { value: "tcp", "TCP连接" }
                                         option { value: "ws", "WebSocket" }
@@ -1712,7 +1787,7 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                     input {
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: command.read().clone(),
-                                        oninput: move |e| command.write(e.value()),
+                                        oninput: move |e| command.set(e.value()),
                                     }
                                 }
                                 div {
@@ -1720,22 +1795,22 @@ fn CreateModal(props: CreateModalProps) -> Element {
                                     input {
                                         class: "w-full min-h-[42px] px-3 border border-[var(--ds-border)] rounded-md bg-[var(--ds-card)] text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-blue)]",
                                         value: url.read().clone(),
-                                        oninput: move |e| url.write(e.value()),
+                                        oninput: move |e| url.set(e.value()),
                                     }
                                 }
                                 div { class: "flex items-center gap-2",
                                     input {
                                         r#type: "checkbox",
-                                        checked: enabled.read(),
-                                        onchange: move |e| enabled.write(e.checked()),
+                                        checked: *enabled.read(),
+                                        onchange: move |e| enabled.set(e.checked()),
                                     }
                                     label { class: "text-xs text-[var(--ds-text-secondary)]", "启用" }
                                 }
                                 div { class: "flex items-center gap-2",
                                     input {
                                         r#type: "checkbox",
-                                        checked: auto_connect.read(),
-                                        onchange: move |e| auto_connect.write(e.checked()),
+                                        checked: *auto_connect.read(),
+                                        onchange: move |e| auto_connect.set(e.checked()),
                                     }
                                     label { class: "text-xs text-[var(--ds-text-secondary)]", "自动连接" }
                                 }

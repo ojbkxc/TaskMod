@@ -2,6 +2,7 @@ use dioxus::prelude::*;
 use gloo_timers::future::sleep;
 use serde_json::Value;
 use std::time::Duration;
+use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::{CloseEvent, ErrorEvent, MessageEvent, WebSocket};
 
@@ -9,9 +10,9 @@ use super::state::{ChatMessage, ChatState};
 
 /// WebSocket 连接管理
 pub async fn connect_ws(
-    state: Signal<ChatState>,
-    ws: Signal<Option<WebSocket>>,
-    message_container: Signal<Option<MountedData>>,
+    mut state: Signal<ChatState>,
+    mut ws: Signal<Option<WebSocket>>,
+    message_container: Signal<Option<std::rc::Rc<MountedData>>>,
 ) {
     if ws.read().is_some() {
         return;
@@ -30,18 +31,18 @@ pub async fn connect_ws(
                 "WebSocket连接失败: {}",
                 e.as_string().unwrap_or_default()
             ));
-            schedule_reconnect(state, ws, message_container).await;
+            Box::pin(schedule_reconnect(state, ws, message_container)).await;
             return;
         }
     };
     socket.set_binary_type(web_sys::BinaryType::Arraybuffer);
 
     // on_message
-    let state_clone = state.clone();
-    let ws_clone = ws.clone();
-    let message_container_clone = message_container.clone();
+    let mut state_clone = state.clone();
+    let mut ws_clone = ws.clone();
+    let mut message_container_clone = message_container.clone();
     let on_message = Closure::wrap(Box::new(move |event: MessageEvent| {
-        if let Ok(text) = event.data().as_string() {
+        if let Some(text) = event.data().as_string() {
             if text == "ping" {
                 if let Some(s) = ws_clone.read().as_ref() {
                     let _ = s.send_with_str("pong");
@@ -155,14 +156,16 @@ pub async fn connect_ws(
     on_message.forget();
 
     // on_close
-    let state_clone2 = state.clone();
-    let ws_clone2 = ws.clone();
-    let message_container_clone2 = message_container.clone();
+    let mut state_clone2 = state.clone();
+    let mut ws_clone2 = ws.clone();
+    let mut message_container_clone2 = message_container.clone();
     let on_close = Closure::wrap(Box::new(move |_event: CloseEvent| {
-        let mut state = state_clone2.write();
-        state.is_typing = false;
-        state.ws_connected = false;
-        state.reconnect_attempts += 1;
+        {
+            let mut state = state_clone2.write();
+            state.is_typing = false;
+            state.ws_connected = false;
+            state.reconnect_attempts += 1;
+        }
         ws_clone2.write().take();
         spawn(async move {
             schedule_reconnect(state_clone2, ws_clone2, message_container_clone2).await;
@@ -172,15 +175,17 @@ pub async fn connect_ws(
     on_close.forget();
 
     // on_error
-    let state_clone3 = state.clone();
-    let ws_clone3 = ws.clone();
-    let message_container_clone3 = message_container.clone();
+    let mut state_clone3 = state.clone();
+    let mut ws_clone3 = ws.clone();
+    let mut message_container_clone3 = message_container.clone();
     let on_error = Closure::wrap(Box::new(move |_event: ErrorEvent| {
-        let mut state = state_clone3.write();
-        state.is_typing = false;
-        state.error = Some("WebSocket连接失败".to_string());
-        state.ws_connected = false;
-        state.reconnect_attempts += 1;
+        {
+            let mut state = state_clone3.write();
+            state.is_typing = false;
+            state.error = Some("WebSocket连接失败".to_string());
+            state.ws_connected = false;
+            state.reconnect_attempts += 1;
+        }
         ws_clone3.write().take();
         spawn(async move {
             schedule_reconnect(state_clone3, ws_clone3, message_container_clone3).await;
@@ -190,7 +195,7 @@ pub async fn connect_ws(
     on_error.forget();
 
     // on_open
-    let state_clone4 = state.clone();
+    let mut state_clone4 = state.clone();
     let on_open = Closure::wrap(Box::new(move || {
         let mut state = state_clone4.write();
         state.ws_connected = true;
@@ -209,30 +214,36 @@ pub async fn connect_ws(
 pub async fn schedule_reconnect(
     state: Signal<ChatState>,
     ws: Signal<Option<WebSocket>>,
-    message_container: Signal<Option<MountedData>>,
+    message_container: Signal<Option<std::rc::Rc<MountedData>>>,
 ) {
     let attempts = state.read().reconnect_attempts;
-    let delay = std::cmp::min(attempts * 2, 16);
+    let delay = std::cmp::min(attempts as u64 * 2, 16);
     sleep(Duration::from_secs(delay)).await;
     if ws.read().is_none() {
-        connect_ws(state, ws, message_container).await;
+        Box::pin(connect_ws(state, ws, message_container)).await;
     }
 }
 
 /// 心跳检测（30秒间隔）
-pub fn start_heartbeat(ws: Signal<Option<WebSocket>>, state: Signal<ChatState>) {
+pub fn start_heartbeat(mut ws: Signal<Option<WebSocket>>, mut state: Signal<ChatState>) {
     spawn(async move {
         loop {
             sleep(Duration::from_secs(30)).await;
-            if let Some(socket) = ws.read().as_ref() {
-                if socket.ready_state() == 1 {
-                    let _ = socket.send_with_str("ping");
-                } else {
-                    state.write().ws_connected = false;
-                    ws.write().take();
-                    break;
+            // 将只读借用限制在块内，避免与后续 write 冲突
+            let should_break = {
+                let socket_opt = ws.read().clone();
+                match socket_opt.as_ref() {
+                    Some(socket) if socket.ready_state() == 1 => {
+                        let _ = socket.send_with_str("ping");
+                        false
+                    }
+                    Some(_) => true,
+                    None => true,
                 }
-            } else {
+            };
+            if should_break {
+                state.write().ws_connected = false;
+                ws.write().take();
                 break;
             }
         }
@@ -240,12 +251,10 @@ pub fn start_heartbeat(ws: Signal<Option<WebSocket>>, state: Signal<ChatState>) 
 }
 
 /// 滚动到消息容器底部
-fn scroll_to_bottom(container: &Signal<Option<MountedData>>) {
+fn scroll_to_bottom(container: &Signal<Option<std::rc::Rc<MountedData>>>) {
     if let Some(md) = container.read().as_ref() {
-        if let Ok(element) = md.get() {
-            if let Some(elem) = element.dyn_ref::<web_sys::HtmlDivElement>() {
-                elem.set_scroll_top(elem.scroll_height());
-            }
+        if let Some(elem) = md.downcast::<web_sys::HtmlElement>() {
+            elem.set_scroll_top(elem.scroll_height());
         }
     }
 }

@@ -24,7 +24,7 @@ pub fn ScriptsPage() -> Element {
         });
     });
 
-    let load_script = move |name: String| {
+    let mut load_script = move |name: String| {
         let n = name.clone();
         selected.set(Some(name));
         spawn(async move {
@@ -38,7 +38,7 @@ pub fn ScriptsPage() -> Element {
         });
     };
 
-    let save_script = move |_| {
+    let mut save_script = move |_| {
         let name = selected.read().clone().unwrap_or_default();
         let content = script_content.read().clone();
         if name.is_empty() { return; }
@@ -80,7 +80,7 @@ pub fn ScriptsPage() -> Element {
                 EqCard { class: "p-4",
                     div { class: "flex items-center justify-between mb-3",
                         span { class: "text-sm font-semibold text-[var(--ds-text)]",
-                            "编辑: {selected}"
+                            "编辑: {selected.read().clone().unwrap_or_default()}"
                         }
                         div { class: "flex gap-2",
                             EqButton {
@@ -130,7 +130,7 @@ pub fn ScriptsPage() -> Element {
                                     svg { class: "w-4 h-4 text-[var(--ds-text-tertiary)]", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "2",
                                         path { stroke_linecap: "round", stroke_linejoin: "round", d: "M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" }
                                     }
-                                    span { class: "text-sm font-medium text-[var(--ds-text)]", "n}" }
+                                    span { class: "text-sm font-medium text-[var(--ds-text)]", "{n}" }
                                 }
                                 div { class: "flex gap-1",
                                     EqButton {
