@@ -554,10 +554,7 @@ pub async fn speak(Json(req): Json<TtsRequest>) -> Json<ApiResponse<String>> {
         for (i, sentence) in sentences.iter().enumerate() {
             // barge-in 检查：若 generation 已变化（有更新的请求到达），提前退出
             if TTS_GENERATION.load(Ordering::SeqCst) != my_generation {
-                tracing::info!(
-                    "[TTS] barge-in: 新请求到达，停止当前播放 (completed {}/{})",
-                    i, total
-                );
+                tracing::info!("[TTS] barge-in: 新请求到达，停止当前播放 (completed {}/{})", i, total);
                 break;
             }
 
