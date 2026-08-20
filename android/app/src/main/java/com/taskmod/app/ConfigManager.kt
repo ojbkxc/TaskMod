@@ -19,7 +19,13 @@ object ConfigManager {
         val port: Int = 9527,
         val customUrl: String = "",
         val autoStart: Boolean = true,
-        val customIp: String = ""
+        val customIp: String = "",
+        // 网络 TTS 配置（OpenAI 兼容 /audio/speech 端点）
+        val networkTtsEnabled: Boolean = false,
+        val networkTtsBaseUrl: String = "",
+        val networkTtsApiKey: String = "",
+        val networkTtsModel: String = "",
+        val networkTtsVoice: String = ""
     )
 
     private var cached: AppConfig? = null
@@ -82,6 +88,12 @@ object ConfigManager {
 
     /** 获取端口 */
     fun getPort(): Int = load().port
+
+    /** 判断网络 TTS 是否已完整配置（开关开启 + 四项必填字段均非空） */
+    fun isNetworkTtsConfigured(): Boolean {
+        val cfg = load()
+        return cfg.networkTtsEnabled && cfg.networkTtsBaseUrl.isNotBlank() && cfg.networkTtsApiKey.isNotBlank() && cfg.networkTtsModel.isNotBlank() && cfg.networkTtsVoice.isNotBlank()
+    }
 
     /** 获取自定义 URL（优先级: customUrl > customIp+port > 自动检测） */
     fun getAccessUrl(): String {

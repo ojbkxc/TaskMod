@@ -1,10 +1,15 @@
 use axum::Json;
 use serde::Deserialize;
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::process::Command;
 
 use crate::data::response::ApiResponse;
 use crate::data::tts_config::{EngineParams, ReplaceRule, TtsConfig};
+
+/// TTS barge-in generation: 每次新 speak 请求或 stop 递增，
+/// 进行中的播放循环检测到变化即提前退出，避免多个 TTS 叠音。
+static TTS_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Deserialize)]
 pub struct TtsRequest {
@@ -539,11 +544,23 @@ pub async fn speak(Json(req): Json<TtsRequest>) -> Json<ApiResponse<String>> {
     let engine_owned = req.engine.clone();
     let language_owned = req.language.clone();
 
+    // barge-in: 递增 generation，取消所有旧的播放循环
+    let my_generation = TTS_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+
     tokio::spawn(async move {
         let total = sentences.len();
         let mut failed = 0;
 
         for (i, sentence) in sentences.iter().enumerate() {
+            // barge-in 检查：若 generation 已变化（有更新的请求到达），提前退出
+            if TTS_GENERATION.load(Ordering::SeqCst) != my_generation {
+                tracing::info!(
+                    "[TTS] barge-in: 新请求到达，停止当前播放 (completed {}/{})",
+                    i, total
+                );
+                break;
+            }
+
             // 优先调用 APK 原生 TtsManager（传完整参数：rate/pitch/volume）
             let apk_ok = exec_speak_via_apk(
                 sentence,
@@ -578,6 +595,9 @@ pub async fn speak(Json(req): Json<TtsRequest>) -> Json<ApiResponse<String>> {
 }
 
 pub async fn stop_tts() -> Json<ApiResponse<String>> {
+    // barge-in: 递增 generation，取消所有进行中的播放循环
+    TTS_GENERATION.fetch_add(1, Ordering::SeqCst);
+
     // 优先调用 APK 原生 TtsManager 停止（借鉴 Agora 成功方式）
     let apk_stop_args = vec![
         "broadcast".to_string(),

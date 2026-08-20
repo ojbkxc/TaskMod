@@ -34,6 +34,19 @@ class TtsReceiver : BroadcastReceiver() {
     }
 
     private fun handleSpeak(intent: Intent) {
+        // 注入网络 TTS 配置（每次刷新，支持运行时切换）
+        val appConfig = ConfigManager.load()
+        TtsManager.networkTtsConfig = if (appConfig.networkTtsEnabled &&
+            appConfig.networkTtsBaseUrl.isNotBlank() &&
+            appConfig.networkTtsApiKey.isNotBlank() &&
+            appConfig.networkTtsModel.isNotBlank() &&
+            appConfig.networkTtsVoice.isNotBlank()
+        ) {
+            { NetworkTtsConfig(appConfig.networkTtsBaseUrl, appConfig.networkTtsApiKey, appConfig.networkTtsModel, appConfig.networkTtsVoice) }
+        } else {
+            null
+        }
+
         val text = intent.getStringExtra("text")
         if (text.isNullOrBlank()) {
             Log.w(TAG, "TTS_SPEAK: text is null or blank, ignoring")

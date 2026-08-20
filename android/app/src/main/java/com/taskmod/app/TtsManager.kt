@@ -3,6 +3,9 @@ package com.taskmod.app
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.media.MediaPlayer
+import android.media.PlaybackParams
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -19,11 +22,27 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Collections
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+
+/**
+ * Connection details for provider-backed (network) TTS synthesis via the OpenAI-compatible
+ * `POST {base}/audio/speech` endpoint. Null config means "use the system TTS engine".
+ */
+data class NetworkTtsConfig(
+    val baseUrl: String,
+    val apiKey: String,
+    val model: String,
+    val voice: String,
+)
 
 data class TtsDiagnosticInfo(
     val initialized: Boolean,
@@ -70,6 +89,16 @@ object TtsManager {
     @Volatile private var pendingRate: Float = 1.0f
     @Volatile private var pendingPitch: Float = 1.0f
     @Volatile private var appContext: Context? = null
+
+    /**
+     * Optional resolver that returns provider-backed synthesis config when the user has chosen a
+     * TTS provider model in settings. Null (or null result) routes through the system engine.
+     * Injected from TtsReceiver on each speak request.
+     */
+    @Volatile var networkTtsConfig: (() -> NetworkTtsConfig?)? = null
+    @Volatile private var netPlayer: MediaPlayer? = null
+    private val networkScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private const val NET_SPEECH_PATH = "/audio/speech"
 
     private fun log(level: String, msg: String) {
         val ts = logTimeFormat.format(Date())
@@ -252,6 +281,12 @@ object TtsManager {
 
     fun speak(text: String, language: String = "system", rate: Float = 1.0f, pitch: Float = 1.0f): Boolean {
         if (text.isBlank()) { log("D", "speak: text is blank"); return false }
+
+        val config = networkTtsConfig?.invoke()
+        if (config != null) {
+            return speakNetwork(text, rate, config)
+        }
+
         val cleanText = stripMarkdown(text)
         if (cleanText.isBlank()) { log("D", "speak: text is blank after stripMarkdown"); return false }
         if (!initialized || tts == null) {
@@ -260,6 +295,123 @@ object TtsManager {
             return true
         }
         return speakInternal(cleanText, language, rate, pitch)
+    }
+
+    /**
+     * Provider-backed TTS: synthesize the text over the network (OpenAI-compatible
+     * `POST /audio/speech`) and stream the returned audio via [MediaPlayer]. Keeps [isPlaying]
+     * in sync so observers behave identically to system TTS.
+     */
+    private fun speakNetwork(text: String, rate: Float, config: NetworkTtsConfig): Boolean {
+        stop()
+        _isPlaying.value = true
+        networkScope.launch {
+            val audio = synthesizeNetSpeech(text, rate, config)
+            if (audio == null) {
+                log("E", "Network TTS synthesis failed for model=${config.model}")
+                _isPlaying.value = false
+                return@launch
+            }
+            playNetAudio(audio, rate)
+        }
+        return true
+    }
+
+    private suspend fun synthesizeNetSpeech(
+        text: String,
+        rate: Float,
+        config: NetworkTtsConfig,
+    ): File? = withContext(Dispatchers.IO) {
+        var connection: HttpURLConnection? = null
+        try {
+            val url = URL(normalizeSpeechUrl(config.baseUrl))
+            connection = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 60000
+                readTimeout = 60000
+                doOutput = true
+                setRequestProperty("Authorization", "Bearer ${config.apiKey}")
+                setRequestProperty("Content-Type", "application/json")
+            }
+            val body = JSONObject().apply {
+                put("model", config.model)
+                put("input", text)
+                put("voice", config.voice)
+                put("speed", rate.coerceIn(0.25f, 4f))
+                put("response_format", "mp3")
+            }
+            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            if (code !in 200..299) {
+                val err = try {
+                    connection.errorStream?.bufferedReader()?.readText() ?: "HTTP $code"
+                } catch (e: Exception) { "HTTP $code" }
+                log("E", "Network TTS HTTP $code: ${err.take(300)}")
+                return@withContext null
+            }
+            val bytes = connection.inputStream.use { it.readBytes() }
+            if (bytes.isEmpty()) {
+                log("E", "Network TTS returned empty audio body")
+                return@withContext null
+            }
+            val dir = File(appContext?.cacheDir ?: File(""), "net_tts")
+            if (!dir.exists()) dir.mkdirs() else dir.listFiles()?.forEach { it.delete() }
+            val out = File(dir, "net-tts-${System.currentTimeMillis()}.mp3")
+            out.writeBytes(bytes)
+            out
+        } catch (e: Exception) {
+            log("E", "Network TTS exception: ${e.message}")
+            null
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
+    private fun playNetAudio(file: File, rate: Float) {
+        try {
+            netPlayer?.let { runCatching { it.release() } }
+            val mp = MediaPlayer()
+            mp.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            mp.setDataSource(file.absolutePath)
+            mp.setOnPreparedListener {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    runCatching { it.playbackParams = PlaybackParams().setSpeed(rate.coerceIn(0.5f, 2f)) }
+                }
+                it.start()
+            }
+            mp.setOnCompletionListener {
+                log("D", "Network TTS onCompletion")
+                _isPlaying.value = false
+                runCatching { file.delete() }
+                if (netPlayer === it) netPlayer = null
+                runCatching { it.release() }
+            }
+            mp.setOnErrorListener { _, _, _ ->
+                log("E", "Network TTS playback error")
+                _isPlaying.value = false
+                runCatching { file.delete() }
+                if (netPlayer === mp) netPlayer = null
+                runCatching { mp.release() }
+                true
+            }
+            netPlayer = mp
+            mp.prepareAsync()
+        } catch (e: Exception) {
+            log("E", "Network TTS playback init exception: ${e.message}")
+            _isPlaying.value = false
+        }
+    }
+
+    /** Accepts either a full `/audio/speech` endpoint or an OpenAI-compatible base URL. */
+    private fun normalizeSpeechUrl(raw: String): String {
+        val base = raw.trim().trimEnd('/')
+        if (base.isEmpty()) return base
+        return if (base.endsWith(NET_SPEECH_PATH)) base else "$base$NET_SPEECH_PATH"
     }
 
     private fun speakInternal(text: String, language: String, rate: Float, pitch: Float): Boolean {
@@ -303,9 +455,14 @@ object TtsManager {
         else -> "UNKNOWN:$result"
     }
 
-    fun stop() { watchdogJob?.cancel(); watchdogJob = null; tts?.stop(); _isPlaying.value = false }
+    fun stop() {
+        watchdogJob?.cancel(); watchdogJob = null; tts?.stop()
+        netPlayer?.let { runCatching { it.stop() }; runCatching { it.release() } }; netPlayer = null
+        _isPlaying.value = false
+    }
     fun shutdown() {
         initGeneration++; watchdogJob?.cancel(); watchdogJob = null; tts?.stop(); tts?.shutdown(); tts = null
+        netPlayer?.let { runCatching { it.stop() }; runCatching { it.release() } }; netPlayer = null
         initialized = false; _isAvailable.value = false; _isPlaying.value = false; _langMissingData.value = false
         _lastInitStatus.value = "IDLE"; _lastSpeakResult.value = ""; _lastLanguageResult.value = ""
         pendingText = null
