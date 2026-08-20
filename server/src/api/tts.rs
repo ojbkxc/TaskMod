@@ -550,7 +550,6 @@ pub async fn speak(Json(req): Json<TtsRequest>) -> Json<ApiResponse<String>> {
     tokio::spawn(async move {
         let total = sentences.len();
         let mut failed = 0;
-
         for (i, sentence) in sentences.iter().enumerate() {
             // barge-in 检查：若 generation 已变化（有更新的请求到达），提前退出
             if TTS_GENERATION.load(Ordering::SeqCst) != my_generation {
