@@ -147,25 +147,46 @@ object TtsManager {
                 log("D", "Package $pkg: NOT INSTALLED")
             }
         }
-        val bindResult = try {
-            appCtx.bindService(ttsIntent, object : android.content.ServiceConnection {
-                override fun onServiceConnected(name: android.content.ComponentName?, service: android.os.IBinder?) {
-                    log("D", "Manual bindService: onServiceConnected $name")
-                    try { appCtx.unbindService(this) } catch (_: Throwable) {}
-                }
-                override fun onServiceDisconnected(name: android.content.ComponentName?) {
-                    log("D", "Manual bindService: onServiceDisconnected $name")
-                }
-            }, android.content.Context.BIND_AUTO_CREATE)
-        } catch (e: Throwable) {
-            log("E", "Manual bindService exception: ${e.message}")
-            false
+        // Manual bindService diagnostic. Android 8.0+ (API 26+) requires an
+        // explicit Intent for bindService; the old action-only implicit Intent
+        // always threw "Service Intent must be explicit" and produced a misleading
+        // E log while TTS kept working. Build explicit intents (setPackage) from
+        // resolved + known enabled engines instead, and skip the test if none exist.
+        val bindCandidates = (resolvedEngines + knownEngines).distinct().filter { pkg ->
+            try { pm.getPackageInfo(pkg, 0).applicationInfo?.enabled == true } catch (_: Throwable) { false }
         }
-        log("D", "Manual bindService(TTS_SERVICE) returned: $bindResult")
+        if (bindCandidates.isEmpty()) {
+            log("D", "No TTS engine resolved; skipping manual bindService test")
+            log("D", "Manual bindService(TTS_SERVICE) returned: false (skipped, no explicit engine available)")
+        } else {
+            var bindResult = false
+            for (enginePkg in bindCandidates) {
+                val explicitIntent = Intent("android.speech.tts.TTS_SERVICE").setPackage(enginePkg)
+                val ok = try {
+                    appCtx.bindService(explicitIntent, object : android.content.ServiceConnection {
+                        override fun onServiceConnected(name: android.content.ComponentName?, service: android.os.IBinder?) {
+                            log("D", "Manual bindService($enginePkg): onServiceConnected $name")
+                            try { appCtx.unbindService(this) } catch (_: Throwable) {}
+                        }
+                        override fun onServiceDisconnected(name: android.content.ComponentName?) {
+                            log("D", "Manual bindService($enginePkg): onServiceDisconnected $name")
+                        }
+                    }, android.content.Context.BIND_AUTO_CREATE)
+                } catch (e: Throwable) {
+                    log("E", "Manual bindService exception ($enginePkg): ${e.message}")
+                    false
+                }
+                log("D", "Manual bindService(TTS_SERVICE) via $enginePkg returned: $ok")
+                if (ok) { bindResult = true; break }
+            }
+            log("D", "Manual bindService(TTS_SERVICE) returned: $bindResult")
+        }
         enginesToTry = mutableListOf<String?>().apply {
             if (!preferredEngine.isNullOrEmpty()) add(preferredEngine)
             add(null)
             if (!defaultEngine.isNullOrEmpty() && defaultEngine !in this) add(defaultEngine)
+            // Prefer Xiaomi XiaoAi TTS engine for a more natural voice when present.
+            if ("com.xiaomi.mibrain.speech" !in this) add("com.xiaomi.mibrain.speech")
             for (e in resolvedEngines) if (e !in this) add(e)
             if ("com.google.android.tts" !in this) add("com.google.android.tts")
         }
