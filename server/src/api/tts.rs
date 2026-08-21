@@ -27,10 +27,16 @@ fn known_engine_label(pkg: &str) -> Option<&'static str> {
         "com.google.android.tts" => Some("Google 文字转语音"),
         "com.svox.pico" => Some("Pico TTS"),
         "com.android.tts" => Some("系统默认 TTS"),
+        "com.xiaomi.mibrain.speech" => Some("小米引擎 TTS"),
         "com.miui.tts" => Some("小米 TTS"),
-        "com.xiaomi.misettings" => Some("小米设置 TTS"),
         "com.huawei.tts" => Some("华为 TTS"),
+        "com.hihonor.speechkit" => Some("荣耀 TTS"),
+        "com.oppo.smart.tts" => Some("OPPO TTS"),
+        "com.realme.tts" => Some("Realme TTS"),
+        "com.oneplus.tts" => Some("一加 TTS"),
+        "com.vivo.vivoai.tts" => Some("vivo TTS"),
         "com.samsung.android.tts" => Some("三星 TTS"),
+        "com.samsung.SMT" => Some("三星 TTS"),
         "com.baidu.tts" => Some("百度 TTS"),
         "com.iflytek.tts" => Some("讯飞 TTS"),
         "com.iflytek.speechcloud" => Some("讯飞语音云"),
@@ -205,18 +211,75 @@ async fn discover_engines() -> Vec<TtsEngineInfo> {
         }
     }
 
+    // 品牌感知引擎排序（借鉴 Lxchat 的 OEM-first 策略）：
+    // 1) 默认引擎移到最前（保持原有行为）
     if let Some(ref default_pkg) = default_engine {
         if let Some(pos) = engines.iter().position(|e| &e.package_name == default_pkg) {
             let item = engines.remove(pos);
             engines.insert(0, item);
         }
-        if let Some(first) = engines.first_mut() {
-            if &first.package_name == default_pkg {
-                first.label = format!("[默认] {}", first.label);
+    }
+    // 2) 本机厂商自带引擎若存在且与默认引擎不同，则越前于默认
+    let oem_engine = get_manufacturer()
+        .await
+        .and_then(|m| oem_engine_for_manufacturer(&m).map(String::from));
+    if let Some(ref oem_pkg) = oem_engine {
+        if default_engine.as_deref() != Some(oem_pkg.as_str()) {
+            if let Some(pos) = engines.iter().position(|e| &e.package_name == oem_pkg) {
+                let item = engines.remove(pos);
+                engines.insert(0, item);
             }
         }
     }
+    // 3) 首项标记：OEM 引擎标 [OEM]，默认引擎标 [默认]
+    if let Some(first) = engines.first_mut() {
+        let tag = if oem_engine.as_deref() == Some(first.package_name.as_str()) {
+            Some("OEM")
+        } else if default_engine.as_deref() == Some(first.package_name.as_str()) {
+            Some("默认")
+        } else {
+            None
+        };
+        if let Some(t) = tag {
+            first.label = format!("[{}] {}", t, first.label);
+        }
+    }
     engines
+}
+
+/// 读取设备厂商（Build.MANUFACTURER 对应 ro.product.manufacturer / brand）
+async fn get_manufacturer() -> Option<String> {
+    for prop in ["ro.product.manufacturer", "ro.product.brand"] {
+        if let Ok(output) = Command::new("/system/bin/getprop").args([prop]).output().await {
+            let val = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !val.is_empty() {
+                return Some(val);
+            }
+        }
+    }
+    None
+}
+
+/// Build 厂商 -> 自带 TTS 引擎包名（借鉴 Lxchat 的 OEM_TTS_ENGINES 映射）
+fn oem_engine_for_manufacturer(manufacturer: &str) -> Option<&'static str> {
+    let brand = manufacturer.to_lowercase();
+    if brand.contains("xiaomi") || brand.contains("redmi") || brand.contains("poco") {
+        Some("com.xiaomi.mibrain.speech")
+    } else if brand.contains("samsung") {
+        Some("com.samsung.SMT")
+    } else if brand.contains("huawei") {
+        Some("com.huawei.tts")
+    } else if brand.contains("honor") {
+        Some("com.hihonor.speechkit")
+    } else if brand.contains("oppo") || brand.contains("realme") || brand.contains("oneplus") {
+        Some("com.oppo.smart.tts")
+    } else if brand.contains("vivo") || brand.contains("iqoo") {
+        Some("com.vivo.vivoai.tts")
+    } else if brand.contains("google") {
+        Some("com.google.android.tts")
+    } else {
+        None
+    }
 }
 
 /// 通过 Android settings 预设 TTS 参数

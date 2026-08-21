@@ -210,18 +210,78 @@ object TtsManager {
             }
             log("D", "Manual bindService(TTS_SERVICE) returned: $bindResult")
         }
+        // Brand-aware, "phone's-own-first" engine ordering (fork of Lxchat's TtsManager).
+        // "System TTS" here means the engine the phone's manufacturer bundles: Xiaomi -> 小米引擎,
+        // OPPO -> OPPO 引擎, Samsung -> Samsung TTS, etc. This is preferred over whatever engine is
+        // currently selected as the system default (e.g. the user may have switched to Google for
+        // English). Unknown brand mappings are skipped silently, so this can never make things
+        // worse - the system default is next. An explicitly requested engine (per-engine params
+        // from the daemon config) still ranks first.
+        val oemEngines = resolveOemTtsEngines(Build.MANUFACTURER, pm)
         enginesToTry = mutableListOf<String?>().apply {
+            // 0) Explicit user-requested engine (per-engine params from the daemon config).
             if (!preferredEngine.isNullOrEmpty()) add(preferredEngine)
-            add(null)
+            // 1) The device's own bundled OEM engine(s) - the deterministic stock voice per brand.
+            for (e in oemEngines) if (e !in this) add(e)
+            // 2) The directly-read system default engine (tts_default_synth).
             if (!defaultEngine.isNullOrEmpty() && defaultEngine !in this) add(defaultEngine)
-            // Prefer Xiaomi XiaoAi TTS engine for a more natural voice when present.
-            if ("com.xiaomi.mibrain.speech" !in this) add("com.xiaomi.mibrain.speech")
+            // 3) The neutral 2-arg constructor resolves the system default engine again.
+            add(null)
+            // 4) System-bundled resolved engines (OEM preinstalled) - dynamically catches ANY
+            //    brand's engine, even ones not listed in the explicit map (魅族 / 中兴 / 传音 / ...).
+            val systemEngines = resolvedEngines
+                .filter { it !in oemEngines && isSystemApp(it, pm) && isEngineInstalled(it, pm) }
+            for (e in systemEngines) if (e !in this) add(e)
+            // 5) Other resolved engines (deduped).
             for (e in resolvedEngines) if (e !in this) add(e)
+            // 6) Last-resort curated engines (Google / Xiaomi).
             if ("com.google.android.tts" !in this) add("com.google.android.tts")
+            if ("com.xiaomi.mibrain.speech" !in this) add("com.xiaomi.mibrain.speech")
         }
         currentEngineIndex = 0
-        log("D", "enginesToTry (null=2-arg default): $enginesToTry")
+        log("D", "OEM engines: $oemEngines; default=$defaultEngine; preferred=$preferredEngine; enginesToTry:$enginesToTry")
         tryNextEngine(appCtx)
+    }
+
+    // OEM -> bundled TTS engine package(s). Only entries that resolve to a real, installed
+    // engine are ever tried; any unmatched hint is skipped silently and never hurts behaviour.
+    // (Vendor package ids can vary across ROMs, so a wrong hint simply falls through.)
+    private val OEM_TTS_ENGINES = mapOf(
+        "xiaomi" to listOf("com.xiaomi.mibrain.speech"),
+        "redmi" to listOf("com.xiaomi.mibrain.speech"),
+        "poco" to listOf("com.xiaomi.mibrain.speech"),
+        "samsung" to listOf("com.samsung.SMT"),
+        "huawei" to listOf("com.huawei.tts"),
+        "honor" to listOf("com.hihonor.speechkit"),
+        "oppo" to listOf("com.oppo.smart.tts"),
+        "realme" to listOf("com.realme.tts"),
+        "oneplus" to listOf("com.oneplus.tts"),
+        "vivo" to listOf("com.vivo.vivoai.tts"),
+        "iqoo" to listOf("com.vivo.vivoai.tts"),
+        "google" to listOf("com.google.android.tts"),
+    )
+
+    private fun resolveOemTtsEngines(manufacturer: String?, packageManager: PackageManager): List<String> {
+        val brand = manufacturer?.lowercase() ?: return emptyList()
+        val mapped = OEM_TTS_ENGINES.entries
+            .firstOrNull { (key, _) -> brand.contains(key) }
+            ?.value
+            ?: emptyList()
+        return mapped.filter { isEngineInstalled(it, packageManager) }
+    }
+
+    private fun isEngineInstalled(pkg: String, packageManager: PackageManager): Boolean = try {
+        packageManager.getPackageInfo(pkg, 0).applicationInfo?.enabled == true
+    } catch (_: Throwable) {
+        false
+    }
+
+    private fun isSystemApp(pkg: String, packageManager: PackageManager): Boolean = try {
+        val flags = packageManager.getPackageInfo(pkg, 0).applicationInfo?.flags ?: 0
+        (flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0) ||
+            (flags and android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP != 0)
+    } catch (_: Throwable) {
+        false
     }
 
     private fun tryNextEngine(ctx: Context) {
