@@ -113,6 +113,8 @@ jobs:
             -x ".git/*" \
             -x ".github/*" \
             -x "server/*" \
+            -x "frontend/target/*" \
+            -x "frontend/target_isolated/*" \
             -x ".gitignore" \
             -x "bin/.gitkeep"
 

@@ -2,6 +2,7 @@
 server/target/
 server/.cargo/
 frontend/target/
+frontend/target_isolated/
 
 # OS
 .DS_Store
