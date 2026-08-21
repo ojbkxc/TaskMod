@@ -250,7 +250,11 @@ async fn discover_engines() -> Vec<TtsEngineInfo> {
 /// 读取设备厂商（Build.MANUFACTURER 对应 ro.product.manufacturer / brand）
 async fn get_manufacturer() -> Option<String> {
     for prop in ["ro.product.manufacturer", "ro.product.brand"] {
-        if let Ok(output) = Command::new("/system/bin/getprop").args([prop]).output().await {
+        if let Ok(output) = Command::new("/system/bin/getprop")
+            .args([prop])
+            .output()
+            .await
+        {
             let val = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !val.is_empty() {
                 return Some(val);
